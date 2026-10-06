@@ -136,7 +136,7 @@ create table public.market_rates (
   sell            numeric,
   official        numeric,
   fetched_at      timestamptz not null default now(),
-  primary key (source, venue, currency, quote_currency),
+  primary key (source, venue, currency, quote_currency, fetched_at),
   constraint market_rates_has_price check (buy is not null or sell is not null or official is not null)
 );
 
@@ -147,5 +147,8 @@ grant select on public.market_rates to authenticated;
 create policy market_rates_read on public.market_rates for select to authenticated
   using ((select private.my_role()) in ('admin', 'manager', 'treasury', 'kam'));
 
--- Rates also refresh on their own. Paste 6_market_rates_schedule.sql next
--- (safe to run more than once) so that happens every 30 minutes.
+-- Each fetch is kept: fetched_at is part of the key, so the rates page can
+-- show 11:00, 13:00, 15:00, 17:00 and 19:00. Paste 7_market_rates_history.sql
+-- next (safe to run more than once). It adds that grid on a database that
+-- already has this table. Paste 6_market_rates_schedule.sql so rates refresh
+-- every 30 minutes.

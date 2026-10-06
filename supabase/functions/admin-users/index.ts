@@ -6,7 +6,11 @@
 //
 // Actions
 //   list                                     everyone, with login status
-//   invite      { email, full_name, role, phone?, channels? }   sends a "set your password" email
+//   invite      { email, full_name, role, phone?, channels? }
+//               creates the login and returns a "set your password" link.
+//               Supabase does not email it (that sender allows two emails an hour).
+//               SMS and WhatsApp, when chosen, go through notification_events,
+//               the same outbox that posts to Make.com.
 //   set_contact { profile_id, phone, channels }   where this person gets messages (email, sms, whatsapp)
 //   set_role    { profile_id, role }
 //   deactivate  { profile_id }               login stops working at once
@@ -128,6 +132,64 @@ async function activeAdminCount(admin: SupabaseClient): Promise<number> {
   return count ?? 0;
 }
 
+function plainInviteError(message: string): string {
+  const text = message.toLowerCase();
+  if (text.includes("already") && (text.includes("registered") || text.includes("exists"))) {
+    return "This person already has a login";
+  }
+  return message;
+}
+
+// Same outbox as every other message: one row, then the database posts it to
+// Make (vault secret make_webhook_<role>, header X-Kursi-Token). Email is left
+// off this row so Make does not mail the link; the admin copies it instead.
+async function queueInviteMessage(
+  admin: SupabaseClient,
+  profileId: string,
+  email: string,
+  fullName: string,
+  role: Role,
+  phone: string | null,
+  channels: string[],
+  inviteLink: string,
+): Promise<{ message_status: string | null; message_channels: string[] }> {
+  const messageChannels = channels.filter((c) => c === "sms" || c === "whatsapp");
+  if (!messageChannels.length || !phone) return { message_status: null, message_channels: [] };
+
+  const payload = {
+    event: "user.invite",
+    audience: role,
+    occurred_at: new Date().toISOString(),
+    recipients: [{
+      profile_id: profileId,
+      name: fullName,
+      email,
+      phone,
+      channels: messageChannels,
+    }],
+    message: {
+      en: `You are invited to Kursi. Open this link and choose your password: ${inviteLink}`,
+      ka: `თქვენ მოწვეული ხართ Kursi-ში. გახსენით ბმული და აირჩიეთ პაროლი: ${inviteLink}`,
+    },
+    data: { full_name: fullName, email, role },
+    link: inviteLink,
+  };
+
+  const { data: event, error } = await admin
+    .from("notification_events")
+    .insert({ event_type: "user.invite", audience: role, payload, status: "pending" })
+    .select("id")
+    .single();
+  if (error || !event) return { message_status: "failed", message_channels: messageChannels };
+
+  const { data: row } = await admin
+    .from("notification_events")
+    .select("status")
+    .eq("id", event.id)
+    .maybeSingle();
+  return { message_status: row?.status ?? "pending", message_channels: messageChannels };
+}
+
 async function audit(
   admin: SupabaseClient,
   actorId: string,
@@ -221,10 +283,19 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
         if (existing?.auth_user_id) throw new HttpError(409, "This person already has a login");
 
-        const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-          redirectTo: `${APP_URL}/set-password`,
+        const { data: invited, error: inviteError } = await admin.auth.admin.generateLink({
+          type: "invite",
+          email,
+          options: { redirectTo: `${APP_URL}/set-password` },
         });
-        if (inviteError || !invited?.user) throw new HttpError(400, inviteError?.message ?? "Invite failed");
+        if (inviteError || !invited?.user) {
+          throw new HttpError(400, plainInviteError(inviteError?.message ?? "Invite failed"));
+        }
+        const inviteLink = invited.properties?.action_link;
+        if (!inviteLink) {
+          await admin.auth.admin.deleteUser(invited.user.id);
+          throw new HttpError(500, "The invite link could not be created");
+        }
 
         const write = existing
           ? admin.from("profiles")
@@ -241,8 +312,16 @@ Deno.serve(async (req: Request) => {
           await admin.auth.admin.deleteUser(invited.user.id); // no login without a profile
           throw new HttpError(500, profileError?.message ?? "Could not save the profile");
         }
-        await audit(admin, me.id, "invite_user", profile.id, { email, role });
-        return reply({ ok: true, profile_id: profile.id }, 200, origin);
+        const queued = await queueInviteMessage(admin, profile.id, email, fullName, role, phone, channels, inviteLink);
+        await audit(admin, me.id, "invite_user", profile.id, { email, role, message_status: queued.message_status });
+        return reply({
+          ok: true,
+          profile_id: profile.id,
+          invite_link: inviteLink,
+          emailed: false,
+          message_status: queued.message_status,
+          message_channels: queued.message_channels,
+        }, 200, origin);
       }
 
       case "set_contact": {

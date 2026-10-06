@@ -164,6 +164,13 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .table th:first-child, .table td:first-child, .table tbody th:first-child { padding-left: 24px; }
 .table th:last-child, .table td:last-child { padding-right: 24px; }
 .table .num { text-align: right; }
+.table.rate-grid { border-collapse: separate; border-spacing: 0; font-size: 14px; width: max-content; min-width: 100%; }
+.table.rate-grid th, .table.rate-grid td { padding-top: 6px; padding-bottom: 6px; white-space: nowrap; background: #fff; }
+.table.rate-grid .src { position: sticky; left: 0; z-index: 1; min-width: 168px; box-shadow: 1px 0 0 var(--line); }
+.table.rate-grid thead .src { z-index: 2; font-weight: 600; color: var(--ink); font-size: 14px; }
+.table.rate-grid .slot { min-width: 84px; }
+.table.rate-grid tbody tr:hover th,
+.table.rate-grid tbody tr:hover td { background: #FBF8FD; }
 .list-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 24px; border-top: 1px solid var(--line-soft); }
 .list-row.highlight { background: #FFFCF0; }
 .list-row .when { flex: 0 0 120px; }

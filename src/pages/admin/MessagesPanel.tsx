@@ -20,6 +20,7 @@ export const EVENT_NAMES: Record<string, string> = {
   'request.went_through': "Client's transaction arrived",
   'followups.daily': 'Morning follow-up summary',
   'sync.failed': 'Transaction sync failed',
+  'user.invite': 'Person invited',
 };
 const AUDIENCE: Record<string, string> = { kam: 'The KAM who asked', treasury: 'Treasury', admin: 'Admins', manager: 'Managers' };
 const HOOK_NAME: Record<string, string> = { kam: 'KAMs', treasury: 'Treasury', admin: 'Admins', manager: 'Managers' };

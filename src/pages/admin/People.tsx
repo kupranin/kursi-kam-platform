@@ -31,11 +31,48 @@ const ROLE_TEXT: Record<Role, string> = {
   manager: 'A manager sees everything and changes nothing.',
   admin: 'An admin also manages people, rules and messages.',
 };
+const MESSAGE_GROUP: Record<Role, string> = {
+  kam: 'KAMs',
+  treasury: 'Treasury',
+  admin: 'Admins',
+  manager: 'Managers',
+};
+
+interface InviteReady {
+  name: string;
+  phone: string;
+  channels: string[];
+  role: Role;
+  link: string;
+  message_status: string | null;
+  message_channels: string[];
+}
+
+function joinLabels(list: string[]) {
+  const names = list.map((c) => CHANNELS.find((x) => x.value === c)?.label ?? c);
+  if (names.length <= 1) return names[0] ?? '';
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
 
 function channelText(list: string[] | null) {
   const names = (list ?? []).map((c) => CHANNELS.find((x) => x.value === c)?.label ?? c);
   if (!names.length) return 'No messages';
   return 'Messages by ' + (names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]);
+}
+
+function textNote(ready: InviteReady) {
+  const via = ready.message_channels;
+  if (!via.length) return null;
+  const how = joinLabels(via);
+  const onTheWay = ready.message_status === 'sent' || ready.message_status === 'pending' || ready.message_status === 'delivered';
+  if (onTheWay) {
+    const verb = ready.message_status === 'delivered' ? 'was sent' : 'is being sent';
+    return <p className="small" style={{ margin: '8px 0 0' }}>The same link {verb} by {how} to {ready.phone}.</p>;
+  }
+  if (ready.message_status === 'no_webhook') {
+    return <p className="small warn-text" style={{ margin: '8px 0 0' }}>The {how} message was not sent, because messages for {MESSAGE_GROUP[ready.role]} are not connected yet. Copy the link and send it yourself.</p>;
+  }
+  return <p className="small warn-text" style={{ margin: '8px 0 0' }}>The {how} message could not be sent to {ready.phone}. Copy the link and send it yourself.</p>;
 }
 
 export default function People() {
@@ -49,6 +86,8 @@ export default function People() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [contact, setContact] = useState({ phone: '', channels: ['email'] as string[] });
+  const [ready, setReady] = useState<InviteReady | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -71,8 +110,25 @@ export default function People() {
     if (!emailOk || !nameOk || !phoneOk || !inv.channels.length) return;
     setBusy(true);
     try {
-      await adminUsers({ action: 'invite', email: inv.email.trim(), full_name: inv.full_name.trim(), role: inv.role, phone: phoneClean || null, channels: inv.channels });
-      toast(`Invite sent to ${inv.email.trim()}. They choose their own password from the email.`);
+      const res = await adminUsers<{ invite_link?: string; message_status?: string | null; message_channels?: string[] }>({
+        action: 'invite', email: inv.email.trim(), full_name: inv.full_name.trim(), role: inv.role, phone: phoneClean || null, channels: inv.channels,
+      });
+      const name = inv.full_name.trim();
+      if (!res.invite_link) {
+        toast(`${name} was added, but no link came back. Paste the updated admin-users function in Supabase, then send a password reset if they still need a link.`, 'error');
+      } else {
+        setReady({
+          name,
+          phone: phoneClean,
+          channels: [...inv.channels],
+          role: inv.role,
+          link: res.invite_link,
+          message_status: res.message_status ?? null,
+          message_channels: res.message_channels ?? [],
+        });
+        setCopied(false);
+        toast(`Invite ready for ${name}. Copy the link.`);
+      }
       setInviting(false); setTried(false);
       setInv({ full_name: '', email: '', role: 'kam', phone: '', channels: ['email'] });
       load();
@@ -83,6 +139,17 @@ export default function People() {
   async function act(body: Record<string, unknown>, done: string) {
     try { await adminUsers(body); toast(done); load(); }
     catch (err) { toast((err as Error).message, 'error'); }
+  }
+
+  async function copyLink() {
+    if (!ready) return;
+    try {
+      await navigator.clipboard.writeText(ready.link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 3000);
+    } catch {
+      toast('Select the link and copy it.', 'error');
+    }
   }
 
   async function saveContact(p: Person) {
@@ -107,6 +174,29 @@ export default function People() {
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setInviting(true)}><IconPlus />Invite a person</button>
       </div>
+
+      {ready && (
+        <div role="status" style={{ margin: '0 24px 18px', padding: 20, borderRadius: 12, background: ready.message_channels.length && !['sent', 'pending', 'delivered'].includes(ready.message_status ?? '') ? 'var(--warn-bg)' : 'var(--ok-bg)' }}>
+          <h3 style={{ fontSize: 18 }}>Invite ready for {ready.name}</h3>
+          <p className="small" style={{ margin: '8px 0 12px', color: 'var(--ink-2)' }}>
+            Copy this link and send it to them. They open it and choose their own password. The link works once.
+          </p>
+          <div className="field">
+            <label htmlFor="invite-link">Link</label>
+            <textarea id="invite-link" className="input" readOnly rows={3} value={ready.link} onFocus={(e) => e.currentTarget.select()} />
+          </div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button type="button" className="btn btn-dark" onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</button>
+            <button type="button" className="btn btn-quiet" onClick={() => setReady(null)}>Done</button>
+          </div>
+          {ready.channels.includes('email') && (
+            <p className="small" style={{ margin: '12px 0 0' }}>
+              This link was not emailed by Supabase. That mail is limited to two emails an hour, so copy the link and send it yourself.
+            </p>
+          )}
+          {textNote(ready)}
+        </div>
+      )}
 
       {inviting && (
         <form onSubmit={invite} noValidate style={{ margin: '0 24px 18px', padding: 20, borderRadius: 12, background: 'var(--ground)' }}>
@@ -135,9 +225,9 @@ export default function People() {
               </div>
             </fieldset>
           </div>
-          <p className="small" style={{ margin: '12px 0', color: 'var(--ink-2)' }}>{ROLE_TEXT[inv.role]} They get an email and choose their own password.</p>
+          <p className="small" style={{ margin: '12px 0', color: 'var(--ink-2)' }}>{ROLE_TEXT[inv.role]} You will get a link to copy. They open it and choose their own password. If SMS or WhatsApp is ticked, and a mobile number is filled in, that link is sent to their phone as well.</p>
           <div className="row">
-            <button type="submit" className="btn btn-dark" disabled={busy}>{busy ? 'Sending…' : 'Send invite'}</button>
+            <button type="submit" className="btn btn-dark" disabled={busy}>{busy ? 'Preparing the link…' : 'Send invite'}</button>
             <button type="button" className="btn btn-quiet" onClick={() => { setInviting(false); setTried(false); }}>Cancel</button>
           </div>
         </form>

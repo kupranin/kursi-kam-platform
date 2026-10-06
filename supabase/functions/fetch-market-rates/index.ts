@@ -7,8 +7,14 @@
 // Turn OFF Enforce JWT verification when deploying. This function
 // checks the caller itself.
 //
+// Each board and bank fetch is appended, so the rates page can show
+// 11:00, 13:00, 15:00, 17:00 and 19:00. Kiosks stay as the latest row
+// only. Paste 7_market_rates_history.sql once so the table keeps history.
+// Until that is pasted, a duplicate key replaces the latest row.
+//
 // Sources
-//   kursi           api-core.kursi.ge public currencies
+//   kursi           api-core.kursi.ge public currencies.
+//                   baseCurrencyCode is the quote (GEL, or a cross such as USD).
 //   rico            Rico board (RUR is stored as RUB)
 //   myvaluta        every bank and kiosk table on myvaluta.ge
 //   valuto          Valuto's currency list
@@ -184,6 +190,7 @@ async function getJson(url: string): Promise<unknown> {
 
 async function kursi(): Promise<Row[]> {
   const data = await getJson("https://api-core.kursi.ge/api/public/currencies") as {
+    baseCurrencyCode?: string;
     secondaryCurrencyCode: string;
     buyRate: number;
     sellRate: number;
@@ -193,14 +200,20 @@ async function kursi(): Promise<Row[]> {
   const rows: Row[] = [];
   for (const item of data) {
     const currency = code(item.secondaryCurrencyCode);
+    const quote = code(item.baseCurrencyCode || "GEL");
+    if (!currency || currency === quote) continue;
+    const buy = item.buyRate ?? null;
+    const sell = item.sellRate ?? null;
+    const official = item.nbgRate > 0 ? item.nbgRate : null;
+    if (buy == null && sell == null && official == null) continue;
     rows.push({
-      source: "kursi", venue: "Kursi", venue_kind: "board", currency, quote_currency: "GEL",
-      buy: item.buyRate ?? null, sell: item.sellRate ?? null, official: item.nbgRate ?? null,
+      source: "kursi", venue: "Kursi", venue_kind: "board", currency, quote_currency: quote,
+      buy, sell, official,
     });
     for (const [bank, rates] of Object.entries(item.bankRates ?? {})) {
       if (rates.buyRate == null && rates.sellRate == null) continue;
       rows.push({
-        source: "kursi", venue: bank, venue_kind: "bank", currency, quote_currency: "GEL",
+        source: "kursi", venue: bank, venue_kind: "bank", currency, quote_currency: quote,
         buy: rates.buyRate ?? null, sell: rates.sellRate ?? null, official: null,
       });
     }
@@ -246,6 +259,21 @@ async function lombard(): Promise<Row[]> {
     currency: code(item.currency), quote_currency: "GEL",
     buy: item.rateBuy ?? null, sell: item.rateSell ?? null, official: item.rateNbg ?? null,
   }));
+}
+
+async function replaceLatest(
+  admin: ReturnType<typeof createClient>,
+  source: string,
+  kind: "bank" | "kiosk" | null,
+  payload: (Row & { fetched_at: string })[],
+) {
+  const removal = kind
+    ? admin.from("market_rates").delete().eq("source", source).eq("venue_kind", kind)
+    : admin.from("market_rates").delete().eq("source", source);
+  const { error: deleteError } = await removal;
+  if (deleteError) throw new Error(deleteError.message);
+  const { error } = await admin.from("market_rates").insert(payload);
+  if (error) throw new Error(error.message);
 }
 
 async function myvaluta(kind: "bank" | "kiosk"): Promise<Row[]> {
@@ -310,14 +338,33 @@ Deno.serve(async (req: Request) => {
         }
         const source = clean[0].source;
         const kind = name.startsWith("Myvaluta") ? (name.includes("bank") ? "bank" : "kiosk") : null;
-        const removal = kind
-          ? admin.from("market_rates").delete().eq("source", source).eq("venue_kind", kind)
-          : admin.from("market_rates").delete().eq("source", source);
-        const { error: deleteError } = await removal;
-        if (deleteError) throw new Error(deleteError.message);
-        const { error } = await admin.from("market_rates").insert(clean.map((r) => ({ ...r, fetched_at: new Date().toISOString() })));
-        if (error) throw new Error(error.message);
-        saved += clean.length;
+        const fetchedAt = new Date().toISOString();
+        const payload = clean.map((r) => ({ ...r, fetched_at: fetchedAt }));
+        // Kiosks are not on the grid. Keep only their latest rows.
+        if (kind === "kiosk") {
+          await replaceLatest(admin, source, kind, payload);
+          saved += clean.length;
+          continue;
+        }
+        const { error } = await admin.from("market_rates").insert(payload);
+        if (!error) {
+          saved += clean.length;
+          continue;
+        }
+        const detail = `${error.message} ${error.details ?? ""}`;
+        const duplicate = error.code === "23505" || /duplicate key/i.test(detail);
+        // History is on: this exact snapshot is already stored.
+        if (duplicate && /fetched_at/i.test(detail)) {
+          saved += clean.length;
+          continue;
+        }
+        // History is not on yet: the old key keeps one row per pair.
+        if (duplicate && /\(source,\s*venue,\s*currency,\s*quote_currency\)/i.test(detail)) {
+          await replaceLatest(admin, source, kind, payload);
+          saved += clean.length;
+          continue;
+        }
+        throw new Error(error.message);
       } catch (err) {
         problems.push(name + ": " + (err instanceof Error ? err.message : "failed"));
       }
