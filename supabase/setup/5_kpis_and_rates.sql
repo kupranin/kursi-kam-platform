@@ -146,3 +146,6 @@ grant select on public.market_rates to authenticated;
 
 create policy market_rates_read on public.market_rates for select to authenticated
   using ((select private.my_role()) in ('admin', 'manager', 'treasury', 'kam'));
+
+-- Rates also refresh on their own. Paste 6_market_rates_schedule.sql next
+-- (safe to run more than once) so that happens every 30 minutes.

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { fmtDateTime, fmtRate } from '../lib/format';
+import { downloadCsv, fmtDateTime, fmtRate, todayTbilisi } from '../lib/format';
+import { IconDownload } from '../components/Icons';
 
 interface MarketRate {
   source: string;
@@ -22,6 +23,52 @@ const BOARDS: { source: string; title: string }[] = [
   { source: 'valuto', title: 'Valuto' },
   { source: 'expresslombard', title: 'Express Lombard' },
 ];
+
+const SOURCE_TITLE: Record<string, string> = {
+  kursi: 'Kursi',
+  rico: 'Rico',
+  myvaluta: 'Myvaluta',
+  valuto: 'Valuto',
+  expresslombard: 'Express Lombard',
+};
+
+const SOURCE_ORDER = ['kursi', 'rico', 'myvaluta', 'valuto', 'expresslombard'];
+const KIND_TITLE: Record<MarketRate['venue_kind'], string> = {
+  board: 'Board',
+  bank: 'Bank',
+  kiosk: 'Kiosk',
+};
+const KIND_ORDER: MarketRate['venue_kind'][] = ['board', 'bank', 'kiosk'];
+
+function fetchedStamp(iso: string): string {
+  const d = new Date(iso);
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tbilisi' }).format(d);
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tbilisi' });
+  return day + ' ' + time;
+}
+
+function downloadRates(rows: MarketRate[]) {
+  const sorted = [...rows].sort((a, b) =>
+    SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source)
+    || KIND_ORDER.indexOf(a.venue_kind) - KIND_ORDER.indexOf(b.venue_kind)
+    || a.venue.localeCompare(b.venue)
+    || a.currency.localeCompare(b.currency)
+    || a.quote_currency.localeCompare(b.quote_currency));
+  downloadCsv(`kursi-rates-${todayTbilisi()}.csv`, [
+    ['Source', 'Venue', 'Kind', 'Currency', 'Quote', 'Buy', 'Sell', 'Official', 'Fetched'],
+    ...sorted.map((row) => [
+      SOURCE_TITLE[row.source] ?? row.source,
+      row.venue,
+      KIND_TITLE[row.venue_kind],
+      row.currency,
+      row.quote_currency,
+      row.buy,
+      row.sell,
+      row.official,
+      fetchedStamp(row.fetched_at),
+    ]),
+  ]);
+}
 
 function pair(row: MarketRate): string {
   return row.quote_currency === 'GEL' ? row.currency : row.currency + '/' + row.quote_currency;
@@ -103,11 +150,16 @@ export default function MarketRates() {
           <h1>Rates</h1>
           <p>Kursi, Rico, Myvaluta, Valuto and Express Lombard{fetched ? '. Updated ' + fmtDateTime(fetched) : ''}</p>
         </div>
-        {canRefresh && (
-          <button type="button" className="btn btn-primary" disabled={refreshing} onClick={refresh}>
-            {refreshing ? 'Updating…' : 'Update rates'}
+        <div className="row">
+          <button type="button" className="btn" disabled={!rows.length} onClick={() => downloadRates(rows)}>
+            <IconDownload />Download rates
           </button>
-        )}
+          {canRefresh && (
+            <button type="button" className="btn btn-primary" disabled={refreshing} onClick={refresh}>
+              {refreshing ? 'Updating…' : 'Update rates'}
+            </button>
+          )}
+        </div>
       </div>
 
       {!loaded && <p className="empty">Loading…</p>}

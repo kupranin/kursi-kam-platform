@@ -1,6 +1,11 @@
 // Fetches public buy/sell rates and stores them in public.market_rates.
-// Called from the Rates page. Turn OFF Enforce JWT verification: this
-// function checks that the caller is an admin or treasury itself.
+//
+// Called two ways:
+//   the Update rates button (an admin or treasury session)
+//   every 30 minutes from the database (header X-Kursi-Token)
+//
+// Turn OFF Enforce JWT verification when deploying. This function
+// checks the caller itself.
 //
 // Sources
 //   kursi           api-core.kursi.ge public currencies
@@ -13,16 +18,32 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 
-function serviceKey(): string {
-  const direct = Deno.env.get("SUPABASE_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (direct) return direct;
+function serviceKeys(): string[] {
+  const keys = [Deno.env.get("SUPABASE_SECRET_KEY"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")]
+    .filter((value): value is string => !!value);
   try {
     const parsed = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>;
-    const first = Object.values(parsed).find((v) => typeof v === "string" && v);
-    return first ?? "";
+    for (const value of Object.values(parsed)) {
+      if (typeof value === "string" && value) keys.push(value);
+    }
   } catch {
-    return "";
+    // ignore a malformed key list
   }
+  return keys;
+}
+
+function serviceKey(): string {
+  return serviceKeys()[0] ?? "";
+}
+
+function sameSecret(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const left = enc.encode(a);
+  const right = enc.encode(b);
+  if (left.length === 0 || left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
+  return diff === 0;
 }
 
 const HEADERS: Record<string, string> = {
@@ -246,13 +267,25 @@ Deno.serve(async (req: Request) => {
   const admin = createClient(SUPABASE_URL, key, { auth: { persistSession: false, autoRefreshToken: false } });
 
   try {
-    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-    if (!token) return reply({ error: "Sign in first" }, 401, origin);
-    const { data: userData, error: userError } = await admin.auth.getUser(token);
-    if (userError || !userData?.user) return reply({ error: "Your session has ended. Sign in again." }, 401, origin);
-    const { data: me } = await admin.from("profiles").select("role, active").eq("auth_user_id", userData.user.id).maybeSingle();
-    if (!me?.active || (me.role !== "admin" && me.role !== "treasury")) {
-      return reply({ error: "Only an admin or treasury can refresh rates" }, 403, origin);
+    const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const cronToken = req.headers.get("X-Kursi-Token") ?? "";
+    // The 30-minute job sends the token created in 6_market_rates_schedule.sql.
+    // A call with the service key is accepted too. Everyone else must be
+    // a signed-in admin or treasury, which is what Update rates sends.
+    const serviceCall = !cronToken && !!bearer && serviceKeys().some((candidate) => sameSecret(bearer, candidate));
+    if (cronToken) {
+      const { data, error } = await admin.rpc("market_rates_cron_secret");
+      if (error || typeof data !== "string" || !sameSecret(cronToken, data)) {
+        return reply({ error: "Sign in first" }, 401, origin);
+      }
+    } else if (!serviceCall) {
+      if (!bearer) return reply({ error: "Sign in first" }, 401, origin);
+      const { data: userData, error: userError } = await admin.auth.getUser(bearer);
+      if (userError || !userData?.user) return reply({ error: "Your session has ended. Sign in again." }, 401, origin);
+      const { data: me } = await admin.from("profiles").select("role, active").eq("auth_user_id", userData.user.id).maybeSingle();
+      if (!me?.active || (me.role !== "admin" && me.role !== "treasury")) {
+        return reply({ error: "Only an admin or treasury can refresh rates" }, 403, origin);
+      }
     }
 
     const jobs: [string, () => Promise<Row[]>][] = [
