@@ -22,7 +22,7 @@ interface Props {
 
 interface Lookup { client_id: string; valid: boolean; known: boolean; name: string | null; kind: string | null }
 
-/** "Client ID or name" with autofill from the KAM's own clients. */
+/** "Client ID or name". Typing searches the shared company directory. */
 export default function ClientField({ value, onChange, onInfo, tried, big }: Props) {
   const [open, setOpen] = useState(false);
   const [matches, setMatches] = useState<ClientMatch[]>([]);
@@ -123,8 +123,8 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
       />
       <span className={'hint ' + tone}>{hint}</span>
       {showList && (
-        <div id="client-list" role="listbox" aria-label="Your clients" className="combo-list">
-          <div className="head">{raw ? 'Your clients' : 'Your recent clients'}</div>
+        <div id="client-list" role="listbox" aria-label="Companies" className="combo-list">
+          <div className="head">{raw ? 'Companies' : 'Your recent clients'}</div>
           {matches.map((m, i) => (
             <button
               key={m.client_id}
@@ -145,7 +145,7 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
           ))}
           {!matches.length && (
             <p className="small" style={{ margin: 0, padding: 10 }}>
-              {info?.valid ? 'Not in your clients yet. Add their name to continue.' : digits ? 'No match yet. Keep typing the ID.' : 'No client with that name in your list.'}
+              {info?.valid ? 'New company. Add the name and it will fill in next time.' : digits ? 'No match yet. Keep typing the ID.' : 'No company with that name yet. Type the full ID to add one.'}
             </p>
           )}
         </div>
