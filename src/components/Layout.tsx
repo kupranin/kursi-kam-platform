@@ -19,12 +19,14 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
     { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
     { to: '/follow-ups', label: 'Follow-ups' },
     { to: '/clients', label: 'Clients' },
+    { to: '/analytics', label: 'Analytics' },
     { to: '/admin', label: 'Admin' },
   ],
   manager: [
     { to: '/team', label: 'Team' },
     { to: '/follow-ups', label: 'Follow-ups' },
     { to: '/clients', label: 'Clients' },
+    { to: '/analytics', label: 'Analytics' },
   ],
 };
 
