@@ -1,0 +1,12 @@
+begin; set local role authenticated; set local request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+update public.rules set admin_requires_mfa = true; commit;
+begin; set local role authenticated; set local request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111'; set local request.jwt.claims = '{"aal":"aal1"}';
+do $$ declare n int; begin select count(*) into n from public.audit_log; if n = 0 then raise notice 'OK admin without 2nd factor sees no audit log'; else raise notice 'FAIL'; end if; end $$;
+set local request.jwt.claims = '{"aal":"aal2"}';
+do $$ declare n int; begin select count(*) into n from public.audit_log; if n > 0 then raise notice 'OK admin with 2nd factor sees audit log'; else raise notice 'FAIL'; end if; end $$;
+update public.rules set admin_requires_mfa = false; commit;
+update public.profiles set active = false where email = 'n.philauri@kursi.ge';
+begin; set local role authenticated; set local request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+do $$ declare n int; begin select count(*) into n from public.requests; if n = 0 then raise notice 'OK switched-off KAM sees nothing'; else raise notice 'FAIL'; end if; end $$;
+commit;
+update public.profiles set active = true where email = 'n.philauri@kursi.ge';

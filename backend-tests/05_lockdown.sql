@@ -1,0 +1,11 @@
+begin; set local role anon;
+do $$ begin perform count(*) from public.request_outcomes; raise notice 'FAIL anon view'; exception when others then raise notice 'OK anon view blocked: %', sqlerrm; end $$;
+do $$ begin perform public.winback_list(); raise notice 'FAIL anon rpc'; exception when others then raise notice 'OK anon rpc blocked: %', sqlerrm; end $$;
+do $$ begin perform count(*) from public.profiles; raise notice 'FAIL anon profiles'; exception when others then raise notice 'OK anon profiles blocked: %', sqlerrm; end $$;
+commit;
+begin; set local role authenticated; set local request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+do $$ begin perform private.owners('2026-09-01','2026-09-30'); raise notice 'FAIL kam called internal function'; exception when others then raise notice 'OK internal function blocked: %', sqlerrm; end $$;
+do $$ begin perform private.sync_transactions(1,'x'); raise notice 'FAIL kam ran sync'; exception when others then raise notice 'OK sync blocked: %', sqlerrm; end $$;
+do $$ begin insert into public.requests (kam_id, client_id) values ((select id from public.profiles limit 1), '405123987'); raise notice 'FAIL direct insert'; exception when others then raise notice 'OK direct insert blocked: %', sqlerrm; end $$;
+do $$ begin perform count(*) from private.sync_runs; raise notice 'FAIL read private'; exception when others then raise notice 'OK private table blocked: %', sqlerrm; end $$;
+commit;
