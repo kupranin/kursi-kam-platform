@@ -211,6 +211,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .page-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .page-links a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid #C9B5DA; background: #fff; text-decoration: none; font-weight: 500; }
 
+.sheet .section-row td { background: var(--lavender-pale); font-weight: 600; color: var(--aubergine-deep); }
+.cell-input { min-height: 36px; height: 36px; padding: 0 8px; text-align: right; }
+
 @media (max-width: 640px) {
   .page { padding: 20px 16px 64px; }
   h1 { font-size: 26px; }

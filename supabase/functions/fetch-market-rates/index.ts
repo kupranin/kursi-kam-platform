@@ -1,0 +1,297 @@
+// Fetches public buy/sell rates and stores them in public.market_rates.
+// Called from the Rates page. Turn OFF Enforce JWT verification: this
+// function checks that the caller is an admin or treasury itself.
+//
+// Sources
+//   kursi           api-core.kursi.ge public currencies
+//   rico            Rico board (RUR is stored as RUB)
+//   myvaluta        every bank and kiosk table on myvaluta.ge
+//   valuto          Valuto's currency list
+//   expresslombard  Express Lombard board
+
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+
+function serviceKey(): string {
+  const direct = Deno.env.get("SUPABASE_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (direct) return direct;
+  try {
+    const parsed = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>;
+    const first = Object.values(parsed).find((v) => typeof v === "string" && v);
+    return first ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const HEADERS: Record<string, string> = {
+  "User-Agent": "KursiKAM/1.0 (rate board)",
+  Accept: "application/json, text/html",
+};
+
+type Row = {
+  source: string;
+  venue: string;
+  venue_kind: "board" | "bank" | "kiosk";
+  currency: string;
+  quote_currency: string;
+  buy: number | null;
+  sell: number | null;
+  official: number | null;
+};
+
+const CURRENCY_HEADS: [string, string][] = [
+  ["ავსტრალიური დოლარის კურსი", "AUD"],
+  ["კანადური დოლარის კურსი", "CAD"],
+  ["ჩეხური კრონის კურსი", "CZK"],
+  ["დანიური კრონის კურსი", "DKK"],
+  ["ნორვეგიული კრონის კურსი", "NOK"],
+  ["შვედური კრონის კურსი", "SEK"],
+  ["დოლარის კურსი", "USD"],
+  ["ევროს კურსი", "EUR"],
+  ["ფუნტის კურსი", "GBP"],
+  ["რუბლის კურსი", "RUB"],
+  ["ლირას კურსი", "TRY"],
+  ["დრამის კურსი", "AMD"],
+  ["მანათის კურსი", "AZN"],
+  ["ტენგეს კურსი", "KZT"],
+  ["ფრანკის კურსი", "CHF"],
+  ["იუანის კურსი", "CNY"],
+  ["დირჰამის კურსი", "AED"],
+  ["შეკელის კურსი", "ILS"],
+  ["იენის კურსი", "JPY"],
+  ["ზლოტის კურსი", "PLN"],
+];
+
+function cors(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
+  };
+}
+
+function reply(body: unknown, status: number, origin: string): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors(origin), "Content-Type": "application/json" },
+  });
+}
+
+function textify(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function num(text: string): number | null {
+  const cleaned = text.replace(/საუკეთესო/g, "");
+  const match = cleaned.match(/-?\d+(?:[.,]\d+)?/);
+  if (!match) return null;
+  const value = Number(match[0].replace(",", "."));
+  return Number.isFinite(value) ? value : null;
+}
+
+function appNum(text: string): number | null {
+  const match = text.match(/აპლიკაციაში:\s*(-?\d+(?:[.,]\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1].replace(",", "."));
+  return Number.isFinite(value) ? value : null;
+}
+
+function code(value: string): string {
+  const upper = value.toUpperCase();
+  return upper === "RUR" ? "RUB" : upper;
+}
+
+function parseMyvaluta(html: string, kind: "bank" | "kiosk"): Row[] {
+  const tokens = html.match(/<h2[^>]*>[\s\S]*?<\/h2>|<table[\s\S]*?<\/table>/g) ?? [];
+  let currency: string | null = null;
+  const rows: Row[] = [];
+  for (const token of tokens) {
+    if (token.startsWith("<h2")) {
+      const label = textify(token);
+      currency = null;
+      for (const [phrase, iso] of CURRENCY_HEADS) {
+        if (label.includes(phrase)) {
+          currency = iso;
+          break;
+        }
+      }
+      continue;
+    }
+    if (!currency) continue;
+    const trs = token.match(/<tr[\s\S]*?<\/tr>/g) ?? [];
+    for (const tr of trs.slice(1)) {
+      const cells = [...tr.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((m) => textify(m[1]));
+      if (cells.length < 3) continue;
+      const name = cells[0];
+      if (!name || name === "ბანკი" || name === "ჯიხური") continue;
+      const buy = num(cells[1]);
+      const sell = num(cells[2]);
+      if (buy == null && sell == null) continue;
+      rows.push({ source: "myvaluta", venue: name.slice(0, 80), venue_kind: kind, currency, quote_currency: "GEL", buy, sell, official: null });
+      const appBuy = appNum(cells[1]);
+      const appSell = appNum(cells[2]);
+      if (appBuy != null || appSell != null) {
+        rows.push({
+          source: "myvaluta",
+          venue: (name + " app").slice(0, 80),
+          venue_kind: kind,
+          currency,
+          quote_currency: "GEL",
+          buy: appBuy,
+          sell: appSell,
+          official: null,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+async function getJson(url: string): Promise<unknown> {
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) throw new Error(url + " returned " + res.status);
+  return res.json();
+}
+
+async function kursi(): Promise<Row[]> {
+  const data = await getJson("https://api-core.kursi.ge/api/public/currencies") as {
+    secondaryCurrencyCode: string;
+    buyRate: number;
+    sellRate: number;
+    nbgRate: number;
+    bankRates?: Record<string, { buyRate?: number; sellRate?: number }>;
+  }[];
+  const rows: Row[] = [];
+  for (const item of data) {
+    const currency = code(item.secondaryCurrencyCode);
+    rows.push({
+      source: "kursi", venue: "Kursi", venue_kind: "board", currency, quote_currency: "GEL",
+      buy: item.buyRate ?? null, sell: item.sellRate ?? null, official: item.nbgRate ?? null,
+    });
+    for (const [bank, rates] of Object.entries(item.bankRates ?? {})) {
+      if (rates.buyRate == null && rates.sellRate == null) continue;
+      rows.push({
+        source: "kursi", venue: bank, venue_kind: "bank", currency, quote_currency: "GEL",
+        buy: rates.buyRate ?? null, sell: rates.sellRate ?? null, official: null,
+      });
+    }
+  }
+  return rows;
+}
+
+async function rico(): Promise<Row[]> {
+  const data = await getJson("https://api.ricofx.ge/api/v1/Currency/rates") as {
+    Data?: { CurrencyName: string; Buy: number; Sell: number }[];
+  };
+  return (data.Data ?? []).map((item) => ({
+    source: "rico", venue: "Rico", venue_kind: "board" as const, currency: code(item.CurrencyName), quote_currency: "GEL",
+    buy: item.Buy ?? null, sell: item.Sell ?? null, official: null,
+  }));
+}
+
+async function valuto(): Promise<Row[]> {
+  const data = await getJson("https://valuto.ge/wp-json/rest-currency-list/v3/currencies") as {
+    data?: { currencies?: Record<string, { CcFrom: string; CcTo: string; buy: number; sell: number; nbg: number }> };
+  };
+  const list = data.data?.currencies ?? {};
+  return Object.values(list).map((item) => ({
+    source: "valuto",
+    venue: "Valuto",
+    venue_kind: "board" as const,
+    currency: code(item.CcFrom),
+    quote_currency: code(item.CcTo),
+    buy: item.buy ?? null,
+    sell: item.sell ?? null,
+    official: item.nbg > 0 ? item.nbg : null,
+  }));
+}
+
+async function lombard(): Promise<Row[]> {
+  const res = await fetch("https://expresslombard.ge/api/currencies/get-currencies", {
+    headers: { ...HEADERS, "x-lang": "GE" },
+  });
+  if (!res.ok) throw new Error("expresslombard returned " + res.status);
+  const data = await res.json() as { result?: { currency: string; rateBuy: number; rateSell: number; rateNbg: number }[] };
+  return (data.result ?? []).map((item) => ({
+    source: "expresslombard", venue: "Express Lombard", venue_kind: "board" as const,
+    currency: code(item.currency), quote_currency: "GEL",
+    buy: item.rateBuy ?? null, sell: item.rateSell ?? null, official: item.rateNbg ?? null,
+  }));
+}
+
+async function myvaluta(kind: "bank" | "kiosk"): Promise<Row[]> {
+  const url = kind === "bank"
+    ? "https://myvaluta.ge/valutis-kursi-bankebshi"
+    : "https://myvaluta.ge/valutis-kursi-jixurebshi";
+  const res = await fetch(url, { headers: { ...HEADERS, Accept: "text/html" } });
+  if (!res.ok) throw new Error(url + " returned " + res.status);
+  return parseMyvaluta(await res.text(), kind);
+}
+
+Deno.serve(async (req: Request) => {
+  const origin = req.headers.get("Origin") ?? "";
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
+  if (req.method !== "POST") return reply({ error: "Use POST" }, 405, origin);
+
+  const key = serviceKey();
+  if (!SUPABASE_URL || !key) return reply({ error: "The function has no database key" }, 500, origin);
+  const admin = createClient(SUPABASE_URL, key, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  try {
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (!token) return reply({ error: "Sign in first" }, 401, origin);
+    const { data: userData, error: userError } = await admin.auth.getUser(token);
+    if (userError || !userData?.user) return reply({ error: "Your session has ended. Sign in again." }, 401, origin);
+    const { data: me } = await admin.from("profiles").select("role, active").eq("auth_user_id", userData.user.id).maybeSingle();
+    if (!me?.active || (me.role !== "admin" && me.role !== "treasury")) {
+      return reply({ error: "Only an admin or treasury can refresh rates" }, 403, origin);
+    }
+
+    const jobs: [string, () => Promise<Row[]>][] = [
+      ["Kursi", kursi],
+      ["Rico", rico],
+      ["Valuto", valuto],
+      ["Express Lombard", lombard],
+      ["Myvaluta banks", () => myvaluta("bank")],
+      ["Myvaluta kiosks", () => myvaluta("kiosk")],
+    ];
+    const problems: string[] = [];
+    let saved = 0;
+    for (const [name, load] of jobs) {
+      try {
+        const rows = await load();
+        const unique = new Map<string, Row>();
+        for (const row of rows) unique.set([row.source, row.venue, row.currency, row.quote_currency].join("|"), row);
+        const clean = [...unique.values()];
+        if (!clean.length) {
+          problems.push(name + " returned no rates");
+          continue;
+        }
+        const source = clean[0].source;
+        const kind = name.startsWith("Myvaluta") ? (name.includes("bank") ? "bank" : "kiosk") : null;
+        const removal = kind
+          ? admin.from("market_rates").delete().eq("source", source).eq("venue_kind", kind)
+          : admin.from("market_rates").delete().eq("source", source);
+        const { error: deleteError } = await removal;
+        if (deleteError) throw new Error(deleteError.message);
+        const { error } = await admin.from("market_rates").insert(clean.map((r) => ({ ...r, fetched_at: new Date().toISOString() })));
+        if (error) throw new Error(error.message);
+        saved += clean.length;
+      } catch (err) {
+        problems.push(name + ": " + (err instanceof Error ? err.message : "failed"));
+      }
+    }
+    return reply({ ok: problems.length === 0, saved, problems }, 200, origin);
+  } catch (err) {
+    console.error(err);
+    return reply({ error: "Something went wrong. Try again." }, 500, origin);
+  }
+});

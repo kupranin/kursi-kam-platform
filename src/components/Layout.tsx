@@ -11,15 +11,21 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
     { to: '/requests', label: 'Requests' },
     { to: '/follow-ups', label: 'Follow-ups', badge: 'followups' },
     { to: '/clients', label: 'My clients' },
+    { to: '/rates', label: 'Rates' },
     { to: '/team', label: 'My numbers' },
   ],
-  treasury: [{ to: '/rate-desk', label: 'Rate desk', badge: 'queue' }],
+  treasury: [
+    { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
+    { to: '/rates', label: 'Rates' },
+  ],
   admin: [
     { to: '/team', label: 'Team' },
     { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
     { to: '/follow-ups', label: 'Follow-ups' },
     { to: '/clients', label: 'Clients' },
     { to: '/analytics', label: 'Analytics' },
+    { to: '/kpis', label: 'KPIs' },
+    { to: '/rates', label: 'Rates' },
     { to: '/admin', label: 'Admin' },
   ],
   manager: [
@@ -27,6 +33,8 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
     { to: '/follow-ups', label: 'Follow-ups' },
     { to: '/clients', label: 'Clients' },
     { to: '/analytics', label: 'Analytics' },
+    { to: '/kpis', label: 'KPIs' },
+    { to: '/rates', label: 'Rates' },
   ],
 };
 
