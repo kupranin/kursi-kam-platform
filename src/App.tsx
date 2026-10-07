@@ -15,6 +15,7 @@ import Clients from './pages/Clients';
 import Analytics from './pages/Analytics';
 import Kpis from './pages/Kpis';
 import MarketRates from './pages/MarketRates';
+import Chat from './pages/Chat';
 import Admin from './pages/admin/Admin';
 
 const HOME: Record<Role, string> = {
@@ -25,10 +26,10 @@ const HOME: Record<Role, string> = {
 };
 
 const PAGES: Record<Role, string[]> = {
-  kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates'],
-  treasury: ['/rate-desk', '/rates'],
-  admin: ['/team', '/requests', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/admin'],
-  manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates'],
+  kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/chat'],
+  treasury: ['/rate-desk', '/rates', '/chat'],
+  admin: ['/team', '/requests', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/chat', '/admin'],
+  manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/chat'],
 };
 
 export default function App() {
@@ -67,6 +68,7 @@ export default function App() {
         {can('/analytics') && <Route path="/analytics" element={<Analytics />} />}
         {can('/kpis') && <Route path="/kpis" element={<Kpis />} />}
         {can('/rates') && <Route path="/rates" element={<MarketRates />} />}
+        {can('/chat') && <Route path="/chat" element={<Chat />} />}
         {can('/admin') && <Route path="/admin" element={<Admin />} />}
         <Route path="/security" element={<Security />} />
         <Route path="*" element={<Navigate to={HOME[profile.role]} replace />} />

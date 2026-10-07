@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
-import { describeDeal, fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, rateUnit } from '../lib/format';
+import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
 import type { QueueRow, QuoteToday, ReferenceRate } from '../lib/types';
 import { IconClock } from '../components/Icons';
 
@@ -11,11 +11,25 @@ const FAR_PCT = 3;
 
 interface CardState { rate: string; valid: number; declining: boolean; confirmFar: boolean; tried: boolean }
 
+interface OtherReason {
+  id: number;
+  client_name: string | null;
+  client_id: string;
+  kam_name: string | null;
+  sells_currency: string | null;
+  gets_currency: string | null;
+  amount: number | null;
+  gets_amount: number | null;
+  loss_reason_note: string;
+  request_date: string;
+}
+
 export default function RateDesk() {
   const toast = useToast();
   useTick(10000);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
+  const [otherReasons, setOtherReasons] = useState<OtherReason[]>([]);
   const [rates, setRates] = useState<ReferenceRate[]>([]);
   const [defaultValid, setDefaultValid] = useState(15);
   const [cards, setCards] = useState<Record<number, CardState>>({});
@@ -43,6 +57,17 @@ export default function RateDesk() {
     } catch (err) {
       toast((err as Error).message, 'error');
     }
+    supabase.from('request_outcomes')
+      .select('id, client_name, client_id, kam_name, sells_currency, gets_currency, amount, gets_amount, loss_reason_note, request_date')
+      .not('loss_reason_note', 'is', null)
+      .gte('request_date', todayTbilisi(-7))
+      .order('request_date', { ascending: false })
+      .limit(30)
+      .then(({ data, error }) => {
+        if (error) { setOtherReasons([]); return; }
+        setOtherReasons(((data ?? []) as OtherReason[]).filter((row) => row.loss_reason_note.trim()));
+      })
+      .catch(() => setOtherReasons([]));
     setLoaded(true);
   }, [toast]);
 
@@ -104,11 +129,17 @@ export default function RateDesk() {
   // ---- what valid quotes would do to each currency
   const effect: Record<string, number> = {};
   for (const q of quotes.filter((x) => x.quote_state === 'quoted' && !x.went_through && new Date(x.valid_until) > new Date())) {
-    const a = Number(q.amount), rate = Number(q.rate);
-    if (q.sells_currency !== 'GEL') effect[q.sells_currency] = (effect[q.sells_currency] ?? 0) + a;
+    const rate = Number(q.rate);
+    const sellAmt = q.amount != null ? Number(q.amount) : null;
+    const getAmt = q.gets_amount != null ? Number(q.gets_amount) : null;
+    if (sellAmt != null && q.sells_currency !== 'GEL') effect[q.sells_currency] = (effect[q.sells_currency] ?? 0) + sellAmt;
     if (q.gets_currency !== 'GEL') {
-      const paid = q.sells_currency === 'GEL' ? a / rate : a * rate;
-      effect[q.gets_currency] = (effect[q.gets_currency] ?? 0) - paid;
+      const paid = getAmt != null
+        ? getAmt
+        : sellAmt != null && rate > 0
+          ? (q.sells_currency === 'GEL' ? sellAmt / rate : sellAmt * rate)
+          : null;
+      if (paid != null) effect[q.gets_currency] = (effect[q.gets_currency] ?? 0) - paid;
     }
   }
   const usdEq = (ccy: string, v: number) => (nbgMap[ccy] && nbgMap.USD ? (v * nbgMap[ccy]) / nbgMap.USD : null);
@@ -162,12 +193,23 @@ export default function RateDesk() {
                     </div>
                     <div className="row-between">
                       <div>
-                        <div style={{ fontSize: 20, fontWeight: 600 }}>{describeDeal(r.sells_currency, r.amount, r.gets_currency)}</div>
-                        <div className="small muted">{r.client_name ?? 'No name on file'}, ID {r.client_id}</div>
+                        <div className="deal-facts">
+                          <div>
+                            <div className="tiny muted">Client sells</div>
+                            <div style={{ fontSize: 20, fontWeight: 600 }}>{sideAmount(r.sells_currency, r.amount)}</div>
+                          </div>
+                          <div>
+                            <div className="tiny muted">Client gets</div>
+                            <div style={{ fontSize: 20, fontWeight: 600 }}>{sideAmount(r.gets_currency, r.gets_amount)}</div>
+                          </div>
+                        </div>
+                        <div className="small muted" style={{ marginTop: 6 }}>{r.client_name ?? 'No name on file'}, ID {r.client_id}</div>
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>Last rate to this client {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
                     </div>
-                    {r.note && <p className="note-box">KAM's note: {r.note}</p>}
+                    {r.client_rate != null && <p className="note-box">Rate the client is asking: {fmtRate(r.client_rate)}</p>}
+                    {r.note && <p className="note-box">Comment for treasury: {r.note}</p>}
+                    {r.loss_reason_note && <p className="note-box">Other reason: {r.loss_reason_note}</p>}
 
                     {!c.declining && (
                       <>
@@ -246,7 +288,13 @@ export default function RateDesk() {
                       return (
                         <tr key={q.request_id}>
                           <td className="strong">{q.client_name}</td>
-                          <td>{describeDeal(q.sells_currency, q.amount, q.gets_currency)}</td>
+                          <td>
+                            <div>Client sells {sideAmount(q.sells_currency, q.amount)}</div>
+                            <div>Client gets {sideAmount(q.gets_currency, q.gets_amount)}</div>
+                            {q.client_rate != null && <div className="tiny muted">Rate the client is asking: {fmtRate(q.client_rate)}</div>}
+                            {q.note && <div className="tiny muted">Comment for treasury: {q.note}</div>}
+                            {q.loss_reason_note && <div className="tiny muted">Other reason: {q.loss_reason_note}</div>}
+                          </td>
                           <td className="num strong">{fmtRate(q.rate)}</td>
                           <td>{q.kam_name.split(' ')[0]}</td>
                           <td>
@@ -261,6 +309,31 @@ export default function RateDesk() {
                 </table>
               </div>
             )}
+          </section>
+
+          <section className="card flush" aria-labelledby="other-reasons-title">
+            <div className="card-head">
+              <h2 id="other-reasons-title">Other reasons</h2>
+              <span className="small muted">What a KAM typed next to Other when a deal did not go through, from the last 7 days</span>
+            </div>
+            {loaded && !otherReasons.length && <p className="empty">None in the last 7 days.</p>}
+            {otherReasons.map((r) => (
+              <div key={r.id} className="list-row">
+                <div className="when">
+                  <div className="strong">{fmtDay(r.request_date)}</div>
+                  <div className="tiny muted">{r.kam_name}</div>
+                </div>
+                <div className="who">
+                  <div className="name">{r.client_name ?? r.client_id}</div>
+                  <div className="tiny muted">ID {r.client_id}</div>
+                </div>
+                <div className="what">
+                  <div>Client sells {sideAmount(r.sells_currency, r.amount)}</div>
+                  <div>Client gets {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                  <div className="tiny muted">Other reason: {r.loss_reason_note}</div>
+                </div>
+              </div>
+            ))}
           </section>
         </div>
 

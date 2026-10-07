@@ -18,6 +18,9 @@
 //   copy_invite { profile_id }               a fresh set-password link for someone
 //                                            who has not signed in yet. Nothing is emailed,
 //                                            and no SMS or WhatsApp is sent.
+//   copy_reset  { profile_id }               a password-reset link to copy by hand
+//                                            for someone who already has a login.
+//                                            Nothing is emailed, and no SMS or WhatsApp is sent.
 //   send_password_reset { profile_id }       emails a reset link
 //
 // Nobody, including admins, ever sees or sets another person's password.
@@ -435,6 +438,24 @@ Deno.serve(async (req: Request) => {
         if (userWrap.user.last_sign_in_at) throw new HttpError(409, "This person already chose a password");
         const link = await linkForExistingLogin(admin, target.email, target.auth_user_id);
         await audit(admin, me.id, "copy_invite", target.id, { email: target.email });
+        return reply({ link }, 200, origin);
+      }
+
+      case "copy_reset": {
+        const target = await getProfile(admin, body.profile_id);
+        if (!target.auth_user_id || !target.active) throw new HttpError(409, "This person has no active login");
+        if (!APP_URL) throw new HttpError(500, "APP_URL is not set for this function");
+        const { data: userWrap, error: lookupError } = await admin.auth.admin.getUserById(target.auth_user_id);
+        if (lookupError || !userWrap?.user) throw new HttpError(409, "This person has no active login");
+        const email = userWrap.user.email || target.email;
+        const { data, error } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo: `${APP_URL}/set-password` },
+        });
+        const link = data?.properties?.action_link ?? "";
+        if (error || !link) throw new HttpError(400, error?.message ?? "Could not create the link");
+        await audit(admin, me.id, "copy_reset", target.id, { email: target.email });
         return reply({ link }, 200, origin);
       }
 

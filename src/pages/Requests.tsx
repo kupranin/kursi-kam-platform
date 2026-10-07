@@ -3,13 +3,27 @@ import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
-import { ago, describeDeal, fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
+import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, sideAmount, todayTbilisi } from '../lib/format';
 import type { RequestRow, Rules } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import CurrencyPicker from '../components/CurrencyPicker';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
+
+function readAmount(text: string): { ok: boolean; value: number | null } {
+  if (!text.trim()) return { ok: true, value: null };
+  const n = parseAmount(text);
+  return n > 0 ? { ok: true, value: n } : { ok: false, value: null };
+}
+
+function readRate(text: string): { ok: boolean; value: number | null } {
+  const clean = text.trim().replace(',', '.');
+  if (!clean) return { ok: true, value: null };
+  if (!/^\d+(\.\d+)?$/.test(clean)) return { ok: false, value: null };
+  const n = Number(clean);
+  return n > 0 ? { ok: true, value: n } : { ok: false, value: null };
+}
 
 function nextMonth(isoDate: string): string {
   const [y, m] = isoDate.split('-').map(Number);
@@ -39,7 +53,9 @@ export default function Requests() {
   const [info, setInfo] = useState<ClientInfo | null>(null);
   const [sells, setSells] = useState('USD');
   const [gets, setGets] = useState('GEL');
-  const [amount, setAmount] = useState('');
+  const [sellsAmount, setSellsAmount] = useState('');
+  const [getsAmount, setGetsAmount] = useState('');
+  const [clientRate, setClientRate] = useState('');
   const [note, setNote] = useState('');
   const [name, setName] = useState('');
   const [tried, setTried] = useState(false);
@@ -78,14 +94,14 @@ export default function Requests() {
       .order('request_date', { ascending: false })
       .order('requested_at', { ascending: false })
       .range(0, shown - 1);
-    // Before today, plus file rows from today that are not already in "Went through today".
-    // An admin has no today list, so every imported row stays in this history.
-    const past = isKam
-      ? `request_date.lt.${today},and(source.eq.import,went_through.eq.false)`
-      : `request_date.lt.${today},source.eq.import`;
-    q = q.or(past);
-    if (isKam) q = q.eq('kam_id', profile!.id);
-    else if (kamFilter !== 'all') q = q.eq('kam_id', kamFilter);
+    // A KAM's history is before today, plus imported rows from today that are not
+    // already in "Went through today". Admin and manager see every deal, including today.
+    if (isKam) {
+      q = q.or(`request_date.lt.${today},and(source.eq.import,went_through.eq.false)`);
+      q = q.eq('kam_id', profile!.id);
+    } else if (kamFilter !== 'all') {
+      q = q.eq('kam_id', kamFilter);
+    }
     if (month !== 'all') q = q.gte('request_date', month).lt('request_date', nextMonth(month));
     const { data, error, count } = await q;
     if (ticket !== histReq.current) return;
@@ -112,8 +128,12 @@ export default function Requests() {
   }, [seeAll]);
 
   const needsName = Boolean(info?.valid && !info?.name);
-  const amountNum = parseAmount(amount);
-  const amountOk = amountNum > 0;
+  const sellsSide = readAmount(sellsAmount);
+  const getsSide = readAmount(getsAmount);
+  const rateSide = readRate(clientRate);
+  const hasAmount = (sellsSide.value != null) || (getsSide.value != null);
+  const bothBlank = sellsSide.ok && getsSide.ok && !hasAmount;
+  const currenciesOk = Boolean(sells && gets && sells !== gets);
   const nameOk = name.trim().length >= 2;
 
   function onInfo(next: ClientInfo | null) {
@@ -132,19 +152,21 @@ export default function Requests() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTried(true);
-    if (!info?.valid || !amountOk || (needsName && !nameOk)) return;
+    if (!info?.valid || !hasAmount || !sellsSide.ok || !getsSide.ok || !rateSide.ok || !currenciesOk || (needsName && !nameOk)) return;
     setBusy(true);
     try {
       await rpc('log_request', {
         p_client_id: info.id,
         p_sells_currency: sells,
         p_gets_currency: gets,
-        p_amount: amountNum,
+        p_amount: sellsSide.value,
+        p_gets_amount: getsSide.value,
+        p_client_rate: rateSide.value,
         p_note: note.trim() || null,
         p_client_name: needsName ? name.trim() : null,
       });
       toast('Sent to treasury. The rate appears below as soon as they answer.');
-      setRaw(''); setInfo(null); setAmount(''); setNote(''); setName(''); setTried(false);
+      setRaw(''); setInfo(null); setSellsAmount(''); setGetsAmount(''); setClientRate(''); setNote(''); setName(''); setTried(false);
       load();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -170,7 +192,7 @@ export default function Requests() {
   }
 
   async function copy(r: RequestRow) {
-    const text = `${r.client_name ?? r.client_id}: ${r.sells_currency} ${fmtAmount(r.amount)} to ${r.gets_currency} at ${fmtRate(r.rate)}, valid until ${fmtTime(r.rate_valid_until)}`;
+    const text = `${r.client_name ?? r.client_id}: client sells ${sideAmount(r.sells_currency, r.amount)}, client gets ${sideAmount(r.gets_currency, r.gets_amount)} at ${fmtRate(r.rate)}, valid until ${fmtTime(r.rate_valid_until)}`;
     try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: the label still confirms */ }
     setCopied(r.id);
     window.setTimeout(() => setCopied(null), 3000);
@@ -190,7 +212,7 @@ export default function Requests() {
       <div className="page-head">
         <div>
           <h1>Requests</h1>
-          <p>{isKam ? longToday() : 'Past deals, each one under the KAM who handled it'}</p>
+          <p>{isKam ? longToday() : 'Every deal, each one under the KAM who handled it'}</p>
         </div>
         {isKam && <div className="stats">
           <div className="stat"><div className="label">Today</div><div className="value">{todayCount}</div></div>
@@ -213,16 +235,41 @@ export default function Requests() {
                 <span className={'hint' + (tried && !nameOk ? ' error' : '')}>{tried && !nameOk ? "Enter the client's name" : 'Required for a new client. Saved for next time.'}</span>
               </div>
             )}
-            <CurrencyPicker label="Client sells" value={sells} onChange={pickSells} />
-            <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
-              <label htmlFor="amount">Amount</label>
-              <input id="amount" className={'input' + (tried && !amountOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              {tried && !amountOk && <span className="hint error">Enter the amount</span>}
+          </div>
+          <div className="form-row" style={{ marginTop: 16 }}>
+            <div className="deal-side">
+              <CurrencyPicker label="Client sells" value={sells} onChange={pickSells} />
+              <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
+                <label htmlFor="sells-amount">Amount</label>
+                <input id="sells-amount" className={'input' + (tried && !sellsSide.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={sellsAmount} onChange={(e) => setSellsAmount(e.target.value)} />
+                {tried && !sellsSide.ok && <span className="hint error">Enter a valid amount, or leave this side blank</span>}
+              </div>
             </div>
-            <CurrencyPicker label="Client gets" value={gets} onChange={setGets} disabledValue={sells} />
-            <div className="field" style={{ flex: '2 1 220px', minWidth: 200 }}>
-              <label htmlFor="note">Note for treasury <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
-              <input id="note" className="input" autoComplete="off" placeholder="e.g. client's bank offers 2.6900" value={note} onChange={(e) => setNote(e.target.value)} />
+            <div className="deal-side">
+              <CurrencyPicker label="Client gets" value={gets} onChange={setGets} disabledValue={sells} />
+              <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
+                <label htmlFor="gets-amount">Amount</label>
+                <input id="gets-amount" className={'input' + (tried && !getsSide.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={getsAmount} onChange={(e) => setGetsAmount(e.target.value)} />
+                {tried && !getsSide.ok && <span className="hint error">Enter a valid amount, or leave this side blank</span>}
+              </div>
+            </div>
+          </div>
+          <p className={'hint' + (tried && (!currenciesOk || bothBlank) ? ' error' : '')} style={{ margin: '8px 0 0' }}>
+            {tried && !currenciesOk
+              ? 'Choose two different currencies'
+              : tried && bothBlank
+                ? 'Enter an amount on one side'
+                : 'Fill in one amount. Leave the other blank if you do not have it.'}
+          </p>
+          <div className="form-row" style={{ marginTop: 16 }}>
+            <div className="field" style={{ flex: '1 1 200px', minWidth: 180 }}>
+              <label htmlFor="client-rate">Rate the client is asking <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+              <input id="client-rate" className={'input' + (tried && !rateSide.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={clientRate} onChange={(e) => setClientRate(e.target.value)} />
+              <span className={'hint' + (tried && !rateSide.ok ? ' error' : '')}>{tried && !rateSide.ok ? 'Enter the rate the client is asking, or leave it blank' : 'Leave blank if the client did not ask for a rate'}</span>
+            </div>
+            <div className="field" style={{ flex: '2 1 240px', minWidth: 200 }}>
+              <label htmlFor="treasury-comment">Comment for treasury <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+              <input id="treasury-comment" className="input" autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             <div style={{ paddingTop: 27 }}>
               <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? 'Sending…' : 'Ask treasury for a rate'}</button>
@@ -251,9 +298,11 @@ export default function Requests() {
                 <div className="tiny muted">ID {r.client_id}</div>
               </div>
               <div className="what">
-                <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency)}</div>
+                <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
+                {r.client_rate != null && <div className="tiny muted">Rate the client is asking: {fmtRate(r.client_rate)}</div>}
+                {r.note && <div className="tiny muted">Comment: {r.note}</div>}
                 <div className="tiny muted">
-                  {st === 'asking' && (r.note ? 'Note: ' + r.note : 'Asked at ' + fmtTime(r.asked_at))}
+                  {st === 'asking' && 'Asked at ' + fmtTime(r.asked_at)}
                   {st === 'quoted' && 'Tell the client, then wait for their transaction'}
                   {st === 'expired' && 'Ask again if the client still wants to convert'}
                   {st === 'declined' && 'Add details and ask again'}
@@ -280,7 +329,7 @@ export default function Requests() {
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
             <span className="who strong">{r.client_name ?? r.client_id}</span>
-            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency)}{r.rate ? ' at ' + fmtRate(r.rate) : ''}</span>
+            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' at ' + fmtRate(r.rate) : ''}</span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />Went through</span>
           </div>
         ))}
@@ -289,11 +338,11 @@ export default function Requests() {
       <section className="card flush" aria-labelledby="history-title">
         <div className="card-head">
           <div>
-            <h2 id="history-title" style={{ fontSize: 22 }}>Past requests</h2>
+            <h2 id="history-title" style={{ fontSize: 22 }}>{isKam ? 'Past requests' : 'All requests'}</h2>
             <p className="small muted">
               {isKam
                 ? 'Your deals from before today, including the agreement file. A completed deal stays here as went through.'
-                : 'The agreement file and every other past deal, under the KAM who did it.'}
+                : 'Today and every older deal, under the KAM who did it. Pick one person or one month, or leave both on all.'}
               {histLoaded && histCount != null ? ` ${fmtWhole(histCount)} in this view.` : ''}
             </p>
           </div>
@@ -339,8 +388,10 @@ export default function Requests() {
                 {seeAll && <div className="small">{r.kam_name ?? 'No KAM'}</div>}
               </div>
               <div className="what">
-                <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency)}{r.rate ? ' at ' + fmtRate(r.rate) : ''}</div>
-                {r.note && <div className="tiny muted">{r.note}</div>}
+                <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' at ' + fmtRate(r.rate) : ''}</div>
+                {r.client_rate != null && <div className="tiny muted">Rate the client is asking: {fmtRate(r.client_rate)}</div>}
+                {r.note && <div className="tiny muted">Comment: {r.note}</div>}
+                {r.loss_reason_note && <div className="tiny muted">Other reason: {r.loss_reason_note}</div>}
               </div>
               <span className={'pill ' + st.cls} style={{ marginLeft: 'auto' }}>
                 {st.cls === 'pill-ok' && <IconCheck />}{st.label}

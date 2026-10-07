@@ -21,6 +21,15 @@
 //   myvaluta        every bank and kiosk table on myvaluta.ge
 //   valuto          Valuto's currency list
 //   expresslombard  Express Lombard board
+//   crystal         Crystal board (RUB is published per 100 and stored per 1)
+//   girocredit      Giro Credit board (RUB is published per 100 and stored per 1)
+//   fxhub           FX Hub cashless board and its crosses. The cash tab is a kiosk
+//                   and is not stored.
+//
+// The table only accepts known source names. Paste
+// setup/10_market_rate_sources.sql once so crystal, girocredit and fxhub
+// can be saved. Until then those three report a problem and the others
+// still save.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -136,6 +145,61 @@ function appNum(text: string): number | null {
 function code(value: string): string {
   const upper = value.toUpperCase();
   return upper === "RUR" ? "RUB" : upper;
+}
+
+const BOARD_CCY = new Set(["USD", "EUR", "RUB", "CNY"]);
+
+function keepPair(currency: string, quote: string): boolean {
+  return BOARD_CCY.has(currency) && (quote === "GEL" || BOARD_CCY.has(quote));
+}
+
+function asRate(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) return num(value);
+  return null;
+}
+
+function divide(value: number | null, unit: number): number | null {
+  if (value == null) return null;
+  if (unit === 1) return value;
+  return Math.round((value / unit) * 1e8) / 1e8;
+}
+
+// Some boards quote a bundle (100 RUB, 10 ILS). Keep lari per 1 unit when
+// dividing by 10, 100 or 1000 lands in the pair's usual range.
+function quoteUnit(pair: string, buy: number | null, sell: number | null): number {
+  const probe = { source: "", venue: "", venue_kind: "board" as const, currency: "", quote_currency: "", buy, sell, official: null };
+  if (sidesInPair(pair, probe)) return 1;
+  for (const unit of [10, 100, 1000]) {
+    if (sidesInPair(pair, { ...probe, buy: divide(buy, unit), sell: divide(sell, unit) })) return unit;
+  }
+  return 1;
+}
+
+function boardRow(
+  source: string,
+  venue: string,
+  currency: string,
+  quote: string,
+  buy: number | null,
+  sell: number | null,
+  official: number | null,
+): Row | null {
+  const base = code(currency);
+  const quoted = code(quote || "GEL");
+  if (!keepPair(base, quoted) || (buy == null && sell == null)) return null;
+  const unit = quoted === "GEL" ? quoteUnit(base + "/" + quoted, buy, sell) : 1;
+  const nbg = official != null && official > 0 ? divide(official, unit) : null;
+  return {
+    source,
+    venue,
+    venue_kind: "board",
+    currency: base,
+    quote_currency: quoted,
+    buy: divide(buy, unit),
+    sell: divide(sell, unit),
+    official: nbg,
+  };
 }
 
 // Same pair rule as src/lib/rateGrid.ts. BASE/QUOTE is quote per 1 base.
@@ -314,6 +378,53 @@ async function valuto(): Promise<Row[]> {
   }));
 }
 
+async function crystal(): Promise<Row[]> {
+  const body = await getJson("https://crystal.ge/api/wi/rate/v1/cryst?key=52ef35743f3c4f5027d82f051c258241") as { data?: unknown };
+  let payload = body.data;
+  if (typeof payload === "string") payload = JSON.parse(payload) as unknown;
+  const list = (payload as { data?: { CurrencyRate?: { ISO?: string; AMOUNT_BUY?: unknown; AMOUNT_SELL?: unknown; NBGRate?: unknown }[] } })?.data?.CurrencyRate ?? [];
+  const rows: Row[] = [];
+  for (const item of list) {
+    const row = boardRow("crystal", "Crystal", item.ISO ?? "", "GEL", asRate(item.AMOUNT_BUY), asRate(item.AMOUNT_SELL), asRate(item.NBGRate));
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
+async function giro(): Promise<Row[]> {
+  const data = await getJson("https://girocredit.ge/wp-json/currency/rates") as Record<string, {
+    currency_code?: string;
+    buy_price?: unknown;
+    sell_price?: unknown;
+    nbg?: unknown;
+  }>;
+  const rows: Row[] = [];
+  for (const item of Object.values(data)) {
+    const row = boardRow("girocredit", "Giro Credit", item.currency_code ?? "", "GEL", asRate(item.buy_price), asRate(item.sell_price), asRate(item.nbg));
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
+async function fxhub(): Promise<Row[]> {
+  const data = await getJson("https://fxhub.ge/api/rates/all") as {
+    cashless?: Record<string, { buy?: unknown; sell?: unknown }>;
+    crossRates?: Record<string, { buy?: unknown; sell?: unknown }>;
+  };
+  const rows: Row[] = [];
+  const take = (table: Record<string, { buy?: unknown; sell?: unknown }> | undefined) => {
+    for (const [pair, quote] of Object.entries(table ?? {})) {
+      const [currency, quoted] = pair.split("/");
+      if (!currency || !quoted || pair.split("/").length !== 2) continue;
+      const row = boardRow("fxhub", "FX Hub", currency, quoted, asRate(quote.buy), asRate(quote.sell), null);
+      if (row) rows.push(row);
+    }
+  };
+  take(data.cashless);
+  take(data.crossRates);
+  return rows;
+}
+
 async function lombard(): Promise<Row[]> {
   const res = await fetch("https://expresslombard.ge/api/currencies/get-currencies", {
     headers: { ...HEADERS, "x-lang": "GE" },
@@ -387,6 +498,9 @@ Deno.serve(async (req: Request) => {
       ["Rico", rico],
       ["Valuto", valuto],
       ["Express Lombard", lombard],
+      ["Crystal", crystal],
+      ["Giro Credit", giro],
+      ["FX Hub", fxhub],
       ["Myvaluta banks", () => myvaluta("bank")],
       ["Myvaluta kiosks", () => myvaluta("kiosk")],
     ];

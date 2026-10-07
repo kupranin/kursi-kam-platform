@@ -21,8 +21,11 @@ export interface RequestRow {
   sells_currency: string | null;
   gets_currency: string | null;
   amount: number | null;
+  gets_amount?: number | null;
+  client_rate?: number | null;
   rate: number | null;
   note: string | null;
+  loss_reason_note?: string | null;
   loss_reason: string | null;
   source: 'app' | 'import';
   went_through: boolean;
@@ -94,8 +97,11 @@ export interface QueueRow {
   is_new_client: boolean;
   sells_currency: string;
   gets_currency: string;
-  amount: number;
+  amount: number | null;
+  gets_amount?: number | null;
+  client_rate?: number | null;
   note: string | null;
+  loss_reason_note?: string | null;
   last_rate: number | null;
   last_rate_at: string | null;
   standard_rate: number | null;
@@ -109,7 +115,11 @@ export interface QuoteToday {
   kam_name: string;
   sells_currency: string;
   gets_currency: string;
-  amount: number;
+  amount: number | null;
+  gets_amount?: number | null;
+  client_rate?: number | null;
+  note?: string | null;
+  loss_reason_note?: string | null;
   rate: number;
   quoted_at: string;
   valid_until: string;
@@ -161,3 +171,18 @@ export const ROLE_NAMES: Record<Role, string> = {
   treasury: 'Treasury',
   kam: 'KAM',
 };
+
+export interface StaffPerson {
+  id: string;
+  full_name: string;
+  role: Role;
+  active: boolean;
+}
+
+export interface StaffMessage {
+  id: number;
+  sender_id: string;
+  recipient_id: string;
+  body: string;
+  created_at: string;
+}

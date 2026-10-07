@@ -22,9 +22,12 @@ function describe(a: AuditRow, names: Names): string {
   const o = (a.old_data ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   switch (a.table_name) {
     case 'requests':
-      if (a.action === 'insert') return `Asked for a rate: client ${n.client_id}, ${describeDeal(n.sells_currency, n.amount, n.gets_currency).toLowerCase()}`;
+      if (a.action === 'insert') return `Asked for a rate: client ${n.client_id}, ${describeDeal(n.sells_currency, n.amount, n.gets_currency, n.gets_amount).toLowerCase()}`;
       if (a.action === 'delete') return `Deleted request #${a.row_key} (client ${o.client_id})`;
-      if (o.loss_reason !== n.loss_reason) return n.loss_reason ? `Gave a reason for request #${a.row_key}: ${n.loss_reason}` : `Cleared the reason for request #${a.row_key}`;
+      if (o.loss_reason !== n.loss_reason || o.loss_reason_note !== n.loss_reason_note) {
+        if (!n.loss_reason) return `Cleared the reason for request #${a.row_key}`;
+        return `Gave a reason for request #${a.row_key}: ${n.loss_reason}${n.loss_reason_note ? ` (${n.loss_reason_note})` : ''}`;
+      }
       if (o.quote_status !== n.quote_status && n.quote_status === 'asking') return `Asked again for request #${a.row_key}`;
       return `Changed request #${a.row_key}`;
     case 'quotes':

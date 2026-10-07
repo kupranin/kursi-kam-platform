@@ -6,6 +6,10 @@ import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/fo
 import type { LossReason, RequestRow, WinbackRow } from '../lib/types';
 import { IconCheck } from '../components/Icons';
 
+function isOther(reason: LossReason): boolean {
+  return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
+}
+
 const STEPS: { value: string; label: string }[] = [
   { value: 'not_contacted', label: 'Not contacted' },
   { value: 'called', label: 'Called' },
@@ -23,6 +27,7 @@ export default function FollowUps() {
 
   const [asks, setAsks] = useState<RequestRow[]>([]);
   const [answered, setAnswered] = useState<Record<number, string>>({});
+  const [otherText, setOtherText] = useState<Record<number, string>>({});
   const [reasons, setReasons] = useState<LossReason[]>([]);
   const [winback, setWinback] = useState<WinbackRow[]>([]);
   const [filter, setFilter] = useState<'All' | 'A' | 'B' | 'C'>('All');
@@ -48,8 +53,10 @@ export default function FollowUps() {
   useEffect(() => { load(); }, [load]);
 
   async function answer(row: RequestRow, code: string | null) {
+    const reason = reasons.find((r) => r.code === code);
+    const detail = reason && isOther(reason) ? (otherText[row.id] ?? '').trim() : null;
     try {
-      await rpc('set_loss_reason', { p_request_id: row.id, p_reason: code });
+      await rpc('set_loss_reason', { p_request_id: row.id, p_reason: code, p_detail: detail || null });
       setAnswered((m) => {
         const next = { ...m };
         if (code) next[row.id] = code; else delete next[row.id];
@@ -67,6 +74,13 @@ export default function FollowUps() {
   }
 
   const label = (code: string) => reasons.find((r) => r.code === code)?.label_en ?? code;
+  const savedLabel = (id: number) => {
+    const code = answered[id];
+    const reason = reasons.find((r) => r.code === code);
+    const text = (otherText[id] ?? '').trim();
+    if (reason && isOther(reason) && text) return `${reason.label_en}: ${text}`;
+    return label(code);
+  };
   const left = asks.filter((a) => !answered[a.id]).length;
   const shown = useMemo(() => winback.filter((w) => filter === 'All' || w.tier === filter), [winback, filter]);
   const contacted = winback.filter((w) => w.step !== 'not_contacted').length;
@@ -85,7 +99,7 @@ export default function FollowUps() {
         <div className="card-head">
           <div>
             <h2 id="ask-title" style={{ fontSize: 22 }}>Why didn't these go through?</h2>
-            <p className="small" style={{ color: 'var(--ink-2)' }}>Requests from the last 7 days with no matching transaction.{canAct ? ' One tap each.' : ''}</p>
+            <p className="small" style={{ color: 'var(--ink-2)' }}>Requests from the last 7 days with no matching transaction.{canAct ? ' Pick a reason. Next to Other, type your own if you need to.' : ''}</p>
           </div>
           {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'All answered. Thank you.' : left + ' left'}</span>}
         </div>
@@ -96,18 +110,30 @@ export default function FollowUps() {
               <div style={{ flex: '1 1 280px', minWidth: 0 }}>
                 <div className="name">{a.client_name ?? a.client_id}</div>
                 <div className="small muted">
-                  {fmtDay(a.request_date)}: {describeDeal(a.sells_currency, a.amount, a.gets_currency)}{a.rate ? ' at ' + fmtRate(a.rate) : ''}
+                  {fmtDay(a.request_date)}: {describeDeal(a.sells_currency, a.amount, a.gets_currency, a.gets_amount)}{a.rate ? ' at ' + fmtRate(a.rate) : ''}
                   {showOwner && a.kam_name ? ', ' + a.kam_name : ''}
                 </div>
               </div>
               {answered[a.id] ? (
                 <div className="row">
-                  <span className="ok-text strong row" style={{ gap: 8 }}><IconCheck />Saved: {label(answered[a.id])}</span>
+                  <span className="ok-text strong row" style={{ gap: 8 }}><IconCheck />Saved: {savedLabel(a.id)}</span>
                   <button type="button" className="link" onClick={() => answer(a, null)}>Undo</button>
                 </div>
               ) : canAct ? (
                 <div className="chips">
-                  {reasons.map((r) => (
+                  {reasons.map((r) => isOther(r) ? (
+                    <span key={r.code} className="other-reason">
+                      <button type="button" className="chip" onClick={() => answer(a, r.code)}>{r.label_en}</button>
+                      <input
+                        className="input"
+                        aria-label="Other reason"
+                        placeholder="Type the reason"
+                        value={otherText[a.id] ?? ''}
+                        onChange={(e) => setOtherText((m) => ({ ...m, [a.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); answer(a, r.code); } }}
+                      />
+                    </span>
+                  ) : (
                     <button key={r.code} type="button" className="chip" onClick={() => answer(a, r.code)}>{r.label_en}</button>
                   ))}
                 </div>

@@ -9,7 +9,8 @@ import { IconDownload } from '../components/Icons';
 export default function Team() {
   const { profile } = useAuth();
   const role = profile!.role;
-  const months = monthOptions(6);
+  const isKam = role === 'kam';
+  const months = monthOptions(role === 'admin' ? 36 : 6);
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioRow[]>([]);
@@ -52,7 +53,6 @@ export default function Team() {
   const failedShare = total.turnover > 0 ? Math.round((total.tns / total.turnover) * 100) : 0;
   const biggestFailed = [...portfolio].sort((a, b) => Number(b.turnover_not_successful) - Number(a.turnover_not_successful)).filter((p) => Number(p.turnover_not_successful) > 0).slice(0, 3);
   const monthLabel = months.find((m) => m.value === month)?.label ?? month;
-  const isKam = role === 'kam';
 
   function exportCsv() {
     downloadCsv(`kam-portfolio-${month.slice(0, 7)}.csv`, [

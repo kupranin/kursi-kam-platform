@@ -13,10 +13,12 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
     { to: '/clients', label: 'My clients' },
     { to: '/rates', label: 'Rates' },
     { to: '/team', label: 'My numbers' },
+    { to: '/chat', label: 'Chat' },
   ],
   treasury: [
     { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
     { to: '/rates', label: 'Rates' },
+    { to: '/chat', label: 'Chat' },
   ],
   admin: [
     { to: '/team', label: 'Team' },
@@ -27,6 +29,7 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
     { to: '/analytics', label: 'Analytics' },
     { to: '/kpis', label: 'KPIs' },
     { to: '/rates', label: 'Rates' },
+    { to: '/chat', label: 'Chat' },
     { to: '/admin', label: 'Admin' },
   ],
   manager: [
@@ -37,6 +40,7 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
     { to: '/analytics', label: 'Analytics' },
     { to: '/kpis', label: 'KPIs' },
     { to: '/rates', label: 'Rates' },
+    { to: '/chat', label: 'Chat' },
   ],
 };
 

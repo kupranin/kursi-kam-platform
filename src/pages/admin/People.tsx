@@ -88,9 +88,10 @@ export default function People() {
   const [contact, setContact] = useState({ phone: '', channels: ['email'] as string[] });
   const [ready, setReady] = useState<InviteReady | null>(null);
   const [copied, setCopied] = useState(false);
-  const [shown, setShown] = useState<{ id: string; name: string; link: string } | null>(null);
+  const [shown, setShown] = useState<{ id: string; name: string; link: string; kind: 'invite' | 'reset' } | null>(null);
   const [shownCopied, setShownCopied] = useState(false);
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
   const shownRow = useRef<HTMLTableRowElement>(null);
   const readyBox = useRef<HTMLDivElement>(null);
 
@@ -172,7 +173,7 @@ export default function People() {
       if (!res.link) {
         toast('No link came back. Paste the updated admin-users function in Supabase, then try again.', 'error');
       } else {
-        setShown({ id: p.id, name: p.full_name, link: res.link });
+        setShown({ id: p.id, name: p.full_name, link: res.link, kind: 'invite' });
         setShownCopied(false);
         const ok = await copyText(res.link, setShownCopied);
         if (ok) toast(`Invite link copied for ${p.full_name}.`);
@@ -184,6 +185,27 @@ export default function People() {
         : message, 'error');
     }
     setCopyingId(null);
+  }
+
+  async function copyReset(p: Person) {
+    setResettingId(p.id);
+    try {
+      const res = await adminUsers<{ link?: string }>({ action: 'copy_reset', profile_id: p.id });
+      if (!res.link) {
+        toast('No link came back. Paste the updated admin-users function in Supabase, then try again.', 'error');
+      } else {
+        setShown({ id: p.id, name: p.full_name, link: res.link, kind: 'reset' });
+        setShownCopied(false);
+        const ok = await copyText(res.link, setShownCopied);
+        if (ok) toast(`Reset link copied for ${p.full_name}.`);
+      }
+    } catch (err) {
+      const message = (err as Error).message;
+      toast(/unknown action/i.test(message)
+        ? 'Copy reset link is not on the server yet. Paste the updated admin-users function in Supabase and deploy it, then try again.'
+        : message, 'error');
+    }
+    setResettingId(null);
   }
 
   async function saveContact(p: Person) {
@@ -313,8 +335,9 @@ export default function People() {
                     <td>
                       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                         {me && <span className="small muted">This is you</span>}
-                        {needsLink && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id} onClick={() => copyInvite(p)}>{copyingId === p.id ? 'Preparing the link…' : 'Copy invite link'}</button>}
+                        {needsLink && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id || resettingId === p.id} onClick={() => copyInvite(p)}>{copyingId === p.id ? 'Preparing the link…' : 'Copy invite link'}</button>}
                         {!me && !p.has_login && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => { setInviting(true); setInv({ full_name: p.full_name.includes('@') ? '' : p.full_name, email: p.email, role: p.role, phone: '', channels: ['email'] }); }}>Invite</button>}
+                        {!me && p.has_login && p.active && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id || resettingId === p.id} onClick={() => copyReset(p)}>{resettingId === p.id ? 'Preparing the link…' : 'Copy reset link'}</button>}
                         {!me && p.has_login && p.active && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => act({ action: 'send_password_reset', profile_id: p.id }, `Password reset link sent to ${p.email}.`)}>{p.password_set ? 'Send password reset' : 'Resend invite'}</button>}
                         {!me && p.has_login && (p.active
                           ? <button type="button" className="btn btn-danger" style={{ minHeight: 40 }} onClick={() => window.confirm(`Switch off ${p.full_name}'s login? Their past requests stay in the reports.`) && act({ action: 'deactivate', profile_id: p.id }, `${p.full_name}'s login is switched off.`)}>Switch off</button>
@@ -326,13 +349,15 @@ export default function People() {
                     <tr ref={shownRow}>
                       <td colSpan={5}>
                         <div role="status" style={{ margin: '4px 0 8px', padding: 20, borderRadius: 12, background: 'var(--ok-bg)' }}>
-                          <h3 style={{ fontSize: 18 }}>Invite ready for {shown.name}</h3>
+                          <h3 style={{ fontSize: 18 }}>{shown.kind === 'reset' ? `Reset link ready for ${shown.name}` : `Invite ready for ${shown.name}`}</h3>
                           <p className="small" style={{ margin: '8px 0 12px', color: 'var(--ink-2)' }}>
-                            Copy this link and send it to them. They open it and choose their own password. The link works once. It was not emailed.
+                            {shown.kind === 'reset'
+                              ? 'Copy this link and send it to them. They open it and choose a new password. The link works once. It was not emailed.'
+                              : 'Copy this link and send it to them. They open it and choose their own password. The link works once. It was not emailed.'}
                           </p>
                           <div className="field">
-                            <label htmlFor={'invite-link-' + p.id}>Link</label>
-                            <textarea id={'invite-link-' + p.id} className="input" readOnly rows={3} value={shown.link} onFocus={(e) => e.currentTarget.select()} />
+                            <label htmlFor={(shown.kind === 'reset' ? 'reset-link-' : 'invite-link-') + p.id}>Link</label>
+                            <textarea id={(shown.kind === 'reset' ? 'reset-link-' : 'invite-link-') + p.id} className="input" readOnly rows={3} value={shown.link} onFocus={(e) => e.currentTarget.select()} />
                           </div>
                           <div className="row" style={{ marginTop: 12 }}>
                             <button type="button" className="btn btn-dark" onClick={() => copyText(shown.link, setShownCopied)}>{shownCopied ? 'Copied' : 'Copy link'}</button>

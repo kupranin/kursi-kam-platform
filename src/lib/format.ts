@@ -63,9 +63,22 @@ export function parseAmount(text: string): number {
   return Number(clean);
 }
 
-export function describeDeal(sells: string | null, amount: number | null, gets: string | null): string {
+export function describeDeal(
+  sells: string | null,
+  amount: number | null,
+  gets: string | null,
+  getsAmount?: number | null,
+): string {
   if (!sells || !gets) return 'Imported request';
-  return `Sells ${sells} ${fmtAmount(amount)} for ${gets}`;
+  const sellSide = amount != null ? `${sells} ${fmtAmount(amount)}` : sells;
+  const getSide = getsAmount != null ? `${gets} ${fmtAmount(getsAmount)}` : gets;
+  return `Sells ${sellSide} for ${getSide}`;
+}
+
+/** "USD 10,000" or just "USD" when that side's amount was left blank. */
+export function sideAmount(currency: string | null, amount: number | null | undefined): string {
+  if (!currency) return '';
+  return amount != null ? `${currency} ${fmtAmount(amount)}` : currency;
 }
 
 export function rateUnit(sells: string, gets: string): string {
