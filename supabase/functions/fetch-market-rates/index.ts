@@ -7,10 +7,12 @@
 // Turn OFF Enforce JWT verification when deploying. This function
 // checks the caller itself.
 //
-// Each board and bank fetch is appended, so the rates page can show
-// 11:00, 13:00, 15:00, 17:00 and 19:00. Kiosks stay as the latest row
-// only. Paste 7_market_rates_history.sql once so the table keeps history.
-// Until that is pasted, a duplicate key replaces the latest row.
+// Each board and bank fetch is appended. Rows already stored stay, so
+// Download rates can show 11:00, 13:00, 15:00, 17:00 and 19:00.
+// Kiosks stay as the latest row only; they are not on the page or in
+// the download. Paste 7_market_rates_history.sql once so the table can
+// keep more than one snapshot. Until that is pasted, a new fetch is
+// not saved over the previous one.
 //
 // Sources
 //   kursi           api-core.kursi.ge public currencies.
@@ -420,15 +422,15 @@ Deno.serve(async (req: Request) => {
         }
         const detail = `${error.message} ${error.details ?? ""}`;
         const duplicate = error.code === "23505" || /duplicate key/i.test(detail);
-        // History is on: this exact snapshot is already stored.
+        // This exact snapshot is already stored. Leave every older row in place.
         if (duplicate && /fetched_at/i.test(detail)) {
           saved += clean.length;
           continue;
         }
-        // History is not on yet: the old key keeps one row per pair.
-        if (duplicate && /\(source,\s*venue,\s*currency,\s*quote_currency\)/i.test(detail)) {
-          await replaceLatest(admin, source, kind, payload);
-          saved += clean.length;
+        // The old key allows one row per pair. Do not delete it: that would
+        // wipe the download log. History SQL adds fetched_at to the key.
+        if (duplicate) {
+          problems.push(name + " was not saved. Paste 7_market_rates_history.sql so each refresh is kept, then update again.");
           continue;
         }
         throw new Error(error.message);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -70,12 +70,16 @@ export default function MarketRates() {
   const [board, setBoard] = useState<CurrentBoard>(EMPTY_BOARD);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const { data, error } = await supabase.rpc('market_rate_grid', { p_days: 14 });
+    if (seq !== loadSeq.current) return;
     if (!error) {
       const slotted = asList(data).map((row) => toSlotted(row as Record<string, unknown>)).filter((row): row is SlottedRate => row != null);
       const latest = await loadRecentSnapshots();
+      if (seq !== loadSeq.current) return;
       setGrid(buildRateGrid(slotted));
       setBoard(buildCurrentBoard(latest.length ? latest : slotted));
       return;
@@ -83,16 +87,26 @@ export default function MarketRates() {
     const missing = /market_rate_grid|schema cache|Could not find the function/i.test(error.message);
     if (!missing) throw new Error(error.message);
     const raw = await loadRawSnapshots();
+    if (seq !== loadSeq.current) return;
     setGrid(buildRateGrid(assignRateSlots(raw)));
     setBoard(buildCurrentBoard(raw));
   }, []);
 
   useEffect(() => {
     let live = true;
-    load()
-      .then(() => { if (live) setLoaded(true); })
-      .catch((err: Error) => { if (live) toast(err.message, 'error'); });
-    return () => { live = false; };
+    const run = (announce: boolean) => {
+      load()
+        .then(() => { if (live) setLoaded(true); })
+        .catch((err: Error) => { if (live && announce) toast(err.message, 'error'); });
+    };
+    run(true);
+    // The 30-minute job writes in the database. Reload the board and the
+    // download from those stored rows so an open page picks them up.
+    const timer = window.setInterval(() => run(false), 5 * 60 * 1000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
   }, [load, toast]);
 
   async function refresh() {
@@ -130,7 +144,8 @@ export default function MarketRates() {
           <h1>Rates</h1>
           <p>
             Latest buy and sell for USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.
-            {updated ? ' Updated ' + updated + '.' : ''} Download rates for the 11:00–19:00 history.
+            {updated ? ' Updated ' + updated + '.' : ''} Rates refresh on their own every 30 minutes.
+            Download rates for the 11:00–19:00 history.
           </p>
         </div>
         <div className="row">
