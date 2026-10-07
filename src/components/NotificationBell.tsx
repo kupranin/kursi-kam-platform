@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime } from '../lib/format';
 
@@ -21,9 +22,9 @@ interface Note {
 
 export default function NotificationBell() {
   const { profile } = useAuth();
+  const { role } = useViewAs();
   const { lang, t } = useI18n();
   const me = profile!.id;
-  const role = profile!.role;
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [read, setRead] = useState<Set<number>>(new Set());

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { rpc } from '../lib/supabase';
-import { useAuth } from '../lib/auth';
+import { useViewAs } from '../lib/viewAs';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { fmtShort, fmtWhole } from '../lib/format';
@@ -50,10 +50,10 @@ function monthLabel(start: string): string {
 }
 
 export default function Analytics() {
-  const { profile } = useAuth();
+  const { role } = useViewAs();
   const { t } = useI18n();
   const toast = useToast();
-  const isAdmin = profile!.role === 'admin';
+  const isAdmin = role === 'admin';
   const [month, setMonth] = useState('all');
   const [months, setMonths] = useState<MonthRow[]>([]);
   const [kpis, setKpis] = useState<Kpis>(EMPTY);

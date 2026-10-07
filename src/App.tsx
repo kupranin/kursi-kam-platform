@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { useI18n } from './lib/i18n';
+import { HOME, PAGES } from './lib/nav';
 import { arrivedFrom, isConfigured } from './lib/supabase';
-import type { Role } from './lib/types';
+import { useViewAs } from './lib/viewAs';
 import Layout from './components/Layout';
 import LangSwitch from './components/LangSwitch';
 import Login from './pages/Login';
@@ -21,22 +22,9 @@ import Chat from './pages/Chat';
 import RequestLog from './pages/RequestLog';
 import Admin from './pages/admin/Admin';
 
-const HOME: Record<Role, string> = {
-  kam: '/requests',
-  treasury: '/rate-desk',
-  admin: '/team',
-  manager: '/team',
-};
-
-const PAGES: Record<Role, string[]> = {
-  kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat'],
-  treasury: ['/rate-desk', '/rates', '/log', '/chat'],
-  admin: ['/team', '/requests', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat', '/admin'],
-  manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
-};
-
 export default function App() {
   const { loading, session, profile, needsSecondFactor, recovering, signOut } = useAuth();
+  const { role } = useViewAs();
   const { t } = useI18n();
   const location = useLocation();
 
@@ -58,13 +46,13 @@ export default function App() {
     );
   }
 
-  const allowed = PAGES[profile.role];
+  const allowed = PAGES[role];
   const can = (path: string) => allowed.includes(path);
 
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Navigate to={HOME[profile.role]} replace />} />
+        <Route path="/" element={<Navigate to={HOME[role]} replace />} />
         {can('/requests') && <Route path="/requests" element={<Requests />} />}
         {can('/follow-ups') && <Route path="/follow-ups" element={<FollowUps />} />}
         {can('/rate-desk') && <Route path="/rate-desk" element={<RateDesk />} />}
@@ -77,7 +65,7 @@ export default function App() {
         {can('/chat') && <Route path="/chat" element={<Chat />} />}
         {can('/admin') && <Route path="/admin" element={<Admin />} />}
         <Route path="/security" element={<Security />} />
-        <Route path="*" element={<Navigate to={HOME[profile.role]} replace />} />
+        <Route path="*" element={<Navigate to={HOME[role]} replace />} />
       </Routes>
     </Layout>
   );

@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtRate, sideAmount } from '../lib/format';
 import { classifyRequest, treasuryReason, type LogCode } from '../lib/requestStatus';
@@ -9,8 +10,8 @@ import type { RequestRow } from '../lib/types';
 
 export default function RequestLog() {
   const { profile } = useAuth();
+  const { role } = useViewAs();
   const { t, lang } = useI18n();
-  const role = profile!.role;
   const mine = role === 'kam';
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loaded, setLoaded] = useState(false);

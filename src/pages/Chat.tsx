@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { rpc, supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime } from '../lib/format';
 import type { StaffMessage, StaffPerson } from '../lib/types';
@@ -15,10 +16,11 @@ function preview(body: string): string {
 
 export default function Chat() {
   const { profile } = useAuth();
+  const { role } = useViewAs();
   const { t, roleName } = useI18n();
   const me = profile!.id;
-  // Same split as private.can_see_all(): admin and manager.
-  const canSeeAll = profile!.role === 'admin' || profile!.role === 'manager';
+  // Same split as private.can_see_all(): admin and manager. An admin's chosen view follows that split.
+  const canSeeAll = role === 'admin' || role === 'manager';
 
   const [view, setView] = useState<'chat' | 'log'>('chat');
   const [people, setPeople] = useState<StaffPerson[]>([]);

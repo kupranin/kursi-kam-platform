@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { rpc } from '../lib/supabase';
-import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { fmtDay } from '../lib/format';
 import type { ClientMatch } from '../lib/types';
 
 export default function Clients() {
-  const { profile } = useAuth();
+  const { role } = useViewAs();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ClientMatch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +25,7 @@ export default function Clients() {
   }, [q]);
 
   const { t } = useI18n();
-  const mine = profile!.role === 'kam';
+  const mine = role === 'kam';
   return (
     <>
       <div className="page-head">

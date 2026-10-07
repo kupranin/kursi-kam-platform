@@ -3,14 +3,15 @@ import { Link } from 'react-router-dom';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { downloadCsv, fmtShort, fmtWhole, monthOptions } from '../lib/format';
 import type { PortfolioRow, Rules, SummaryRow, WinbackRow } from '../lib/types';
 import { IconDownload } from '../components/Icons';
 
 export default function Team() {
   const { profile } = useAuth();
+  const { role } = useViewAs();
   const { t } = useI18n();
-  const role = profile!.role;
   const isKam = role === 'kam';
   const months = monthOptions(role === 'admin' ? 36 : 6);
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
@@ -40,7 +41,10 @@ export default function Team() {
     rpc<WinbackRow[]>('winback_list').then(setWinback).catch(() => setWinback([]));
   }, []);
 
-  const total = summary.reduce(
+  const visibleSummary = isKam ? summary.filter((r) => r.kam_id === profile!.id) : summary;
+  const visiblePortfolio = isKam ? portfolio.filter((p) => p.owner_id === profile!.id) : portfolio;
+  const visibleWinback = isKam ? winback.filter((w) => w.owner_id === profile!.id) : winback;
+  const total = visibleSummary.reduce(
     (a, r) => ({
       clients: a.clients + Number(r.clients),
       turnover: a.turnover + Number(r.turnover),
@@ -51,15 +55,15 @@ export default function Team() {
     }),
     { clients: 0, turnover: 0, tns: 0, income: 0, judged: 0, won: 0 },
   );
-  const maxTurnover = Math.max(1, ...summary.map((r) => Number(r.turnover)));
+  const maxTurnover = Math.max(1, ...visibleSummary.map((r) => Number(r.turnover)));
   const failedShare = total.turnover > 0 ? Math.round((total.tns / total.turnover) * 100) : 0;
-  const biggestFailed = [...portfolio].sort((a, b) => Number(b.turnover_not_successful) - Number(a.turnover_not_successful)).filter((p) => Number(p.turnover_not_successful) > 0).slice(0, 3);
+  const biggestFailed = [...visiblePortfolio].sort((a, b) => Number(b.turnover_not_successful) - Number(a.turnover_not_successful)).filter((p) => Number(p.turnover_not_successful) > 0).slice(0, 3);
   const monthLabel = months.find((m) => m.value === month)?.label ?? month;
 
   function exportCsv() {
     downloadCsv(`kam-portfolio-${month.slice(0, 7)}.csv`, [
       ['კლიენტის ID', 'კლიენტი', 'KAM', 'მოთხოვნები პერიოდში', 'ბრუნვა GEL', 'აქედან არ გავიდა', 'შემოსავალი GEL', 'ტრანზაქციები'],
-      ...portfolio.map((p) => [p.client_id, p.client_name, p.owner_name, p.requests_in_window, p.turnover, p.turnover_not_successful, p.income, p.transactions]),
+      ...visiblePortfolio.map((p) => [p.client_id, p.client_name, p.owner_name, p.requests_in_window, p.turnover, p.turnover_not_successful, p.income, p.transactions]),
     ]);
   }
 
@@ -75,7 +79,7 @@ export default function Team() {
           <select id="month" className="select" style={{ width: 'auto' }} value={month} onChange={(e) => setMonth(e.target.value)}>
             {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
-          <button type="button" className="btn" onClick={exportCsv} disabled={!portfolio.length}><IconDownload />ჩამოტვირთვა Excel-ისთვის</button>
+          <button type="button" className="btn" onClick={exportCsv} disabled={!visiblePortfolio.length}><IconDownload />ჩამოტვირთვა Excel-ისთვის</button>
         </div>
       </div>
 
@@ -98,8 +102,8 @@ export default function Team() {
           <div className="legend"><span><i style={{ background: 'var(--aubergine)' }} />გავიდა</span><span><i style={{ background: 'var(--orange)' }} />არ გავიდა</span></div>
         </div>
         {loading && <p className="empty">იტვირთება…</p>}
-        {!loading && !summary.length && <p className="empty">ამ თვეში მოთხოვნა ან ბრუნვა ჯერ არ არის.</p>}
-        {!loading && summary.length > 0 && (
+        {!loading && !visibleSummary.length && <p className="empty">ამ თვეში მოთხოვნა ან ბრუნვა ჯერ არ არის.</p>}
+        {!loading && visibleSummary.length > 0 && (
           <div className="table-wrap">
             <table className="table" style={{ minWidth: 980 }}>
               <thead>
@@ -109,7 +113,7 @@ export default function Team() {
                 </tr>
               </thead>
               <tbody>
-                {summary.map((r) => {
+                {visibleSummary.map((r) => {
                   const t = Number(r.turnover), ns = Number(r.turnover_not_successful);
                   return (
                     <tr key={r.kam_id}>
@@ -131,7 +135,7 @@ export default function Team() {
                     </tr>
                   );
                 })}
-                {summary.length > 1 && (
+                {visibleSummary.length > 1 && (
                   <tr>
                     <th scope="row" className="strong">სულ</th>
                     <td className="num strong">{fmtWhole(total.clients)}</td>
@@ -176,8 +180,8 @@ export default function Team() {
             <div style={{ maxWidth: 520 }}>
               <h2 id="wb-title">დაბრუნება</h2>
               <p style={{ margin: '6px 0 0', color: 'var(--ink-2)' }}>
-                {winback.length} {winback.length === 1 ? 'კლიენტმა' : 'კლიენტებმა'} კურსი ითხოვა და მას შემდეგ წარმატებული ტრანზაქცია არ ჰქონია.
-                {' '}პრიორიტეტი A, ჯერ დაუკავშირებელი: {winback.filter((w) => w.tier === 'A' && w.step === 'not_contacted').length}.
+                {visibleWinback.length} {visibleWinback.length === 1 ? 'კლიენტმა' : 'კლიენტებმა'} კურსი ითხოვა და მას შემდეგ წარმატებული ტრანზაქცია არ ჰქონია.
+                {' '}პრიორიტეტი A, ჯერ დაუკავშირებელი: {visibleWinback.filter((w) => w.tier === 'A' && w.step === 'not_contacted').length}.
               </p>
             </div>
             <Link to="/follow-ups" className="btn btn-dark">დაბრუნების გახსნა</Link>

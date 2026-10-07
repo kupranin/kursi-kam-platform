@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../lib/auth';
+import { useViewAs } from '../lib/viewAs';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { downloadCsv, fmtDateTime, fmtRate, todayTbilisi } from '../lib/format';
@@ -66,8 +66,8 @@ function downloadGrid(grid: RateGrid) {
 export default function MarketRates() {
   const toast = useToast();
   const { t } = useI18n();
-  const { profile } = useAuth();
-  const canRefresh = profile?.role === 'admin' || profile?.role === 'treasury';
+  const { role } = useViewAs();
+  const canRefresh = role === 'admin' || role === 'treasury';
   const [grid, setGrid] = useState<RateGrid>(EMPTY_GRID);
   const [board, setBoard] = useState<CurrentBoard>(EMPTY_BOARD);
   const [loaded, setLoaded] = useState(false);

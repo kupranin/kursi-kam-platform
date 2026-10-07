@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useI18n } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
+import LangSwitch from '../../components/LangSwitch';
+import ViewSwitch from '../../components/ViewSwitch';
 import People from './People';
 import RulesPanel from './RulesPanel';
 import SyncPanel from './SyncPanel';
@@ -32,9 +34,17 @@ export default function Admin() {
 
   return (
     <>
+      <div className="page-head">
+        <div>
+          <h1>{t('ადმინი', 'Admin')}</h1>
+          <p className="muted" style={{ margin: '6px 0 0', fontSize: 17 }}>{t('ხალხი, დათვლის წესები, მონაცემები და შეტყობინებები', 'People, counting rules, data and messages')}</p>
+        </div>
+        <div className="row">
+          <ViewSwitch onPage />
+          <LangSwitch onPage />
+        </div>
+      </div>
       <div>
-        <h1>{t('ადმინი', 'Admin')}</h1>
-        <p className="muted" style={{ margin: '6px 0 14px', fontSize: 17 }}>{t('ხალხი, დათვლის წესები, მონაცემები და შეტყობინებები', 'People, counting rules, data and messages')}</p>
         <nav className="page-links" aria-label={t('ამ გვერდზე', 'On this page')}>
           <a href="#people">{t('ხალხი', 'People')}</a>
           <a href="#rules">{t('დათვლის წესები', 'Counting rules')}</a>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
@@ -72,10 +73,10 @@ function clientReplyNote(r: RequestRow, t: (ka: string, en: string, vars?: Recor
 
 export default function Requests() {
   const { profile } = useAuth();
+  const { role } = useViewAs();
   const { t, lang } = useI18n();
   const toast = useToast();
   useTick(15000);
-  const role = profile!.role;
   const isKam = role === 'kam';
   const seeAll = role === 'admin' || role === 'manager';
 

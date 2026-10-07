@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
 import type { LossReason, RequestRow, WinbackRow } from '../lib/types';
@@ -21,9 +22,9 @@ const STEPS: { value: string; label: string }[] = [
 
 export default function FollowUps() {
   const { profile } = useAuth();
+  const { role } = useViewAs();
   const { t, lang } = useI18n();
   const toast = useToast();
-  const role = profile!.role;
   const canAct = role === 'kam' || role === 'admin';
   const showOwner = role !== 'kam';
 
@@ -92,9 +93,10 @@ export default function FollowUps() {
     return label(code);
   };
   const left = asks.filter((a) => !answered[a.id]).length;
-  const shown = useMemo(() => winback.filter((w) => filter === 'All' || w.tier === filter), [winback, filter]);
-  const contacted = winback.filter((w) => w.step !== 'not_contacted').length;
-  const pct = winback.length ? Math.round((contacted / winback.length) * 100) : 0;
+  const book = role === 'kam' ? winback.filter((w) => w.owner_id === profile!.id) : winback;
+  const shown = useMemo(() => book.filter((w) => filter === 'All' || w.tier === filter), [book, filter]);
+  const contacted = book.filter((w) => w.step !== 'not_contacted').length;
+  const pct = book.length ? Math.round((contacted / book.length) * 100) : 0;
 
   return (
     <>
@@ -160,9 +162,9 @@ export default function FollowUps() {
           <h2 style={{ fontSize: 22 }}>{t('დასაბრუნებელი კლიენტები', 'Clients to win back')}</h2>
           <p className="small" style={{ fontSize: 15 }}>კურსი ითხოვეს, შემდეგ გაჩერდნენ, წარმატებული ტრანზაქციის გარეშე. დაიწყეთ პრიორიტეტი A-დან.</p>
         </div>
-        {winback.length > 0 && (
+        {book.length > 0 && (
           <div style={{ minWidth: 240 }}>
-            <div className="strong small">{contacted} {winback.length}-დან დაკავშირებულია</div>
+            <div className="strong small">{contacted} {book.length}-დან დაკავშირებულია</div>
             <div className="bar" style={{ marginTop: 8, height: 10 }} aria-hidden="true"><span className="ok" style={{ width: pct + '%' }} /></div>
           </div>
         )}
@@ -171,7 +173,7 @@ export default function FollowUps() {
       <div className="chips">
         {(['All', 'A', 'B', 'C'] as const).map((t) => (
           <button key={t} type="button" className="chip" aria-pressed={filter === t} onClick={() => setFilter(t)}>
-            {t === 'All' ? 'ყველა' : 'პრიორიტეტი ' + t} ({winback.filter((w) => t === 'All' || w.tier === t).length})
+            {t === 'All' ? 'ყველა' : 'პრიორიტეტი ' + t} ({book.filter((w) => t === 'All' || w.tier === t).length})
           </button>
         ))}
       </div>
