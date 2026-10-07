@@ -27,7 +27,7 @@ The screens work on phones too. The interface is in English; the messages go out
 | `clickhouse/setup.sql` | The view and read-only user to create on ClickHouse |
 | `backend-tests/` | Tests for the database |
 | `DEPLOY.md` | Step-by-step setup: Supabase, Vercel, first admin, Make, ClickHouse |
-| `MAKE_SETUP.md` | How messages reach each role through Make.com and Twilio |
+| `MAKE_SETUP.md` | How SMS is sent through GoSMS and WhatsApp through Meta |
 | `BACKEND.md` | Technical reference: tables, counting rules, functions |
 
 ## How it fits together
@@ -35,7 +35,7 @@ The screens work on phones too. The interface is in English; the messages go out
 1. The website on Vercel talks only to Supabase, with the public key. Every person signs in with their own email and password.
 2. Supabase holds the requests, rates, clients and rules, and checks on every query what each person may see.
 3. Transactions come from ClickHouse every hour, read-only.
-4. Every event becomes a message, sent to the Make.com scenario for that role, and Make sends it on by email, SMS or WhatsApp.
+4. Every event becomes a message. SMS is sent through GoSMS and WhatsApp through Meta.
 
 ## Run it on your computer (optional)
 

@@ -10,7 +10,7 @@
 //               creates the login and returns a "set your password" link.
 //               Supabase does not email it (that sender allows two emails an hour).
 //               SMS and WhatsApp, when chosen, go through notification_events,
-//               the same outbox that posts to Make.com.
+//               the same outbox that sends SMS through GoSMS and WhatsApp through Meta.
 //   set_contact { profile_id, phone, channels }   where this person gets messages (email, sms, whatsapp)
 //   set_role    { profile_id, role }
 //   deactivate  { profile_id }               login stops working at once
@@ -190,9 +190,8 @@ async function linkForExistingLogin(admin: SupabaseClient, email: string, authUs
   throw new HttpError(400, recovered.error?.message ?? magic.error?.message ?? invited.error?.message ?? "Could not create the link");
 }
 
-// Same outbox as every other message: one row, then the database posts it to
-// Make (vault secret make_webhook_<role>, header X-Kursi-Token). Email is left
-// off this row so Make does not mail the link; the admin copies it instead.
+// Same outbox as every other message. The database sends SMS through GoSMS
+// and WhatsApp through Meta. Email is left off this row; the admin copies the link.
 async function queueInviteMessage(
   admin: SupabaseClient,
   profileId: string,

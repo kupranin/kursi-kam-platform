@@ -74,16 +74,24 @@ export default function RulesPanel({ names }: { names: Names }) {
       const res = r.isNew
         ? await supabase.from('loss_reasons').insert({ code: r.code, label_en: r.label_en.trim(), label_ka: r.label_ka.trim(), sort_order: r.sort_order, active: r.active })
         : await supabase.from('loss_reasons').update({ label_en: r.label_en.trim(), label_ka: r.label_ka.trim(), active: r.active }).eq('code', r.code);
-      if (res.error) { toast(res.error.message, 'error'); return; }
+      if (res.error) {
+        toast(res.error.message.includes('loss_reasons_code_check') ? 'მიზეზი ვერ შეინახა. სცადეთ თავიდან.' : res.error.message, 'error');
+        return;
+      }
     }
     toast('მიზეზები შენახულია.');
     load();
   }
 
   function addReason() {
-    const n = reasons.length + 1;
-    setReasons([...reasons, { code: 'reason_' + Date.now().toString(36), label_en: '', label_ka: '', sort_order: n * 10 + 100, active: true, isNew: true }]);
-    void n;
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    let n = Date.now();
+    let tail = '';
+    for (let i = 0; i < 8; i++) {
+      tail += letters[n % 26];
+      n = Math.floor(n / 26);
+    }
+    setReasons([...reasons, { code: 'reason_' + tail, label_en: '', label_ka: '', sort_order: (reasons.length + 1) * 10 + 100, active: true, isNew: true }]);
   }
 
   const editReason = (code: string, p: Partial<LossReason>) =>

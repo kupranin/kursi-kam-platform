@@ -27,10 +27,10 @@ const AUDIENCE: Record<string, string> = { kam: 'KAM, რომელმაც �
 const HOOK_NAME: Record<string, string> = { kam: 'KAM-ები', treasury: 'სახაზინო', admin: 'ადმინები', manager: 'მენეჯერები' };
 const STATUS: Record<string, { text: string; cls: string }> = {
   delivered: { text: 'მიწოდებულია', cls: 'pill-ok' },
-  sent: { text: 'გაიგზავნა, Make-ს ელოდება', cls: 'pill-wait' },
+  sent: { text: 'გაიგზავნა, GoSMS-ს ან Meta-ს ელოდება', cls: 'pill-wait' },
   pending: { text: 'ელოდება', cls: 'pill-wait' },
   failed: { text: 'ჩაიშალა', cls: 'pill-alert' },
-  no_webhook: { text: 'ვებჰუკი ჯერ არ არის', cls: 'pill-warn' },
+  no_webhook: { text: 'SMS ან WhatsApp ჯერ არ არის მიერთებული', cls: 'pill-warn' },
   no_recipients: { text: 'გასაგზავნი არავინ არის', cls: 'pill-warn' },
 };
 const DESC_KA: Record<string, string> = {
@@ -89,7 +89,7 @@ export default function MessagesPanel() {
       <div className="card-head" style={{ alignItems: 'center' }}>
         <div>
           <h2 id="messages-title" style={{ fontSize: 22 }}>შეტყობინებები</h2>
-          <p className="small" style={{ color: 'var(--ink-2)' }}>იგზავნება Make.com-ით, თითო სცენარი როლზე, ელფოსტით, SMS-ით ან WhatsApp-ით. ინგლისურად და ქართულად.</p>
+          <p className="small" style={{ color: 'var(--ink-2)' }}>SMS იგზავნება GoSMS-ით, WhatsApp კი Meta-თი. ტექსტი ქართულია. ელფოსტა ამ გზით არ იგზავნება.</p>
         </div>
         <div className="row" style={{ gap: 8 }}>
           <label className="small strong" style={{ fontWeight: 500 }} htmlFor="test-event">ტესტის გაგზავნა</label>
@@ -108,7 +108,7 @@ export default function MessagesPanel() {
             <div className="tiny" style={{ color: 'var(--ink-2)' }}>
               {h.has_webhook
                 ? (h.last_delivered_at ? 'ბოლოს გაიგზავნა ' + fmtDateTime(h.last_delivered_at) : 'ჯერ არაფერი გაგზავნილა') + (Number(h.failed_last_24h) ? `. დღეს ${h.failed_last_24h} ჩაიშალა.` : '')
-                : 'დაამატეთ Make-ის ვებჰუკი Supabase Vault-ში (დაყენების გზამკვლევი, Make.com)'}
+                : 'Vault-ში დაამატეთ GoSMS-ის გასაღები ან Meta-ს WhatsApp ტოკენი'}
             </div>
           </div>
         ))}

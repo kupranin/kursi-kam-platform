@@ -107,17 +107,13 @@ Recommended: under **Password and sign-in**, add an authenticator app. Then turn
 
 ---
 
-## Part 4. Make.com: messages to each role (about 30 minutes per role)
+## Part 4. SMS and WhatsApp (about 15 minutes)
 
 Follow **MAKE_SETUP.md**. In short:
-1. One Make scenario per role (treasury, KAMs, admins), each starting with a custom webhook.
-2. Store each webhook address in Supabase under **Project Settings → Vault**, or with SQL, using these names:
-   - `make_webhook_treasury`
-   - `make_webhook_kam`
-   - `make_webhook_admin`
-   - `make_webhook_token`
-3. From **Admin → Messages → Send a test**, send a sample so Make learns the format.
-4. Route each message to email, SMS or WhatsApp (Twilio) by the person's channels.
+1. Paste `supabase/setup/13_direct_messages.sql` in the Supabase SQL editor and run it.
+2. Store the GoSMS key and sender name, and the Meta WhatsApp token and phone number id, in Vault.
+3. On each person, choose SMS, WhatsApp, or both, and add their mobile.
+4. From **Admin → Messages**, send a test. The row should say delivered.
 
 ---
 
@@ -127,7 +123,7 @@ Follow **MAKE_SETUP.md**. In short:
 - [ ] An invited KAM gets the email, sets a password and sees **Requests**.
 - [ ] The KAM asks for a rate, and it appears on the treasury person's **Rate desk** within seconds.
 - [ ] Treasury types a rate and presses Enter, and the KAM sees it with **Copy for client**.
-- [ ] **Admin → Messages** shows the messages as delivered once Make is connected.
+- [ ] **Admin → Messages** shows the messages as delivered once GoSMS or Meta is connected.
 - [ ] **Admin → Activity** lists what everyone did.
 
 At this point the platform works without transactions. Requests stay "waiting" for their outcome until part 6 is done.
