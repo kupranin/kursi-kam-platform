@@ -36,6 +36,13 @@ export interface RequestRow {
   quoted_at: string | null;
   decline_reason: string | null;
   quote_state: QuoteState;
+  client_reply?: 'approved' | 'better' | 'declined' | null;
+  approved_rate?: number | null;
+  wanted_rate?: number | null;
+  better_decision?: 'accepted' | 'corrected' | null;
+  given_rate?: number | null;
+  client_decline_reason?: string | null;
+  client_replied_at?: string | null;
 }
 
 export interface Rules {
@@ -166,9 +173,9 @@ export interface PortfolioRow {
 export const CURRENCIES = ['GEL', 'USD', 'EUR', 'GBP'];
 
 export const ROLE_NAMES: Record<Role, string> = {
-  admin: 'Admin',
-  manager: 'Manager',
-  treasury: 'Treasury',
+  admin: 'ადმინი',
+  manager: 'მენეჯერი',
+  treasury: 'სახაზინო',
   kam: 'KAM',
 };
 

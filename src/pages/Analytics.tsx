@@ -45,7 +45,7 @@ function monthEnd(start: string): string {
 }
 
 function monthLabel(start: string): string {
-  return new Date(start + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return new Date(start + 'T00:00:00Z').toLocaleDateString('ka-GE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 export default function Analytics() {
@@ -80,11 +80,11 @@ export default function Analytics() {
   async function onFile(file: File | undefined) {
     if (!file) return;
     setUploading(true);
-    setProgress('Reading the file…');
+    setProgress('ფაილი იკითხება…');
     try {
       const { rows, skipped } = await readTransactionFile(file);
       if (!rows.length) {
-        toast('No transactions found. The file needs a transaction id, a date, a sender id, a payment status, abs_gel and total_income.', 'error');
+        toast('ტრანზაქცია ვერ მოიძებნა. ფაილს სჭირდება transaction id, თარიღი, sender id, payment status, abs_gel და total_income.', 'error');
         return;
       }
       let saved = 0;
@@ -93,13 +93,13 @@ export default function Analytics() {
       const size = 500;
       for (let i = 0; i < rows.length; i += size) {
         const batch: UploadRow[] = rows.slice(i, i + size);
-        setProgress(`Saving ${Math.min(i + size, rows.length).toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')}…`);
+        setProgress(`ინახება ${Math.min(i + size, rows.length).toLocaleString('en-US')} / ${rows.length.toLocaleString('en-US')}…`);
         const result = await rpc<{ upserted: number; skipped: number; clients_added: number }>('import_transactions', { p_rows: batch });
         saved += result.upserted;
         skippedRows += result.skipped;
         clientsAdded += result.clients_added;
       }
-      toast(`Saved ${saved.toLocaleString('en-US')} transactions` + (clientsAdded ? `, ${clientsAdded.toLocaleString('en-US')} new clients` : '') + (skippedRows ? `. Skipped ${skippedRows.toLocaleString('en-US')} rows.` : '.'));
+      toast(`შეინახა ${saved.toLocaleString('en-US')} ტრანზაქცია` + (clientsAdded ? `, ${clientsAdded.toLocaleString('en-US')} ახალი კლიენტი` : '') + (skippedRows ? `. გამოტოვებულია ${skippedRows.toLocaleString('en-US')} სტრიქონი.` : '.'));
       if (month === 'all') await load('all');
       else setMonth('all');
     } catch (err) {
@@ -115,19 +115,19 @@ export default function Analytics() {
   const income = Number(kpis.income);
   const failedShare = turnover > 0 ? Math.round((failed / turnover) * 100) : 0;
   const perMillion = turnover > 0 ? Math.round((income / turnover) * 1_000_000) : null;
-  const label = month === 'all' ? 'All uploaded transactions' : monthLabel(month);
+  const label = month === 'all' ? 'ყველა ატვირთული ტრანზაქცია' : monthLabel(month);
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>Analytics</h1>
-          <p>Turnover and income, counted from the transaction file</p>
+          <h1>ანალიტიკა</h1>
+          <p>ბრუნვა და შემოსავალი, ტრანზაქციების ფაილიდან</p>
         </div>
         <div className="row">
-          <label className="sr-only" htmlFor="analytics-month">Period</label>
+          <label className="sr-only" htmlFor="analytics-month">პერიოდი</label>
           <select id="analytics-month" className="select" style={{ width: 'auto' }} value={month} onChange={(e) => setMonth(e.target.value)}>
-            <option value="all">All time</option>
+            <option value="all">მთელი პერიოდი</option>
             {[...months].reverse().map((m) => <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>)}
           </select>
         </div>
@@ -135,12 +135,12 @@ export default function Analytics() {
 
       {isAdmin && (
         <section className="card" aria-labelledby="upload-title">
-          <h2 id="upload-title">Upload transactions</h2>
+          <h2 id="upload-title">ტრანზაქციების ატვირთვა</h2>
           <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
-            Excel or CSV, with the columns from the business transactions export: transaction id, created at, sender id, payment status, abs_gel and total_income. Uploading the same file again updates those rows.
+            Excel ან CSV, ბიზნეს ტრანზაქციების ექსპორტის სვეტებით: transaction id, created at, sender id, payment status, abs_gel და total_income. იგივე ფაილის ხელახალი ატვირთვა ამ სტრიქონებს ანახლებს.
           </p>
           <label className={'btn btn-primary' + (uploading ? ' disabled' : '')}>
-            {uploading ? progress || 'Uploading…' : 'Choose a file'}
+            {uploading ? progress || 'იტვირთება…' : 'ფაილის არჩევა'}
             <input
               type="file"
               accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
@@ -155,31 +155,31 @@ export default function Analytics() {
       {error && <p className="alert-box" role="alert">{error}</p>}
 
       <div className="stats big">
-        <div className="stat"><div className="label">Transactions</div><div className="value">{fmtWhole(kpis.transactions)}</div></div>
-        <div className="stat"><div className="label">Clients</div><div className="value">{fmtWhole(kpis.clients)}</div></div>
-        <div className="stat"><div className="label">Turnover</div><div className="value">GEL {fmtShort(turnover)}</div></div>
-        <div className="stat"><div className="label">Income</div><div className="value">GEL {fmtWhole(income)}</div></div>
+        <div className="stat"><div className="label">ტრანზაქციები</div><div className="value">{fmtWhole(kpis.transactions)}</div></div>
+        <div className="stat"><div className="label">კლიენტები</div><div className="value">{fmtWhole(kpis.clients)}</div></div>
+        <div className="stat"><div className="label">ბრუნვა</div><div className="value">GEL {fmtShort(turnover)}</div></div>
+        <div className="stat"><div className="label">შემოსავალი</div><div className="value">GEL {fmtWhole(income)}</div></div>
         <div className="stat">
-          <div className="label">Didn't go through</div>
+          <div className="label">არ გავიდა</div>
           <div className="value" style={{ color: failedShare > 0 ? 'var(--alert)' : undefined }}>{failedShare}%</div>
           <div className="small muted">GEL {fmtShort(failed)}</div>
         </div>
-        <div className="stat"><div className="label">Income per GEL 1M</div><div className="value">{perMillion == null ? '—' : fmtWhole(perMillion)}</div></div>
+        <div className="stat"><div className="label">შემოსავალი GEL 1 მლნ-ზე</div><div className="value">{perMillion == null ? '—' : fmtWhole(perMillion)}</div></div>
       </div>
 
       <section className="card flush" aria-labelledby="months-title">
         <div className="card-head">
           <h2 id="months-title">{label}</h2>
         </div>
-        {loading && <p className="empty">Loading…</p>}
-        {!loading && !kpis.by_month.length && <p className="empty">No transactions in this period yet. An admin can upload the Excel above.</p>}
+        {loading && <p className="empty">იტვირთება…</p>}
+        {!loading && !kpis.by_month.length && <p className="empty">ამ პერიოდში ტრანზაქცია ჯერ არ არის. ადმინს შეუძლია Excel-ის ატვირთვა ზემოთ.</p>}
         {!loading && kpis.by_month.length > 0 && (
           <div className="table-wrap">
             <table className="table" style={{ minWidth: 760 }}>
               <thead>
                 <tr>
-                  <th>Month</th><th className="num">Transactions</th><th className="num">Clients</th>
-                  <th className="num">Turnover</th><th className="num">Didn't go through</th><th className="num">Income</th>
+                  <th>თვე</th><th className="num">ტრანზაქციები</th><th className="num">კლიენტები</th>
+                  <th className="num">ბრუნვა</th><th className="num">არ გავიდა</th><th className="num">შემოსავალი</th>
                 </tr>
               </thead>
               <tbody>
@@ -201,22 +201,22 @@ export default function Analytics() {
 
       <section className="card flush" aria-labelledby="top-title">
         <div className="card-head">
-          <h2 id="top-title">Largest clients</h2>
+          <h2 id="top-title">უდიდესი კლიენტები</h2>
           <p className="small muted">{label}</p>
         </div>
-        {!loading && !kpis.top_clients.length && <p className="empty">No clients in this period.</p>}
+        {!loading && !kpis.top_clients.length && <p className="empty">ამ პერიოდში კლიენტი არ არის.</p>}
         {kpis.top_clients.length > 0 && (
           <div className="table-wrap">
             <table className="table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
-                  <th>Client</th><th>ID</th><th className="num">Transactions</th><th className="num">Turnover</th><th className="num">Income</th>
+                  <th>კლიენტი</th><th>ID</th><th className="num">ტრანზაქციები</th><th className="num">ბრუნვა</th><th className="num">შემოსავალი</th>
                 </tr>
               </thead>
               <tbody>
                 {kpis.top_clients.map((c) => (
                   <tr key={c.client_id}>
-                    <th scope="row">{c.name || <span className="muted">No name on file</span>}</th>
+                    <th scope="row">{c.name || <span className="muted">სახელი არ არის</span>}</th>
                     <td>{c.client_id}</td>
                     <td className="num">{fmtWhole(c.transactions)}</td>
                     <td className="num">{fmtShort(c.turnover)}</td>

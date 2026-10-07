@@ -11,17 +11,17 @@ export default function Login() {
   async function signIn(e: FormEvent) {
     e.preventDefault();
     setError('');
-    if (!email.trim() || !password) { setError('Enter your work email and password.'); return; }
+    if (!email.trim() || !password) { setError('შეიყვანეთ სამუშაო ელფოსტა და პაროლი.'); return; }
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     setBusy(false);
-    if (error) setError(error.message === 'Invalid login credentials' ? 'Email or password is wrong.' : error.message);
+    if (error) setError(error.message === 'Invalid login credentials' ? 'ელფოსტა ან პაროლი არასწორია.' : error.message);
   }
 
   async function sendReset(e: FormEvent) {
     e.preventDefault();
     setError('');
-    if (!email.trim()) { setError('Enter your work email.'); return; }
+    if (!email.trim()) { setError('შეიყვანეთ სამუშაო ელფოსტა.'); return; }
     setBusy(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
       redirectTo: window.location.origin + '/set-password',
@@ -37,38 +37,38 @@ export default function Login() {
         <div className="brand"><span className="brand-mark">K</span><span>kursi business</span></div>
         {mode === 'signin' && (
           <form onSubmit={signIn} className="stack-sm" noValidate>
-            <h1>Sign in</h1>
+            <h1>შესვლა</h1>
             <div className="field">
-              <label htmlFor="email">Work email</label>
+              <label htmlFor="email">სამუშაო ელფოსტა</label>
               <input id="email" className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="password">Password</label>
+              <label htmlFor="password">პაროლი</label>
               <input id="password" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error && <p className="hint error" role="alert">{error}</p>}
-            <button type="submit" className="btn btn-dark btn-big" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-            <button type="button" className="link" onClick={() => { setMode('forgot'); setError(''); }}>Forgot your password?</button>
+            <button type="submit" className="btn btn-dark btn-big" disabled={busy}>{busy ? 'შედის…' : 'შესვლა'}</button>
+            <button type="button" className="link" onClick={() => { setMode('forgot'); setError(''); }}>დაგავიწყდათ პაროლი?</button>
           </form>
         )}
         {mode === 'forgot' && (
           <form onSubmit={sendReset} className="stack-sm" noValidate>
-            <h1>Reset password</h1>
-            <p className="muted">We'll email you a link to choose a new password.</p>
+            <h1>პაროლის აღდგენა</h1>
+            <p className="muted">გამოგიგზავნით ბმულს ახალი პაროლის ასარჩევად.</p>
             <div className="field">
-              <label htmlFor="email2">Work email</label>
+              <label htmlFor="email2">სამუშაო ელფოსტა</label>
               <input id="email2" className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             {error && <p className="hint error" role="alert">{error}</p>}
-            <button type="submit" className="btn btn-dark btn-big" disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</button>
-            <button type="button" className="link" onClick={() => setMode('signin')}>Back to sign in</button>
+            <button type="submit" className="btn btn-dark btn-big" disabled={busy}>{busy ? 'იგზავნება…' : 'აღდგენის ბმულის გაგზავნა'}</button>
+            <button type="button" className="link" onClick={() => setMode('signin')}>შესვლაზე დაბრუნება</button>
           </form>
         )}
         {mode === 'sent' && (
           <div className="stack-sm">
-            <h1>Check your email</h1>
-            <p>If {email} has an account, a link to set a new password is on its way.</p>
-            <button type="button" className="link" onClick={() => setMode('signin')}>Back to sign in</button>
+            <h1>შეამოწმეთ ელფოსტა</h1>
+            <p>თუ {email}-ს ანგარიში აქვს, ახალი პაროლის ბმული გზაშია.</p>
+            <button type="button" className="link" onClick={() => setMode('signin')}>შესვლაზე დაბრუნება</button>
           </div>
         )}
       </div>

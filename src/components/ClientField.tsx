@@ -75,30 +75,30 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
   }
 
   const showList = open && !(info?.picked && info.id === raw);
-  let hint = 'Type digits of the ID or part of the name';
+  let hint = 'აკრიფეთ ID-ის ციფრები ან სახელის ნაწილი';
   let tone: '' | 'ok' | 'error' = '';
   if (info?.picked && info.id === raw) {
-    hint = (info.name ?? info.id) + (info.lastSells ? '. Currencies set from their last request.' : '');
+    hint = (info.name ?? info.id) + (info.lastSells ? '. ვალუტები ბოლო მოთხოვნიდანაა.' : '');
     tone = 'ok';
   } else if (info?.valid && info.name) {
     hint = info.name; tone = 'ok';
   } else if (info?.valid && info.known) {
-    hint = 'This client has no name on file. Add it.';
+    hint = 'ამ კლიენტს სახელი არ აქვს. დაამატეთ.';
   } else if (info?.valid) {
-    hint = 'New client. Add their name.';
+    hint = 'ახალი კლიენტი. დაამატეთ სახელი.';
   } else if (digits && raw.length > 11) {
-    hint = 'Too many digits: companies have 9, people 11'; tone = 'error';
+    hint = 'ზედმეტი ციფრია: კომპანიას 9 აქვს, ფიზიკურ პირს 11'; tone = 'error';
   } else if (tried && !raw) {
-    hint = 'Enter the client ID or name'; tone = 'error';
+    hint = 'შეიყვანეთ კლიენტის ID ან სახელი'; tone = 'error';
   } else if (tried && !digits) {
-    hint = 'Pick a client from the list, or type the full ID'; tone = 'error';
+    hint = 'აირჩიეთ კლიენტი სიიდან, ან აკრიფეთ სრული ID'; tone = 'error';
   } else if (tried && !info?.valid) {
-    hint = 'Check the ID: companies have 9 digits, people 11'; tone = 'error';
+    hint = 'შეამოწმეთ ID: კომპანიას 9 ციფრი აქვს, ფიზიკურ პირს 11'; tone = 'error';
   }
 
   return (
     <div className="field combo">
-      <label htmlFor="client-field">Client ID or name</label>
+      <label htmlFor="client-field">კლიენტის ID ან სახელი</label>
       <input
         id="client-field"
         className={'input' + (big ? ' big' : '') + (tone === 'error' ? ' invalid' : '')}
@@ -109,7 +109,7 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
         aria-activedescendant={showList && matches.length ? 'client-opt-' + active : undefined}
         autoComplete="off"
         spellCheck={false}
-        placeholder="Start typing"
+        placeholder="დაიწყეთ აკრეფა"
         value={value}
         onChange={(e) => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -123,8 +123,8 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
       />
       <span className={'hint ' + tone}>{hint}</span>
       {showList && (
-        <div id="client-list" role="listbox" aria-label="Companies" className="combo-list">
-          <div className="head">{raw ? 'Companies' : 'Your recent clients'}</div>
+        <div id="client-list" role="listbox" aria-label="კომპანიები" className="combo-list">
+          <div className="head">{raw ? 'კომპანიები' : 'თქვენი ბოლო კლიენტები'}</div>
           {matches.map((m, i) => (
             <button
               key={m.client_id}
@@ -137,15 +137,15 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
               onMouseDown={(e) => { e.preventDefault(); pick(m); }}
             >
               <span style={{ minWidth: 0 }}>
-                <span className="strong" style={{ display: 'block' }}>{m.name ?? 'No name on file'}</span>
-                <span className="tiny muted">ID {m.client_id}, {m.kind}</span>
+                <span className="strong" style={{ display: 'block' }}>{m.name ?? 'სახელი არ არის'}</span>
+                <span className="tiny muted">ID {m.client_id}, {m.kind === 'company' ? 'კომპანია' : 'ფიზიკური პირი'}</span>
               </span>
-              {m.last_sells_currency && <span className="tiny muted">{m.last_sells_currency} to {m.last_gets_currency}</span>}
+              {m.last_sells_currency && <span className="tiny muted">{m.last_sells_currency} → {m.last_gets_currency}</span>}
             </button>
           ))}
           {!matches.length && (
             <p className="small" style={{ margin: 0, padding: 10 }}>
-              {info?.valid ? 'New company. Add the name and it will fill in next time.' : digits ? 'No match yet. Keep typing the ID.' : 'No company with that name yet. Type the full ID to add one.'}
+              {info?.valid ? 'ახალი კომპანია. დაამატეთ სახელი და შემდეგ ჯერზე შეივსება.' : digits ? 'ჯერ ვერ მოიძებნა. განაგრძეთ ID-ის აკრეფა.' : 'ამ სახელის კომპანია ჯერ არ არის. სრული ID აკრიფეთ ახლის დასამატებლად.'}
             </p>
           )}
         </div>

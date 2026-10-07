@@ -8,39 +8,39 @@ import { ROLE_NAMES, type Role } from '../lib/types';
 
 const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queue' }[]> = {
   kam: [
-    { to: '/requests', label: 'Requests' },
-    { to: '/follow-ups', label: 'Follow-ups', badge: 'followups' },
-    { to: '/clients', label: 'My clients' },
-    { to: '/rates', label: 'Rates' },
-    { to: '/team', label: 'My numbers' },
-    { to: '/chat', label: 'Chat' },
+    { to: '/requests', label: 'მოთხოვნები' },
+    { to: '/follow-ups', label: 'დაბრუნება', badge: 'followups' },
+    { to: '/clients', label: 'ჩემი კლიენტები' },
+    { to: '/rates', label: 'კურსები' },
+    { to: '/team', label: 'ჩემი ციფრები' },
+    { to: '/chat', label: 'ჩატი' },
   ],
   treasury: [
-    { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
-    { to: '/rates', label: 'Rates' },
-    { to: '/chat', label: 'Chat' },
+    { to: '/rate-desk', label: 'კურსის მაგიდა', badge: 'queue' },
+    { to: '/rates', label: 'კურსები' },
+    { to: '/chat', label: 'ჩატი' },
   ],
   admin: [
-    { to: '/team', label: 'Team' },
-    { to: '/requests', label: 'Requests' },
-    { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
-    { to: '/follow-ups', label: 'Follow-ups' },
-    { to: '/clients', label: 'Clients' },
-    { to: '/analytics', label: 'Analytics' },
-    { to: '/kpis', label: 'KPIs' },
-    { to: '/rates', label: 'Rates' },
-    { to: '/chat', label: 'Chat' },
-    { to: '/admin', label: 'Admin' },
+    { to: '/team', label: 'გუნდი' },
+    { to: '/requests', label: 'მოთხოვნები' },
+    { to: '/rate-desk', label: 'კურსის მაგიდა', badge: 'queue' },
+    { to: '/follow-ups', label: 'დაბრუნება' },
+    { to: '/clients', label: 'კლიენტები' },
+    { to: '/analytics', label: 'ანალიტიკა' },
+    { to: '/kpis', label: 'KPI' },
+    { to: '/rates', label: 'კურსები' },
+    { to: '/chat', label: 'ჩატი' },
+    { to: '/admin', label: 'ადმინი' },
   ],
   manager: [
-    { to: '/team', label: 'Team' },
-    { to: '/requests', label: 'Requests' },
-    { to: '/follow-ups', label: 'Follow-ups' },
-    { to: '/clients', label: 'Clients' },
-    { to: '/analytics', label: 'Analytics' },
-    { to: '/kpis', label: 'KPIs' },
-    { to: '/rates', label: 'Rates' },
-    { to: '/chat', label: 'Chat' },
+    { to: '/team', label: 'გუნდი' },
+    { to: '/requests', label: 'მოთხოვნები' },
+    { to: '/follow-ups', label: 'დაბრუნება' },
+    { to: '/clients', label: 'კლიენტები' },
+    { to: '/analytics', label: 'ანალიტიკა' },
+    { to: '/kpis', label: 'KPI' },
+    { to: '/rates', label: 'კურსები' },
+    { to: '/chat', label: 'ჩატი' },
   ],
 };
 
@@ -57,7 +57,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     try {
       setFresh(await rpc<string | null>('data_freshness'));
       if (items.some((i) => i.badge === 'queue')) {
-        const { count } = await supabase.from('requests').select('id', { count: 'exact', head: true }).eq('quote_status', 'asking');
+        const { count } = await supabase.from('requests').select('id', { count: 'exact', head: true })
+          .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null)');
         setCounts((c) => ({ ...c, queue: count ?? 0 }));
       }
       if (items.some((i) => i.badge === 'followups')) {
@@ -91,9 +92,9 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Link to="/" className="brand">
             <span className="brand-mark">K</span>
             <span>kursi business</span>
-            {role === 'treasury' && <span className="role-tag">Treasury</span>}
+            {role === 'treasury' && <span className="role-tag">სახაზინო</span>}
           </Link>
-          <nav className="nav" aria-label="Main">
+          <nav className="nav" aria-label="მთავარი">
             {items.map((i) => (
               <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? 'active' : '')}>
                 {i.label}
@@ -102,9 +103,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="topbar-right">
-            <span className="freshness">{fresh ? 'Transactions updated ' + fmtDateTime(fresh) : 'Transactions not synced yet'}</span>
+            <span className="freshness">{fresh ? 'ტრანზაქციები განახლდა ' + fmtDateTime(fresh) : 'ტრანზაქციები ჯერ არ არის სინქრონიზებული'}</span>
             <div className="user-menu" ref={menuRef}>
-              <button type="button" className="avatar" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={'Signed in as ' + profile!.full_name} onClick={() => setMenuOpen((o) => !o)}>
+              <button type="button" className="avatar" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={'შესული ხართ: ' + profile!.full_name} onClick={() => setMenuOpen((o) => !o)}>
                 {initials}
               </button>
               {menuOpen && (
@@ -113,8 +114,8 @@ export default function Layout({ children }: { children: ReactNode }) {
                     <div className="strong">{profile!.full_name}</div>
                     <div className="tiny muted">{ROLE_NAMES[role]}, {profile!.email}</div>
                   </div>
-                  <Link to="/security" role="menuitem" onClick={() => setMenuOpen(false)}>Password and sign-in</Link>
-                  <button type="button" role="menuitem" onClick={signOut}>Sign out</button>
+                  <Link to="/security" role="menuitem" onClick={() => setMenuOpen(false)}>პაროლი და შესვლა</Link>
+                  <button type="button" role="menuitem" onClick={signOut}>გასვლა</button>
                 </div>
               )}
             </div>

@@ -26,13 +26,13 @@ interface HistoryRow {
 }
 
 const SECTIONS: { segment: Segment; title: string; metrics: [Metric, string][] }[] = [
-  { segment: 'business', title: 'Business', metrics: [['turnover', 'Turnover'], ['active_users', 'Active users'], ['new_users', 'New users'], ['registrations', 'Registrations']] },
-  { segment: 'kam', title: 'KAM', metrics: [['turnover', 'Turnover']] },
-  { segment: 'retail', title: 'Retail', metrics: [['turnover', 'Turnover'], ['active_users', 'Active users'], ['new_users', 'New users'], ['registrations', 'Registrations']] },
+  { segment: 'business', title: 'ბიზნესი', metrics: [['turnover', 'ბრუნვა'], ['active_users', 'აქტიური მომხმარებლები'], ['new_users', 'ახალი მომხმარებლები'], ['registrations', 'რეგისტრაციები']] },
+  { segment: 'kam', title: 'KAM', metrics: [['turnover', 'ბრუნვა']] },
+  { segment: 'retail', title: 'საცალო', metrics: [['turnover', 'ბრუნვა'], ['active_users', 'აქტიური მომხმარებლები'], ['new_users', 'ახალი მომხმარებლები'], ['registrations', 'რეგისტრაციები']] },
 ];
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS = ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'];
+const MONTH_NAME = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი', 'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
 
 const whole = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
@@ -65,7 +65,7 @@ function parseAmount(text: string): number | null {
   const cleaned = text.replace(/,/g, '').trim();
   if (!cleaned) return null;
   const n = Number(cleaned);
-  if (!Number.isFinite(n)) throw new Error('Enter a number');
+  if (!Number.isFinite(n)) throw new Error('შეიყვანეთ რიცხვი');
   return n;
 }
 
@@ -139,11 +139,11 @@ export default function Kpis() {
     <>
       <div className="page-head">
         <div>
-          <h1>KPIs</h1>
-          <p>Plan, actual and margin. Planned, actual % and the gap are calculated.</p>
+          <h1>KPI</h1>
+          <p>გეგმა, ფაქტი და მარჟა. დაგეგმილი, ფაქტი % და სხვაობა გამოითვლება.</p>
         </div>
         <div className="field" style={{ margin: 0 }}>
-          <label className="sr-only" htmlFor="kpi-month">Month</label>
+          <label className="sr-only" htmlFor="kpi-month">თვე</label>
           <input
             id="kpi-month"
             className="input"
@@ -160,22 +160,22 @@ export default function Kpis() {
       <section className="card flush" aria-labelledby="plan-title">
         <div className="card-head">
           <h2 id="plan-title">{MONTH_NAME[month - 1]} {year}</h2>
-          <p className="small muted">Margin is typed in. The plan sheet does not calculate it.</p>
+          <p className="small muted">მარჟა ხელით იწერება. გეგმის ფურცელი მას არ ითვლის.</p>
         </div>
-        {!loaded && <p className="empty">Loading…</p>}
+        {!loaded && <p className="empty">იტვირთება…</p>}
         {loaded && (
           <div className="table-wrap">
             <table className="table sheet" style={{ minWidth: 980 }}>
               <thead>
                 <tr>
-                  <th>Line</th>
-                  <th className="num">Plan</th>
-                  <th className="num">Planned %</th>
-                  <th className="num">Planned</th>
-                  <th className="num">Actual</th>
-                  <th className="num">Actual %</th>
-                  <th className="num">Planned vs actual</th>
-                  <th className="num">Margin %</th>
+                  <th>სტრიქონი</th>
+                  <th className="num">გეგმა</th>
+                  <th className="num">დაგეგმილი %</th>
+                  <th className="num">დაგეგმილი</th>
+                  <th className="num">ფაქტი</th>
+                  <th className="num">ფაქტი %</th>
+                  <th className="num">გეგმა ფაქტთან</th>
+                  <th className="num">მარჟა %</th>
                 </tr>
               </thead>
               <tbody>
@@ -201,21 +201,21 @@ export default function Kpis() {
           </div>
         )}
         {loaded && kamShare != null && (
-          <p className="small" style={{ padding: '12px 24px 4px' }}>KAM share of business turnover: {fmtPct(kamShare)}</p>
+          <p className="small" style={{ padding: '12px 24px 4px' }}>KAM-ის წილი ბიზნესის ბრუნვაში: {fmtPct(kamShare)}</p>
         )}
       </section>
 
       <section className="card flush" aria-labelledby="year-title" style={{ marginTop: 18 }}>
         <div className="card-head">
-          <h2 id="year-title">Turnover, 2026 vs 2025</h2>
-          <p className="small muted">Totals and the year-on-year row are calculated.</p>
+          <h2 id="year-title">ბრუნვა, 2026 2025-თან</h2>
+          <p className="small muted">ჯამები და წლიური შედარება გამოითვლება.</p>
         </div>
         {loaded && (
           <div className="table-wrap">
             <table className="table sheet" style={{ minWidth: 1100 }}>
               <thead>
                 <tr>
-                  <th>Line</th>
+                  <th>სტრიქონი</th>
                   {MONTHS.map((name) => <th key={name} className="num">{name}</th>)}
                 </tr>
               </thead>
@@ -223,13 +223,13 @@ export default function Kpis() {
                 {(['retail', 'business'] as const).map((segment) => (
                   <YearBlock
                     key={segment}
-                    title={segment === 'retail' ? 'Retail turnover' : 'Business turnover'}
+                    title={segment === 'retail' ? 'საცალო ბრუნვა' : 'ბიზნესის ბრუნვა'}
                     segment={segment}
                     history={history}
                     onSave={(histYear, histMonth, amount) => saveHistory(segment, histYear, histMonth, amount).catch((err: Error) => toast(err.message, 'error'))}
                   />
                 ))}
-                <tr className="section-row"><td colSpan={13}>Total</td></tr>
+                <tr className="section-row"><td colSpan={13}>სულ</td></tr>
                 <tr>
                   <th scope="row">2025</th>
                   {MONTHS.map((_, i) => <td key={i} className="num">{fmtCount(sumHistory(history, 2025, i + 1))}</td>)}
@@ -239,7 +239,7 @@ export default function Kpis() {
                   {MONTHS.map((_, i) => <td key={i} className="num">{fmtCount(sumHistory(history, 2026, i + 1))}</td>)}
                 </tr>
                 <tr>
-                  <th scope="row">2026 vs 2025</th>
+                  <th scope="row">2026 2025-თან</th>
                   {MONTHS.map((_, i) => {
                     const prior = sumHistory(history, 2025, i + 1);
                     const current = sumHistory(history, 2026, i + 1);
@@ -312,7 +312,7 @@ function YearBlock({ title, segment, history, onSave }: {
         </tr>
       ))}
       <tr>
-        <th scope="row">2026 vs 2025</th>
+        <th scope="row">2026 2025-თან</th>
         {MONTHS.map((_, i) => {
           const prior = history[historyKey(segment, 2025, i + 1)];
           const current = history[historyKey(segment, 2026, i + 1)];
@@ -341,7 +341,7 @@ function Cell({ value, format, parse, onSave }: {
       className="input cell-input"
       inputMode="decimal"
       value={text}
-      aria-label="Edit"
+      aria-label="რედაქტირება"
       onFocus={() => setEditing(true)}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {

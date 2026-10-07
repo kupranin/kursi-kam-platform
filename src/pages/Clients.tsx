@@ -28,28 +28,28 @@ export default function Clients() {
     <>
       <div className="page-head">
         <div>
-          <h1>{mine ? 'My clients' : 'Clients'}</h1>
-          <p>{mine ? 'Clients you have asked rates for, newest first' : 'All clients, newest request first'}</p>
+          <h1>{mine ? 'ჩემი კლიენტები' : 'კლიენტები'}</h1>
+          <p>{mine ? 'კლიენტები, რომლებსაც კურსი სთხოვეთ, ახლიდან ძველისკენ' : 'ყველა კლიენტი, ბოლო მოთხოვნიდან'}</p>
         </div>
       </div>
       <div className="field" style={{ maxWidth: 420 }}>
-        <label htmlFor="client-search">Search by ID or name</label>
-        <input id="client-search" className="input" autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Start typing" />
+        <label htmlFor="client-search">ძებნა ID-ით ან სახელით</label>
+        <input id="client-search" className="input" autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} placeholder="დაიწყეთ აკრეფა" />
       </div>
-      <section className="card flush" aria-label="Clients" style={{ paddingTop: 8 }}>
-        {!loading && !rows.length && <p className="empty">{q ? 'No match.' : 'No clients yet.'}</p>}
+      <section className="card flush" aria-label="კლიენტები" style={{ paddingTop: 8 }}>
+        {!loading && !rows.length && <p className="empty">{q ? 'ვერ მოიძებნა.' : 'კლიენტები ჯერ არ არის.'}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">
             <table className="table" style={{ minWidth: 640 }}>
-              <thead><tr><th>Client</th><th>ID</th><th>Type</th><th>Last request</th><th>Last deal direction</th></tr></thead>
+              <thead><tr><th>კლიენტი</th><th>ID</th><th>ტიპი</th><th>ბოლო მოთხოვნა</th><th>ბოლო მიმართულება</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.client_id}>
-                    <td className="strong">{r.name ?? <span className="muted">No name on file</span>}</td>
+                    <td className="strong">{r.name ?? <span className="muted">სახელი არ არის</span>}</td>
                     <td>{r.client_id}</td>
-                    <td>{r.kind === 'company' ? 'Company' : 'Person'}</td>
+                    <td>{r.kind === 'company' ? 'კომპანია' : 'ფიზიკური პირი'}</td>
                     <td>{r.last_request_date ? fmtDay(r.last_request_date) : ''}</td>
-                    <td>{r.last_sells_currency ? `${r.last_sells_currency} to ${r.last_gets_currency}` : ''}</td>
+                    <td>{r.last_sells_currency ? `${r.last_sells_currency} → ${r.last_gets_currency}` : ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -57,7 +57,7 @@ export default function Clients() {
           </div>
         )}
       </section>
-      {rows.length === 20 && <p className="small muted" style={{ margin: 0 }}>Showing the first 20. Type more to narrow it down.</p>}
+      {rows.length === 20 && <p className="small muted" style={{ margin: 0 }}>ნაჩვენებია პირველი 20. უფრო ზუსტად აკრიფეთ.</p>}
     </>
   );
 }

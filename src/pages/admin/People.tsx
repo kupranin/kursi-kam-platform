@@ -21,21 +21,21 @@ interface Person {
 }
 
 const CHANNELS = [
-  { value: 'email', label: 'Email' },
+  { value: 'email', label: 'ელფოსტა' },
   { value: 'sms', label: 'SMS' },
   { value: 'whatsapp', label: 'WhatsApp' },
 ];
 const ROLE_TEXT: Record<Role, string> = {
-  kam: 'A KAM asks for rates and sees only their own clients and follow-ups.',
-  treasury: 'Treasury gives rates and sees every request.',
-  manager: 'A manager sees everything and changes nothing.',
-  admin: 'An admin also manages people, rules and messages.',
+  kam: 'KAM კურსს ითხოვს და ხედავს მხოლოდ თავის კლიენტებსა და დაბრუნებას.',
+  treasury: 'სახაზინო კურსს იძლევა და ყველა მოთხოვნას ხედავს.',
+  manager: 'მენეჯერი ყველაფერს ხედავს და არაფერს ცვლის.',
+  admin: 'ადმინი ასევე მართავს ხალხს, წესებს და შეტყობინებებს.',
 };
 const MESSAGE_GROUP: Record<Role, string> = {
-  kam: 'KAMs',
-  treasury: 'Treasury',
-  admin: 'Admins',
-  manager: 'Managers',
+  kam: 'KAM-ები',
+  treasury: 'სახაზინო',
+  admin: 'ადმინები',
+  manager: 'მენეჯერები',
 };
 
 interface InviteReady {
@@ -51,13 +51,13 @@ interface InviteReady {
 function joinLabels(list: string[]) {
   const names = list.map((c) => CHANNELS.find((x) => x.value === c)?.label ?? c);
   if (names.length <= 1) return names[0] ?? '';
-  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  return names.slice(0, -1).join(', ') + ' და ' + names[names.length - 1];
 }
 
 function channelText(list: string[] | null) {
   const names = (list ?? []).map((c) => CHANNELS.find((x) => x.value === c)?.label ?? c);
-  if (!names.length) return 'No messages';
-  return 'Messages by ' + (names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]);
+  if (!names.length) return 'შეტყობინება არ არის';
+  return 'შეტყობინებები: ' + (names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' და ' + names[names.length - 1]);
 }
 
 function textNote(ready: InviteReady) {
@@ -66,13 +66,13 @@ function textNote(ready: InviteReady) {
   const how = joinLabels(via);
   const onTheWay = ready.message_status === 'sent' || ready.message_status === 'pending' || ready.message_status === 'delivered';
   if (onTheWay) {
-    const verb = ready.message_status === 'delivered' ? 'was sent' : 'is being sent';
-    return <p className="small" style={{ margin: '8px 0 0' }}>The same link {verb} by {how} to {ready.phone}.</p>;
+    const verb = ready.message_status === 'delivered' ? 'გაიგზავნა' : 'იგზავნება';
+    return <p className="small" style={{ margin: '8px 0 0' }}>იგივე ბმული {how}-ით {verb} ნომერზე {ready.phone}.</p>;
   }
   if (ready.message_status === 'no_webhook') {
-    return <p className="small warn-text" style={{ margin: '8px 0 0' }}>The {how} message was not sent, because messages for {MESSAGE_GROUP[ready.role]} are not connected yet. Copy the link and send it yourself.</p>;
+    return <p className="small warn-text" style={{ margin: '8px 0 0' }}>{how}-ის შეტყობინება არ გაიგზავნა, რადგან {MESSAGE_GROUP[ready.role]}-ის შეტყობინებები ჯერ არ არის მიერთებული. დააკოპირეთ ბმული და თავად გაუგზავნეთ.</p>;
   }
-  return <p className="small warn-text" style={{ margin: '8px 0 0' }}>The {how} message could not be sent to {ready.phone}. Copy the link and send it yourself.</p>;
+  return <p className="small warn-text" style={{ margin: '8px 0 0' }}>{how}-ის შეტყობინება ვერ გაიგზავნა ნომერზე {ready.phone}. დააკოპირეთ ბმული და თავად გაუგზავნეთ.</p>;
 }
 
 export default function People() {
@@ -123,7 +123,7 @@ export default function People() {
       });
       const name = inv.full_name.trim();
       if (!res.invite_link) {
-        toast(`${name} was added, but no link came back. Paste the updated admin-users function in Supabase, then send a password reset if they still need a link.`, 'error');
+        toast(`${name} დაემატა, მაგრამ ბმული არ დაბრუნდა. ჩასვით განახლებული admin-users ფუნქცია Supabase-ში, შემდეგ გაუგზავნეთ პაროლის აღდგენა, თუ ბმული კვლავ სჭირდებათ.`, 'error');
       } else {
         setReady({
           name,
@@ -135,7 +135,7 @@ export default function People() {
           message_channels: res.message_channels ?? [],
         });
         setCopied(false);
-        toast(`Invite ready for ${name}. Copy the link.`);
+        toast(`მოწვევა მზადაა: ${name}. დააკოპირეთ ბმული.`);
       }
       setInviting(false); setTried(false);
       setInv({ full_name: '', email: '', role: 'kam', phone: '', channels: ['email'] });
@@ -156,7 +156,7 @@ export default function People() {
       window.setTimeout(() => mark(false), 3000);
       return true;
     } catch {
-      toast('Select the link and copy it.', 'error');
+      toast('მონიშნეთ ბმული და დააკოპირეთ.', 'error');
       return false;
     }
   }
@@ -171,17 +171,17 @@ export default function People() {
     try {
       const res = await adminUsers<{ link?: string }>({ action: 'copy_invite', profile_id: p.id });
       if (!res.link) {
-        toast('No link came back. Paste the updated admin-users function in Supabase, then try again.', 'error');
+        toast('ბმული არ დაბრუნდა. ჩასვით განახლებული admin-users ფუნქცია Supabase-ში და სცადეთ თავიდან.', 'error');
       } else {
         setShown({ id: p.id, name: p.full_name, link: res.link, kind: 'invite' });
         setShownCopied(false);
         const ok = await copyText(res.link, setShownCopied);
-        if (ok) toast(`Invite link copied for ${p.full_name}.`);
+        if (ok) toast(`მოწვევის ბმული დაკოპირდა: ${p.full_name}.`);
       }
     } catch (err) {
       const message = (err as Error).message;
       toast(/unknown action/i.test(message)
-        ? 'Copy invite link is not on the server yet. Paste the updated admin-users function in Supabase and deploy it, then try again.'
+        ? 'მოწვევის ბმულის კოპირება სერვერზე ჯერ არ არის. ჩასვით განახლებული admin-users ფუნქცია Supabase-ში, გააშვით და სცადეთ თავიდან.'
         : message, 'error');
     }
     setCopyingId(null);
@@ -192,17 +192,17 @@ export default function People() {
     try {
       const res = await adminUsers<{ link?: string }>({ action: 'copy_reset', profile_id: p.id });
       if (!res.link) {
-        toast('No link came back. Paste the updated admin-users function in Supabase, then try again.', 'error');
+        toast('ბმული არ დაბრუნდა. ჩასვით განახლებული admin-users ფუნქცია Supabase-ში და სცადეთ თავიდან.', 'error');
       } else {
         setShown({ id: p.id, name: p.full_name, link: res.link, kind: 'reset' });
         setShownCopied(false);
         const ok = await copyText(res.link, setShownCopied);
-        if (ok) toast(`Reset link copied for ${p.full_name}.`);
+        if (ok) toast(`აღდგენის ბმული დაკოპირდა: ${p.full_name}.`);
       }
     } catch (err) {
       const message = (err as Error).message;
       toast(/unknown action/i.test(message)
-        ? 'Copy reset link is not on the server yet. Paste the updated admin-users function in Supabase and deploy it, then try again.'
+        ? 'აღდგენის ბმულის კოპირება სერვერზე ჯერ არ არის. ჩასვით განახლებული admin-users ფუნქცია Supabase-ში, გააშვით და სცადეთ თავიდან.'
         : message, 'error');
     }
     setResettingId(null);
@@ -215,39 +215,39 @@ export default function People() {
   }
 
   const status = (p: Person) => {
-    if (!p.active) return { text: 'Switched off', cls: 'pill-wait' };
-    if (!p.has_login) return { text: 'No login, history only', cls: 'pill-wait' };
-    if (!p.password_set) return { text: 'Invited, no password yet', cls: 'pill-warn' };
-    return { text: 'Active', cls: 'pill-ok' };
+    if (!p.active) return { text: 'გამორთულია', cls: 'pill-wait' };
+    if (!p.has_login) return { text: 'შესვლა არ არის, მხოლოდ ისტორია', cls: 'pill-wait' };
+    if (!p.password_set) return { text: 'მოწვეულია, პაროლი ჯერ არ აქვს', cls: 'pill-warn' };
+    return { text: 'აქტიური', cls: 'pill-ok' };
   };
 
   return (
     <section id="people" className="card flush" aria-labelledby="people-title">
       <div className="card-head" style={{ alignItems: 'center' }}>
         <div>
-          <h2 id="people-title" style={{ fontSize: 22 }}>People</h2>
-          <p className="small" style={{ color: 'var(--ink-2)' }}>Everyone has their own login. Nobody, including admins, sees another person's password.</p>
+          <h2 id="people-title" style={{ fontSize: 22 }}>ხალხი</h2>
+          <p className="small" style={{ color: 'var(--ink-2)' }}>ყველას თავისი შესვლა აქვს. არავინ, ადმინიც, სხვის პაროლს ვერ ხედავს.</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setInviting(true)}><IconPlus />Invite a person</button>
+        <button type="button" className="btn btn-primary" onClick={() => setInviting(true)}><IconPlus />ადამიანის მოწვევა</button>
       </div>
 
       {ready && (
         <div ref={readyBox} role="status" style={{ margin: '0 24px 18px', padding: 20, borderRadius: 12, background: ready.message_channels.length && !['sent', 'pending', 'delivered'].includes(ready.message_status ?? '') ? 'var(--warn-bg)' : 'var(--ok-bg)' }}>
-          <h3 style={{ fontSize: 18 }}>Invite ready for {ready.name}</h3>
+          <h3 style={{ fontSize: 18 }}>მოწვევა მზადაა: {ready.name}</h3>
           <p className="small" style={{ margin: '8px 0 12px', color: 'var(--ink-2)' }}>
-            Copy this link and send it to them. They open it and choose their own password. The link works once.
+            დააკოპირეთ ბმული და გაუგზავნეთ. ისინი გახსნიან და თავად აირჩევენ პაროლს. ბმული ერთხელ მუშაობს.
           </p>
           <div className="field">
-            <label htmlFor="invite-link">Link</label>
+            <label htmlFor="invite-link">ბმული</label>
             <textarea id="invite-link" className="input" readOnly rows={3} value={ready.link} onFocus={(e) => e.currentTarget.select()} />
           </div>
           <div className="row" style={{ marginTop: 12 }}>
-            <button type="button" className="btn btn-dark" onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</button>
-            <button type="button" className="btn btn-quiet" onClick={() => setReady(null)}>Done</button>
+            <button type="button" className="btn btn-dark" onClick={copyLink}>{copied ? 'დაკოპირდა' : 'ბმულის კოპირება'}</button>
+            <button type="button" className="btn btn-quiet" onClick={() => setReady(null)}>მზადაა</button>
           </div>
           {ready.channels.includes('email') && (
             <p className="small" style={{ margin: '12px 0 0' }}>
-              This link was not emailed by Supabase. That mail is limited to two emails an hour, so copy the link and send it yourself.
+              ეს ბმული Supabase-მა ელფოსტით არ გაუგზავნა. ეს ფოსტა საათში ორი წერილით არის შეზღუდული, ამიტომ დააკოპირეთ ბმული და თავად გაუგზავნეთ.
             </p>
           )}
           {textNote(ready)}
@@ -257,22 +257,22 @@ export default function People() {
       {inviting && (
         <form onSubmit={invite} noValidate style={{ margin: '0 24px 18px', padding: 20, borderRadius: 12, background: 'var(--ground)' }}>
           <div className="form-row">
-            <div className="field grow"><label htmlFor="inv-name">Full name</label>
+            <div className="field grow"><label htmlFor="inv-name">სრული სახელი</label>
               <input id="inv-name" className={'input' + (tried && !nameOk ? ' invalid' : '')} value={inv.full_name} onChange={(e) => setInv({ ...inv, full_name: e.target.value })} /></div>
-            <div className="field grow"><label htmlFor="inv-email">Work email</label>
+            <div className="field grow"><label htmlFor="inv-email">სამუშაო ელფოსტა</label>
               <input id="inv-email" type="email" className={'input' + (tried && !emailOk ? ' invalid' : '')} placeholder="name@kursi.ge" value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} />
-              {tried && !emailOk && <span className="hint error">Enter a work email address</span>}</div>
-            <div className="field" style={{ flex: '0 1 200px' }}><label htmlFor="inv-role">Role</label>
+              {tried && !emailOk && <span className="hint error">შეიყვანეთ სამუშაო ელფოსტა</span>}</div>
+            <div className="field" style={{ flex: '0 1 200px' }}><label htmlFor="inv-role">როლი</label>
               <select id="inv-role" className="select" value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value as Role })}>
                 {(['kam', 'treasury', 'manager', 'admin'] as Role[]).map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
               </select></div>
           </div>
           <div className="form-row" style={{ marginTop: 14 }}>
-            <div className="field" style={{ flex: '0 1 260px' }}><label htmlFor="inv-phone">Mobile <span className="muted" style={{ fontWeight: 400 }}>(for SMS or WhatsApp)</span></label>
+            <div className="field" style={{ flex: '0 1 260px' }}><label htmlFor="inv-phone">მობილური <span className="muted" style={{ fontWeight: 400 }}>(SMS-ისთვის ან WhatsApp-ისთვის)</span></label>
               <input id="inv-phone" type="tel" className={'input' + (tried && !phoneOk ? ' invalid' : '')} placeholder="+995 5XX XXX XXX" value={inv.phone} onChange={(e) => setInv({ ...inv, phone: e.target.value })} />
-              {tried && !phoneOk && <span className="hint error">Add a mobile number with the country code</span>}</div>
+              {tried && !phoneOk && <span className="hint error">დაამატეთ მობილური ქვეყნის კოდით</span>}</div>
             <fieldset style={{ border: 0, margin: 0, padding: 0 }}>
-              <legend className="small strong" style={{ fontWeight: 500, marginBottom: 6 }}>Send their messages by</legend>
+              <legend className="small strong" style={{ fontWeight: 500, marginBottom: 6 }}>შეტყობინებების გაგზავნა</legend>
               <div className="row" style={{ gap: '0 18px' }}>
                 {CHANNELS.map((c) => (
                   <label key={c.value} className="checkbox"><input type="checkbox" checked={inv.channels.includes(c.value)}
@@ -281,19 +281,19 @@ export default function People() {
               </div>
             </fieldset>
           </div>
-          <p className="small" style={{ margin: '12px 0', color: 'var(--ink-2)' }}>{ROLE_TEXT[inv.role]} You will get a link to copy. They open it and choose their own password. If SMS or WhatsApp is ticked, and a mobile number is filled in, that link is sent to their phone as well.</p>
+          <p className="small" style={{ margin: '12px 0', color: 'var(--ink-2)' }}>{ROLE_TEXT[inv.role]} მიიღებთ ბმულს დასაკოპირებლად. ისინი გახსნიან და თავად აირჩევენ პაროლს. თუ SMS ან WhatsApp მონიშნულია და მობილური შევსებულია, ბმული ტელეფონზეც გაეგზავნება.</p>
           <div className="row">
-            <button type="submit" className="btn btn-dark" disabled={busy}>{busy ? 'Preparing the link…' : 'Send invite'}</button>
-            <button type="button" className="btn btn-quiet" onClick={() => { setInviting(false); setTried(false); }}>Cancel</button>
+            <button type="submit" className="btn btn-dark" disabled={busy}>{busy ? 'ბმული მზადდება…' : 'მოწვევის გაგზავნა'}</button>
+            <button type="button" className="btn btn-quiet" onClick={() => { setInviting(false); setTried(false); }}>გაუქმება</button>
           </div>
         </form>
       )}
 
-      {!loaded && <p className="empty">Loading…</p>}
+      {!loaded && <p className="empty">იტვირთება…</p>}
       {loaded && (
         <div className="table-wrap">
           <table className="table" style={{ minWidth: 1120 }}>
-            <thead><tr><th>Person</th><th>Role</th><th>Login</th><th>Last signed in</th><th><span className="sr-only">Actions</span></th></tr></thead>
+            <thead><tr><th>ადამიანი</th><th>როლი</th><th>შესვლა</th><th>ბოლო შესვლა</th><th><span className="sr-only">მოქმედებები</span></th></tr></thead>
             <tbody>
               {people.map((p) => {
                 const st = status(p);
@@ -307,41 +307,41 @@ export default function People() {
                       <div className="tiny muted">{p.email}{p.phone ? ', ' + p.phone : ''}</div>
                       {editing === p.id ? (
                         <div className="row" style={{ marginTop: 8, gap: 8 }}>
-                          <label className="sr-only" htmlFor={'ph-' + p.id}>Mobile</label>
+                          <label className="sr-only" htmlFor={'ph-' + p.id}>მობილური</label>
                           <input id={'ph-' + p.id} className="input" style={{ width: 180, minHeight: 40 }} placeholder="+995…" value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} />
                           {CHANNELS.map((c) => (
                             <label key={c.value} className="checkbox small"><input type="checkbox" checked={contact.channels.includes(c.value)}
                               onChange={() => setContact({ ...contact, channels: contact.channels.includes(c.value) ? contact.channels.filter((x) => x !== c.value) : [...contact.channels, c.value] })} />{c.label}</label>
                           ))}
-                          <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} onClick={() => saveContact(p)}>Save</button>
-                          <button type="button" className="link" onClick={() => setEditing(null)}>Cancel</button>
+                          <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} onClick={() => saveContact(p)}>შენახვა</button>
+                          <button type="button" className="link" onClick={() => setEditing(null)}>გაუქმება</button>
                         </div>
                       ) : (
-                        <div className="tiny muted">{channelText(p.notify_channels)}{p.has_login && <> <button type="button" className="link tiny" style={{ minHeight: 0, padding: 0 }} onClick={() => { setEditing(p.id); setContact({ phone: p.phone ?? '', channels: p.notify_channels?.length ? p.notify_channels : ['email'] }); }}>Change</button></>}</div>
+                        <div className="tiny muted">{channelText(p.notify_channels)}{p.has_login && <> <button type="button" className="link tiny" style={{ minHeight: 0, padding: 0 }} onClick={() => { setEditing(p.id); setContact({ phone: p.phone ?? '', channels: p.notify_channels?.length ? p.notify_channels : ['email'] }); }}>შეცვლა</button></>}</div>
                       )}
                     </td>
                     <td>
-                      <label className="sr-only" htmlFor={'role-' + p.id}>Role for {p.full_name}</label>
+                      <label className="sr-only" htmlFor={'role-' + p.id}>როლი: {p.full_name}</label>
                       <select id={'role-' + p.id} className="select" style={{ width: 'auto', minHeight: 40 }} value={p.role} disabled={me}
                         onChange={(e) => {
                           const role = e.target.value as Role;
-                          if (window.confirm(`Make ${p.full_name} ${ROLE_NAMES[role]}?`)) act({ action: 'set_role', profile_id: p.id, role }, `${p.full_name} is now ${ROLE_NAMES[role]}.`);
+                          if (window.confirm(`${p.full_name} გახდეს ${ROLE_NAMES[role]}?`)) act({ action: 'set_role', profile_id: p.id, role }, `${p.full_name} ახლა ${ROLE_NAMES[role]}ა.`);
                         }}>
                         {(['kam', 'treasury', 'manager', 'admin'] as Role[]).map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
                       </select>
                     </td>
                     <td><span className={'pill ' + st.cls}>{st.text}</span></td>
-                    <td className="muted">{p.last_sign_in_at ? fmtDateTime(p.last_sign_in_at) : 'Never'}</td>
+                    <td className="muted">{p.last_sign_in_at ? fmtDateTime(p.last_sign_in_at) : 'არასდროს'}</td>
                     <td>
                       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
-                        {me && <span className="small muted">This is you</span>}
-                        {needsLink && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id || resettingId === p.id} onClick={() => copyInvite(p)}>{copyingId === p.id ? 'Preparing the link…' : 'Copy invite link'}</button>}
-                        {!me && !p.has_login && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => { setInviting(true); setInv({ full_name: p.full_name.includes('@') ? '' : p.full_name, email: p.email, role: p.role, phone: '', channels: ['email'] }); }}>Invite</button>}
-                        {!me && p.has_login && p.active && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id || resettingId === p.id} onClick={() => copyReset(p)}>{resettingId === p.id ? 'Preparing the link…' : 'Copy reset link'}</button>}
-                        {!me && p.has_login && p.active && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => act({ action: 'send_password_reset', profile_id: p.id }, `Password reset link sent to ${p.email}.`)}>{p.password_set ? 'Send password reset' : 'Resend invite'}</button>}
+                        {me && <span className="small muted">ეს თქვენ ხართ</span>}
+                        {needsLink && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id || resettingId === p.id} onClick={() => copyInvite(p)}>{copyingId === p.id ? 'ბმული მზადდება…' : 'მოწვევის ბმულის კოპირება'}</button>}
+                        {!me && !p.has_login && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => { setInviting(true); setInv({ full_name: p.full_name.includes('@') ? '' : p.full_name, email: p.email, role: p.role, phone: '', channels: ['email'] }); }}>მოწვევა</button>}
+                        {!me && p.has_login && p.active && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id || resettingId === p.id} onClick={() => copyReset(p)}>{resettingId === p.id ? 'ბმული მზადდება…' : 'აღდგენის ბმულის კოპირება'}</button>}
+                        {!me && p.has_login && p.active && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => act({ action: 'send_password_reset', profile_id: p.id }, `პაროლის აღდგენის ბმული გაიგზავნა ${p.email}-ზე.`)}>{p.password_set ? 'პაროლის აღდგენის გაგზავნა' : 'მოწვევის ხელახლა გაგზავნა'}</button>}
                         {!me && p.has_login && (p.active
-                          ? <button type="button" className="btn btn-danger" style={{ minHeight: 40 }} onClick={() => window.confirm(`Switch off ${p.full_name}'s login? Their past requests stay in the reports.`) && act({ action: 'deactivate', profile_id: p.id }, `${p.full_name}'s login is switched off.`)}>Switch off</button>
-                          : <button type="button" className="btn" style={{ minHeight: 40 }} onClick={() => act({ action: 'reactivate', profile_id: p.id }, `${p.full_name} can sign in again.`)}>Switch on</button>)}
+                          ? <button type="button" className="btn btn-danger" style={{ minHeight: 40 }} onClick={() => window.confirm(`გამოვრთოთ ${p.full_name}-ის შესვლა? წარსული მოთხოვნები ანგარიშებში რჩება.`) && act({ action: 'deactivate', profile_id: p.id }, `${p.full_name}-ის შესვლა გამორთულია.`)}>გამორთვა</button>
+                          : <button type="button" className="btn" style={{ minHeight: 40 }} onClick={() => act({ action: 'reactivate', profile_id: p.id }, `${p.full_name}-ს კვლავ შეუძლია შესვლა.`)}>ჩართვა</button>)}
                       </div>
                     </td>
                   </tr>
@@ -349,19 +349,19 @@ export default function People() {
                     <tr ref={shownRow}>
                       <td colSpan={5}>
                         <div role="status" style={{ margin: '4px 0 8px', padding: 20, borderRadius: 12, background: 'var(--ok-bg)' }}>
-                          <h3 style={{ fontSize: 18 }}>{shown.kind === 'reset' ? `Reset link ready for ${shown.name}` : `Invite ready for ${shown.name}`}</h3>
+                          <h3 style={{ fontSize: 18 }}>{shown.kind === 'reset' ? `აღდგენის ბმული მზადაა: ${shown.name}` : `მოწვევა მზადაა: ${shown.name}`}</h3>
                           <p className="small" style={{ margin: '8px 0 12px', color: 'var(--ink-2)' }}>
                             {shown.kind === 'reset'
-                              ? 'Copy this link and send it to them. They open it and choose a new password. The link works once. It was not emailed.'
-                              : 'Copy this link and send it to them. They open it and choose their own password. The link works once. It was not emailed.'}
+                              ? 'დააკოპირეთ ბმული და გაუგზავნეთ. ისინი გახსნიან და ახალ პაროლს აირჩევენ. ბმული ერთხელ მუშაობს. ელფოსტით არ გაგზავნილა.'
+                              : 'დააკოპირეთ ბმული და გაუგზავნეთ. ისინი გახსნიან და თავად აირჩევენ პაროლს. ბმული ერთხელ მუშაობს. ელფოსტით არ გაგზავნილა.'}
                           </p>
                           <div className="field">
-                            <label htmlFor={(shown.kind === 'reset' ? 'reset-link-' : 'invite-link-') + p.id}>Link</label>
+                            <label htmlFor={(shown.kind === 'reset' ? 'reset-link-' : 'invite-link-') + p.id}>ბმული</label>
                             <textarea id={(shown.kind === 'reset' ? 'reset-link-' : 'invite-link-') + p.id} className="input" readOnly rows={3} value={shown.link} onFocus={(e) => e.currentTarget.select()} />
                           </div>
                           <div className="row" style={{ marginTop: 12 }}>
-                            <button type="button" className="btn btn-dark" onClick={() => copyText(shown.link, setShownCopied)}>{shownCopied ? 'Copied' : 'Copy link'}</button>
-                            <button type="button" className="btn btn-quiet" onClick={() => setShown(null)}>Done</button>
+                            <button type="button" className="btn btn-dark" onClick={() => copyText(shown.link, setShownCopied)}>{shownCopied ? 'დაკოპირდა' : 'ბმულის კოპირება'}</button>
+                            <button type="button" className="btn btn-quiet" onClick={() => setShown(null)}>მზადაა</button>
                           </div>
                         </div>
                       </td>

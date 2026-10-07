@@ -31,14 +31,14 @@ export default function Admin() {
   return (
     <>
       <div>
-        <h1>Admin</h1>
-        <p className="muted" style={{ margin: '6px 0 14px', fontSize: 17 }}>People, counting rules, data and messages</p>
-        <nav className="page-links" aria-label="On this page">
-          <a href="#people">People</a>
-          <a href="#rules">Counting rules</a>
-          <a href="#sync">Data sync</a>
-          <a href="#messages">Messages</a>
-          <a href="#activity">Activity</a>
+        <h1>ადმინი</h1>
+        <p className="muted" style={{ margin: '6px 0 14px', fontSize: 17 }}>ხალხი, დათვლის წესები, მონაცემები და შეტყობინებები</p>
+        <nav className="page-links" aria-label="ამ გვერდზე">
+          <a href="#people">ხალხი</a>
+          <a href="#rules">დათვლის წესები</a>
+          <a href="#sync">მონაცემების სინქრონიზაცია</a>
+          <a href="#messages">შეტყობინებები</a>
+          <a href="#activity">აქტივობა</a>
         </nav>
       </div>
       <People />

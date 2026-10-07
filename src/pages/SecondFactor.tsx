@@ -14,10 +14,10 @@ export default function SecondFactor() {
     setBusy(true);
     const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
     const factor = factors?.totp?.find((f) => f.status === 'verified');
-    if (listError || !factor) { setBusy(false); setError('No authenticator app found for this account.'); return; }
+    if (listError || !factor) { setBusy(false); setError('ამ ანგარიშზე ავთენტიფიკატორი ვერ მოიძებნა.'); return; }
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.trim() });
     setBusy(false);
-    if (error) { setError('That code didn\'t work. Use the newest code from the app.'); return; }
+    if (error) { setError('კოდი არ იმუშავა. გამოიყენეთ აპის უახლესი კოდი.'); return; }
     await refresh();
   }
 
@@ -26,15 +26,15 @@ export default function SecondFactor() {
       <div className="auth-card">
         <div className="brand"><span className="brand-mark">K</span><span>kursi business</span></div>
         <form onSubmit={verify} className="stack-sm" noValidate>
-          <h1>Confirm it's you</h1>
-          <p className="muted">Enter the 6-digit code from your authenticator app.</p>
+          <h1>დაადასტურეთ, რომ თქვენ ხართ</h1>
+          <p className="muted">შეიყვანეთ 6-ნიშნა კოდი ავთენტიფიკატორიდან.</p>
           <div className="field">
-            <label htmlFor="code">Code</label>
+            <label htmlFor="code">კოდი</label>
             <input id="code" className="input big" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
           </div>
           {error && <p className="hint error" role="alert">{error}</p>}
-          <button type="submit" className="btn btn-dark btn-big" disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Confirm'}</button>
-          <button type="button" className="link" onClick={signOut}>Sign out</button>
+          <button type="submit" className="btn btn-dark btn-big" disabled={busy || code.length !== 6}>{busy ? 'მოწმდება…' : 'დადასტურება'}</button>
+          <button type="button" className="link" onClick={signOut}>გასვლა</button>
         </form>
       </div>
     </div>

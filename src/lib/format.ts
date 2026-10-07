@@ -7,30 +7,30 @@ export const fmtAmount = (n: number | null | undefined) => (n == null ? '' : amo
 export const fmtWhole = (n: number | null | undefined) => (n == null ? '' : wholeFmt.format(Number(n)));
 export const fmtRate = (n: number | null | undefined) => (n == null ? '' : Number(n).toFixed(4));
 
-/** 83,300,000 -> "83.3M", 22,158 -> "22,158" */
+/** 83,300,000 -> "83.3 მლნ", 22,158 -> "22,158" */
 export function fmtShort(n: number | null | undefined): string {
   if (n == null) return '';
   const v = Number(n);
-  if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
+  if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(1) + ' მლნ';
   return wholeFmt.format(v);
 }
 
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+  return new Date(iso).toLocaleTimeString('ka-GE', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
 }
 
 /** "2026-10-06" -> "6 Oct" */
 export function fmtDay(day: string | null | undefined): string {
   if (!day) return '';
-  return new Date(day + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return new Date(day + 'T00:00:00Z').toLocaleDateString('ka-GE', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
 export function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
-  const label = day === todayTbilisi() ? 'Today' : fmtDay(day);
+  const label = day === todayTbilisi() ? 'დღეს' : fmtDay(day);
   return label + ' ' + fmtTime(iso);
 }
 
@@ -41,7 +41,7 @@ export function todayTbilisi(offsetDays = 0): string {
 }
 
 export function longToday(): string {
-  return new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ });
+  return new Date().toLocaleDateString('ka-GE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ });
 }
 
 export function minutesSince(iso: string): number {
@@ -50,10 +50,10 @@ export function minutesSince(iso: string): number {
 
 export function ago(iso: string): string {
   const m = minutesSince(iso);
-  if (m < 1) return 'Just now';
-  if (m < 60) return m + ' min ago';
+  if (m < 1) return 'ახლახან';
+  if (m < 60) return m + ' წთ წინ';
   const h = Math.floor(m / 60);
-  return h + ' h ' + (m % 60) + ' min ago';
+  return h + ' სთ ' + (m % 60) + ' წთ წინ';
 }
 
 /** "120 000", "120,000.50" -> 120000.5 ; returns NaN when not a number */
@@ -69,10 +69,10 @@ export function describeDeal(
   gets: string | null,
   getsAmount?: number | null,
 ): string {
-  if (!sells || !gets) return 'Imported request';
+  if (!sells || !gets) return 'იმპორტირებული მოთხოვნა';
   const sellSide = amount != null ? `${sells} ${fmtAmount(amount)}` : sells;
   const getSide = getsAmount != null ? `${gets} ${fmtAmount(getsAmount)}` : gets;
-  return `Sells ${sellSide} for ${getSide}`;
+  return `ყიდის ${sellSide}, იღებს ${getSide}`;
 }
 
 /** "USD 10,000" or just "USD" when that side's amount was left blank. */
@@ -82,8 +82,8 @@ export function sideAmount(currency: string | null, amount: number | null | unde
 }
 
 export function rateUnit(sells: string, gets: string): string {
-  if (sells !== 'GEL' && gets !== 'GEL') return `${gets} per 1 ${sells}`;
-  return `GEL per 1 ${sells === 'GEL' ? gets : sells}`;
+  if (sells !== 'GEL' && gets !== 'GEL') return `1 ${sells}-ზე ${gets}`;
+  return `1 ${sells === 'GEL' ? gets : sells}-ზე GEL`;
 }
 
 export function monthOptions(count = 6): { value: string; label: string }[] {
@@ -93,7 +93,7 @@ export function monthOptions(count = 6): { value: string; label: string }[] {
   let m = Number(today.slice(5, 7));
   for (let i = 0; i < count; i++) {
     const value = `${y}-${String(m).padStart(2, '0')}-01`;
-    const label = new Date(value + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const label = new Date(value + 'T00:00:00Z').toLocaleDateString('ka-GE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     out.push({ value, label: i === 0 ? `${label}, so far` : label });
     m -= 1;
     if (m === 0) { m = 12; y -= 1; }

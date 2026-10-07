@@ -125,8 +125,8 @@ export default function MarketRates() {
         throw new Error(message);
       }
       const problems = (data?.problems ?? []) as string[];
-      if (problems.length) toast('Saved ' + (data?.saved ?? 0) + '. ' + problems.join('; '), 'error');
-      else toast('Rates updated');
+      if (problems.length) toast('შეინახა ' + (data?.saved ?? 0) + '. ' + problems.join('; '), 'error');
+      else toast('კურსები განახლდა');
       await load();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -141,27 +141,27 @@ export default function MarketRates() {
     <>
       <div className="page-head">
         <div>
-          <h1>Rates</h1>
+          <h1>კურსები</h1>
           <p>
-            Latest buy and sell for USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.
-            {updated ? ' Updated ' + updated + '.' : ''} Rates refresh on their own every 30 minutes.
-            Download rates for the 11:00–19:00 history.
+            ბოლო ყიდვა და გაყიდვა USD, EUR, RUB და CNY GEL-ის მიმართ, შემდეგ კროსები, მაგალითად EUR/USD.
+            {updated ? ' განახლდა ' + updated + '.' : ''} კურსები თავისით ახლდება ყოველ 30 წუთში.
+            ჩამოტვირთეთ კურსები 11:00–19:00 ისტორიისთვის.
           </p>
         </div>
         <div className="row">
           <button type="button" className="btn" disabled={!grid.blocks.length} onClick={() => downloadGrid(grid)}>
-            <IconDownload />Download rates
+            <IconDownload />კურსების ჩამოტვირთვა
           </button>
           {canRefresh && (
             <button type="button" className="btn btn-primary" disabled={refreshing} onClick={refresh}>
-              {refreshing ? 'Updating…' : 'Update rates'}
+              {refreshing ? 'ახლდება…' : 'კურსების განახლება'}
             </button>
           )}
         </div>
       </div>
 
-      {!loaded && <p className="empty">Loading…</p>}
-      {loaded && !board.rows.length && <p className="empty">No rates stored yet. An admin or treasury can update them.</p>}
+      {!loaded && <p className="empty">იტვირთება…</p>}
+      {loaded && !board.rows.length && <p className="empty">კურსი ჯერ არ არის შენახული. ადმინს ან სახაზინოს შეუძლია განახლება.</p>}
       {board.rows.length > 0 && <CurrentBoardTable board={board} />}
     </>
   );
@@ -201,12 +201,12 @@ async function loadSnapshots(since: string): Promise<RateSnapshot[]> {
 
 function CurrentBoardTable({ board }: { board: CurrentBoard }) {
   return (
-    <section className="card flush" aria-label="Current rates">
+    <section className="card flush" aria-label="მიმდინარე კურსები">
       <div className="table-wrap">
         <table className="table rate-grid">
           <thead>
             <tr>
-              <th className="src" rowSpan={2} scope="col">Source</th>
+              <th className="src" rowSpan={2} scope="col">წყარო</th>
               {board.pairs.map((pair) => (
                 <th key={pair} className="num pair" colSpan={2} scope="colgroup">{pair}</th>
               ))}
@@ -236,8 +236,8 @@ function CurrentBoardTable({ board }: { board: CurrentBoard }) {
 function PairSides() {
   return (
     <>
-      <th className="num side pair-start" scope="col">Buy</th>
-      <th className="num side" scope="col">Sell</th>
+      <th className="num side pair-start" scope="col">ყიდვა</th>
+      <th className="num side" scope="col">გაყიდვა</th>
     </>
   );
 }

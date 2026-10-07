@@ -11,11 +11,11 @@ function isOther(reason: LossReason): boolean {
 }
 
 const STEPS: { value: string; label: string }[] = [
-  { value: 'not_contacted', label: 'Not contacted' },
-  { value: 'called', label: 'Called' },
-  { value: 'meeting_set', label: 'Meeting set' },
-  { value: 'converted', label: 'Converted again' },
-  { value: 'not_interested', label: 'Not interested' },
+  { value: 'not_contacted', label: 'ჯერ არ დაკავშირებულა' },
+  { value: 'called', label: 'დარეკა' },
+  { value: 'meeting_set', label: 'შეხვედრა დანიშნულია' },
+  { value: 'converted', label: 'კვლავ გადაიყვანა' },
+  { value: 'not_interested', label: 'არ აინტერესებს' },
 ];
 
 export default function FollowUps() {
@@ -77,12 +77,16 @@ export default function FollowUps() {
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
-  const label = (code: string) => reasons.find((r) => r.code === code)?.label_en ?? code;
+  const reasonText = (r: LossReason) => r.label_ka.trim() || r.label_en;
+  const label = (code: string) => {
+    const reason = reasons.find((r) => r.code === code);
+    return reason ? reasonText(reason) : code;
+  };
   const savedLabel = (id: number) => {
     const code = answered[id];
     const reason = reasons.find((r) => r.code === code);
     const text = (otherText[id] ?? '').trim();
-    if (reason && isOther(reason) && text) return `${reason.label_en}: ${text}`;
+    if (reason && isOther(reason) && text) return `${reasonText(reason)}: ${text}`;
     return label(code);
   };
   const left = asks.filter((a) => !answered[a.id]).length;
@@ -94,55 +98,55 @@ export default function FollowUps() {
     <>
       <div className="page-head">
         <div>
-          <h1>Follow-ups</h1>
-          <p>Answers and calls that come after the day's requests</p>
+          <h1>დაბრუნება</h1>
+          <p>პასუხები და ზარები დღის მოთხოვნების შემდეგ</p>
         </div>
       </div>
 
       <section className="card tint" aria-labelledby="ask-title">
         <div className="card-head">
           <div>
-            <h2 id="ask-title" style={{ fontSize: 22 }}>Why didn't these go through?</h2>
-            <p className="small" style={{ color: 'var(--ink-2)' }}>Requests from the last 7 days with no matching transaction.{canAct ? ' Pick a reason. Next to Other, type your own if you need to.' : ''}</p>
+            <h2 id="ask-title" style={{ fontSize: 22 }}>რატომ არ გავიდა ეს მოთხოვნები?</h2>
+            <p className="small" style={{ color: 'var(--ink-2)' }}>ბოლო 7 დღის მოთხოვნები, შესაბამისი ტრანზაქციის გარეშე.{canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}</p>
           </div>
-          {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'All answered. Thank you.' : left + ' left'}</span>}
+          {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'ყველას პასუხი გაეცა. გმადლობთ.' : left + ' დარჩა'}</span>}
         </div>
-        {loaded && !asks.length && <p className="empty">Nothing to answer. Well done.</p>}
+        {loaded && !asks.length && <p className="empty">საპასუხო არაფერია.</p>}
         <div className="stack-sm">
           {asks.map((a) => (
             <div key={a.id} style={{ background: '#fff', borderRadius: 12, padding: '16px 18px' }} className="row-between">
               <div style={{ flex: '1 1 280px', minWidth: 0 }}>
                 <div className="name">{a.client_name ?? a.client_id}</div>
                 <div className="small muted">
-                  {fmtDay(a.request_date)}: {describeDeal(a.sells_currency, a.amount, a.gets_currency, a.gets_amount)}{a.rate ? ' at ' + fmtRate(a.rate) : ''}
+                  {fmtDay(a.request_date)}: {describeDeal(a.sells_currency, a.amount, a.gets_currency, a.gets_amount)}{a.rate ? ' კურსით ' + fmtRate(a.rate) : ''}
                   {showOwner && a.kam_name ? ', ' + a.kam_name : ''}
                 </div>
               </div>
               {answered[a.id] ? (
                 <div className="row">
-                  <span className="ok-text strong row" style={{ gap: 8 }}><IconCheck />Saved: {savedLabel(a.id)}</span>
-                  <button type="button" className="link" onClick={() => answer(a, null)}>Undo</button>
+                  <span className="ok-text strong row" style={{ gap: 8 }}><IconCheck />შენახულია: {savedLabel(a.id)}</span>
+                  <button type="button" className="link" onClick={() => answer(a, null)}>გაუქმება</button>
                 </div>
               ) : canAct ? (
                 <div className="chips">
                   {reasons.map((r) => isOther(r) ? (
                     <span key={r.code} className="other-reason">
-                      <button type="button" className="chip" onClick={() => answer(a, r.code)}>{r.label_en}</button>
+                      <button type="button" className="chip" onClick={() => answer(a, r.code)}>{reasonText(r)}</button>
                       <input
                         className="input"
-                        aria-label="Other reason"
-                        placeholder="Type the reason"
+                        aria-label="სხვა მიზეზი"
+                        placeholder="ჩაწერეთ მიზეზი"
                         value={otherText[a.id] ?? ''}
                         onChange={(e) => setOtherText((m) => ({ ...m, [a.id]: e.target.value }))}
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); answer(a, r.code); } }}
                       />
                     </span>
                   ) : (
-                    <button key={r.code} type="button" className="chip" onClick={() => answer(a, r.code)}>{r.label_en}</button>
+                    <button key={r.code} type="button" className="chip" onClick={() => answer(a, r.code)}>{reasonText(r)}</button>
                   ))}
                 </div>
               ) : (
-                <span className="pill pill-wait">Waiting for the KAM</span>
+                <span className="pill pill-wait">KAM-ს ელოდება</span>
               )}
             </div>
           ))}
@@ -151,12 +155,12 @@ export default function FollowUps() {
 
       <div className="page-head" style={{ marginTop: 8 }}>
         <div style={{ maxWidth: 640 }}>
-          <h2 style={{ fontSize: 22 }}>Clients to win back</h2>
-          <p className="small" style={{ fontSize: 15 }}>They asked for a rate, then stopped, with no successful transaction since. Start with priority A.</p>
+          <h2 style={{ fontSize: 22 }}>დასაბრუნებელი კლიენტები</h2>
+          <p className="small" style={{ fontSize: 15 }}>კურსი ითხოვეს, შემდეგ გაჩერდნენ, წარმატებული ტრანზაქციის გარეშე. დაიწყეთ პრიორიტეტი A-დან.</p>
         </div>
         {winback.length > 0 && (
           <div style={{ minWidth: 240 }}>
-            <div className="strong small">{contacted} of {winback.length} contacted</div>
+            <div className="strong small">{contacted} {winback.length}-დან დაკავშირებულია</div>
             <div className="bar" style={{ marginTop: 8, height: 10 }} aria-hidden="true"><span className="ok" style={{ width: pct + '%' }} /></div>
           </div>
         )}
@@ -165,34 +169,34 @@ export default function FollowUps() {
       <div className="chips">
         {(['All', 'A', 'B', 'C'] as const).map((t) => (
           <button key={t} type="button" className="chip" aria-pressed={filter === t} onClick={() => setFilter(t)}>
-            {t === 'All' ? 'All' : 'Priority ' + t} ({winback.filter((w) => t === 'All' || w.tier === t).length})
+            {t === 'All' ? 'ყველა' : 'პრიორიტეტი ' + t} ({winback.filter((w) => t === 'All' || w.tier === t).length})
           </button>
         ))}
       </div>
 
-      <section className="card flush" aria-label="Clients to win back" style={{ paddingTop: 8 }}>
-        {loaded && !shown.length && <p className="empty">No clients to win back here.</p>}
+      <section className="card flush" aria-label="დასაბრუნებელი კლიენტები" style={{ paddingTop: 8 }}>
+        {loaded && !shown.length && <p className="empty">აქ დასაბრუნებელი კლიენტი არ არის.</p>}
         {shown.length > 0 && (
           <div className="table-wrap">
             <table className="table" style={{ minWidth: 900 }}>
               <thead>
                 <tr>
-                  <th>Priority</th><th>Client</th>{showOwner && <th>KAM</th>}<th>Last request</th><th>Last deal</th>
-                  <th className="num">Usual size</th><th>Reason given</th><th>Next step</th>
+                  <th>პრიორიტეტი</th><th>კლიენტი</th>{showOwner && <th>KAM</th>}<th>ბოლო მოთხოვნა</th><th>ბოლო გარიგება</th>
+                  <th className="num">ჩვეულებრივი ზომა</th><th>მითითებული მიზეზი</th><th>შემდეგი ნაბიჯი</th>
                 </tr>
               </thead>
               <tbody>
                 {shown.map((w) => (
                   <tr key={w.client_id}>
-                    <td><span className={'tier tier-' + w.tier} aria-label={'Priority ' + w.tier}>{w.tier}</span></td>
+                    <td><span className={'tier tier-' + w.tier} aria-label={'პრიორიტეტი ' + w.tier}>{w.tier}</span></td>
                     <td><div className="strong">{w.client_name ?? w.client_id}</div><div className="tiny muted">ID {w.client_id}</div></td>
                     {showOwner && <td>{w.owner_name}</td>}
                     <td>{fmtDay(w.last_request)}</td>
-                    <td className={w.last_deal ? '' : 'warn-text'}>{w.last_deal ? fmtDay(w.last_deal) : 'Never'}</td>
+                    <td className={w.last_deal ? '' : 'warn-text'}>{w.last_deal ? fmtDay(w.last_deal) : 'არასდროს'}</td>
                     <td className="num nowrap">GEL {fmtWhole(Math.max(Number(w.prior_turnover_gel) || 0, Number(w.max_request_gel) || 0))}</td>
-                    <td>{w.last_reason ? label(w.last_reason) : <span className="muted">None</span>}</td>
+                    <td>{w.last_reason ? label(w.last_reason) : <span className="muted">არ არის</span>}</td>
                     <td>
-                      <label className="sr-only" htmlFor={'step-' + w.client_id}>Next step for {w.client_name}</label>
+                      <label className="sr-only" htmlFor={'step-' + w.client_id}>შემდეგი ნაბიჯი: {w.client_name}</label>
                       <select id={'step-' + w.client_id} className="select" style={{ minHeight: 44, width: 'auto' }} value={w.step} disabled={!canAct} onChange={(e) => setStep(w, e.target.value)}>
                         {STEPS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                       </select>
@@ -204,7 +208,7 @@ export default function FollowUps() {
           </div>
         )}
       </section>
-      <p className="small muted" style={{ margin: 0 }}>Priority A means the largest past turnover or request size, C the smallest. A client leaves this list on their own once a successful transaction arrives.</p>
+      <p className="small muted" style={{ margin: 0 }}>პრიორიტეტი A ნიშნავს ყველაზე დიდ წარსულ ბრუნვას ან მოთხოვნის ზომას, C ყველაზე პატარას. კლიენტი ამ სიას თავისით ტოვებს, როცა წარმატებული ტრანზაქცია მოდის.</p>
     </>
   );
 }

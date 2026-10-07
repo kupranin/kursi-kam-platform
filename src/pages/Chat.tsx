@@ -47,7 +47,7 @@ export default function Chat() {
       setLoadError('');
       seen.current = true;
     } catch {
-      if (!seen.current) setLoadError('Messages could not be loaded.');
+      if (!seen.current) setLoadError('შეტყობინებები ვერ ჩაიტვირთა.');
     } finally {
       setLoaded(true);
     }
@@ -61,7 +61,7 @@ export default function Chat() {
     people.forEach((p) => map.set(p.id, p));
     return map;
   }, [people]);
-  const nameOf = useCallback((id: string) => byId.get(id)?.full_name ?? 'Former colleague', [byId]);
+  const nameOf = useCallback((id: string) => byId.get(id)?.full_name ?? 'ყოფილი კოლეგა', [byId]);
 
   const choices = useMemo(
     () => people.filter((p) => p.active && p.id !== me),
@@ -136,7 +136,7 @@ export default function Chat() {
     });
     setSending(false);
     if (error) {
-      setSendError('The message was not sent.');
+      setSendError('შეტყობინება არ გაიგზავნა.');
       return;
     }
     setDraft('');
@@ -151,30 +151,30 @@ export default function Chat() {
     <>
       <div className="page-head">
         <div>
-          <h1>{showingLog ? 'Message log' : 'Chat'}</h1>
+          <h1>{showingLog ? 'შეტყობინებების ჟურნალი' : 'ჩატი'}</h1>
           <p>{showingLog
-            ? 'Every message sent between people on the platform. This is the record.'
-            : 'Send a message to someone on the team.'}</p>
+            ? 'ყველა შეტყობინება, რომელიც პლატფორმაზე გაიგზავნა. ეს ჩანაწერია.'
+            : 'გაუგზავნეთ შეტყობინება გუნდის წევრს.'}</p>
         </div>
       </div>
 
       {canSeeAll && (
-        <nav className="page-links" aria-label="Chat">
-          <button type="button" className={view === 'chat' ? 'active' : ''} onClick={() => switchView('chat')}>Your chats</button>
-          <button type="button" className={view === 'log' ? 'active' : ''} onClick={() => switchView('log')}>Message log</button>
+        <nav className="page-links" aria-label="ჩატი">
+          <button type="button" className={view === 'chat' ? 'active' : ''} onClick={() => switchView('chat')}>თქვენი ჩატები</button>
+          <button type="button" className={view === 'log' ? 'active' : ''} onClick={() => switchView('log')}>შეტყობინებების ჟურნალი</button>
         </nav>
       )}
 
-      {!loaded && <p className="muted">Loading…</p>}
+      {!loaded && <p className="muted">იტვირთება…</p>}
       {loaded && loadError && !people.length && <p className="alert-box" role="alert">{loadError}</p>}
 
       {loaded && !loadError && showingLog && (
         <div className="chat-layout">
           <section className="card flush chat-people" aria-labelledby="log-list-title">
             <div className="card-head">
-              <h2 id="log-list-title">Conversations</h2>
+              <h2 id="log-list-title">საუბრები</h2>
             </div>
-            {!conversations.length && <p className="empty">No messages yet.</p>}
+            {!conversations.length && <p className="empty">შეტყობინება ჯერ არ არის.</p>}
             <div className="chat-people-list">
               {conversations.map((c) => (
                 <button
@@ -184,7 +184,7 @@ export default function Chat() {
                   aria-pressed={selected === c.key}
                   onClick={() => setSelected(c.key)}
                 >
-                  <span className="strong">{nameOf(c.a)} and {nameOf(c.b)}</span>
+                  <span className="strong">{nameOf(c.a)} და {nameOf(c.b)}</span>
                   <span className="chat-preview">{nameOf(c.last.sender_id)}: {preview(c.last.body)}</span>
                   <time className="tiny muted" dateTime={c.last.created_at}>{fmtDateTime(c.last.created_at)}</time>
                 </button>
@@ -192,17 +192,17 @@ export default function Chat() {
             </div>
           </section>
 
-          <section className="card" aria-label="Message log thread">
-            {!logPair && <p className="empty">{conversations.length ? 'Open a conversation to read it.' : 'No messages yet.'}</p>}
+          <section className="card" aria-label="შეტყობინებების ჟურნალი">
+            {!logPair && <p className="empty">{conversations.length ? 'გახსენით საუბარი წასაკითხად.' : 'შეტყობინება ჯერ არ არის.'}</p>}
             {logPair && (
               <>
                 <div className="card-head">
                   <div>
-                    <h2>{nameOf(logPair.a)} and {nameOf(logPair.b)}</h2>
-                    <p className="small muted">This is the record. Messages stay as they were sent.</p>
+                    <h2>{nameOf(logPair.a)} და {nameOf(logPair.b)}</h2>
+                    <p className="small muted">ეს ჩანაწერია. შეტყობინებები ისე რჩება, როგორც გაიგზავნა.</p>
                   </div>
                 </div>
-                <div className="chat-stream" ref={streamRef} role="log" aria-label="Messages">
+                <div className="chat-stream" ref={streamRef} role="log" aria-label="შეტყობინებები">
                   {thread.map((m) => (
                     <div key={m.id} className="chat-line">
                       <div className="row-between">
@@ -223,20 +223,20 @@ export default function Chat() {
         <div className="chat-layout">
           <section className="card flush chat-people" aria-labelledby="chat-with">
             <div className="card-head">
-              <h2 id="chat-with">People</h2>
+              <h2 id="chat-with">ხალხი</h2>
             </div>
             <div className="chat-pick">
-              {!choices.length && <p className="small muted" style={{ margin: 0 }}>No one else to message yet.</p>}
+              {!choices.length && <p className="small muted" style={{ margin: 0 }}>ჯერ სხვა არავინაა, ვისაც მისწერთ.</p>}
               {choices.length > 0 && (
                 <div className="field">
-                  <label htmlFor="chat-to">New message to</label>
+                  <label htmlFor="chat-to">ახალი შეტყობინება</label>
                   <select
                     id="chat-to"
                     className="select"
                     value={choices.some((c) => c.id === selected) ? selected! : ''}
                     onChange={(e) => { if (e.target.value) openChat(e.target.value); }}
                   >
-                    <option value="">Choose a person</option>
+                    <option value="">აირჩიეთ ადამიანი</option>
                     {choices.map((p) => (
                       <option key={p.id} value={p.id}>{p.full_name} ({roleLabel(p.role)})</option>
                     ))}
@@ -244,7 +244,7 @@ export default function Chat() {
                 </div>
               )}
             </div>
-            {!partners.length && choices.length > 0 && <p className="empty">No conversations yet.</p>}
+            {!partners.length && choices.length > 0 && <p className="empty">საუბარი ჯერ არ არის.</p>}
             <div className="chat-people-list">
               {partners.map(([id, last]) => (
                 <button
@@ -262,18 +262,18 @@ export default function Chat() {
             </div>
           </section>
 
-          <section className="card" aria-label="Conversation">
-            {!selected && <p className="empty">Choose someone to start a conversation.</p>}
+          <section className="card" aria-label="საუბარი">
+            {!selected && <p className="empty">აირჩიეთ ადამიანი საუბრის დასაწყებად.</p>}
             {selected && (
               <>
                 <div className="card-head">
                   <div>
                     <h2>{nameOf(selected)}</h2>
-                    {person && <p className="small muted">{roleLabel(person.role)}{person.active ? '' : ' · no longer active'}</p>}
+                    {person && <p className="small muted">{roleLabel(person.role)}{person.active ? '' : ' · აღარ არის აქტიური'}</p>}
                   </div>
                 </div>
-                <div className="chat-stream" ref={streamRef} role="log" aria-label="Messages">
-                  {!thread.length && <p className="empty">No messages yet.</p>}
+                <div className="chat-stream" ref={streamRef} role="log" aria-label="შეტყობინებები">
+                  {!thread.length && <p className="empty">შეტყობინება ჯერ არ არის.</p>}
                   {thread.map((m) => (
                     <div key={m.id} className={'chat-msg' + (m.sender_id === me ? ' mine' : '')}>
                       <div className="row-between">
@@ -288,25 +288,25 @@ export default function Chat() {
                   <form onSubmit={send}>
                     <div className="chat-compose">
                       <div className="field">
-                        <label htmlFor="chat-body">Message</label>
+                        <label htmlFor="chat-body">შეტყობინება</label>
                         <textarea
                           id="chat-body"
                           className="input"
                           rows={3}
                           maxLength={MAX_BODY}
                           value={draft}
-                          placeholder="Write a message"
+                          placeholder="დაწერეთ შეტყობინება"
                           onChange={(e) => { setDraft(e.target.value); setSendError(''); }}
                         />
                       </div>
                       <button type="submit" className="btn btn-primary" disabled={sending || draft.trim() === ''}>
-                        {sending ? 'Sending…' : 'Send'}
+                        {sending ? 'იგზავნება…' : 'გაგზავნა'}
                       </button>
                     </div>
                     {sendError && <p className="alert-box" role="alert">{sendError}</p>}
                   </form>
                 ) : (
-                  <p className="small muted">This person can't receive messages.</p>
+                  <p className="small muted">ამ ადამიანს შეტყობინება ვერ მიუვა.</p>
                 )}
               </>
             )}

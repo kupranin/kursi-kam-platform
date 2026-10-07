@@ -404,10 +404,10 @@ export function historySheet(grid: RateGrid): (string | number | null)[][] {
     if (index) lines.push([]);
     const hours = grid.columns.flatMap((col) => {
       const stamp = col.day + ' ' + String(col.slot).padStart(2, '0') + ':00';
-      return [stamp + ' Buy', stamp + ' Sell'];
+      return [stamp + ' ყიდვა', stamp + ' გაყიდვა'];
     });
     lines.push([block.pair]);
-    lines.push(['Source', ...hours]);
+    lines.push(['წყარო', ...hours]);
     for (const row of block.rows) {
       lines.push([
         row.label,

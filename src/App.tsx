@@ -38,16 +38,16 @@ export default function App() {
 
   if (!isConfigured) return <SetupNeeded />;
   if (location.pathname === '/set-password' || recovering || arrivedFrom === 'invite' || arrivedFrom === 'recovery') return <SetPassword />;
-  if (loading) return <div className="loading">Loading…</div>;
+  if (loading) return <div className="loading">იტვირთება…</div>;
   if (!session) return <Login />;
   if (needsSecondFactor) return <SecondFactor />;
   if (!profile) {
     return (
       <div className="auth-wrap">
         <div className="auth-card">
-          <h1>No access yet</h1>
-          <p>Your login works, but your account isn't set up on the platform or has been switched off. Ask an admin to check the People list.</p>
-          <button type="button" className="btn" onClick={signOut}>Sign out</button>
+          <h1>წვდომა ჯერ არ არის</h1>
+          <p>შესვლა მუშაობს, მაგრამ ანგარიში პლატფორმაზე არ არის აწყობილი ან გამორთულია. სთხოვეთ ადმინს, შეამოწმოს ხალხის სია.</p>
+          <button type="button" className="btn" onClick={signOut}>გასვლა</button>
         </div>
       </div>
     );
@@ -81,8 +81,8 @@ function SetupNeeded() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <h1>Almost there</h1>
-        <p>The app doesn't know which Supabase project to use yet. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in Vercel (Project Settings, Environment Variables), then redeploy.</p>
+        <h1>თითქმის მზადაა</h1>
+        <p>აპლიკაციამ ჯერ არ იცის, რომელ Supabase პროექტს გამოიყენოს. დაამატეთ <code>VITE_SUPABASE_URL</code> და <code>VITE_SUPABASE_ANON_KEY</code> Vercel-ში (Project Settings, Environment Variables), შემდეგ თავიდან გააშვეთ.</p>
       </div>
     </div>
   );

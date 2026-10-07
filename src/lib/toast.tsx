@@ -18,7 +18,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toast && (
           <div className={'toast toast-' + toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}>
             <span>{toast.message}</span>
-            <button type="button" className="link" onClick={() => setToast(null)} aria-label="Close">×</button>
+            <button type="button" className="link" onClick={() => setToast(null)} aria-label="დახურვა">×</button>
           </div>
         )}
       </div>

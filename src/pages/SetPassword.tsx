@@ -22,9 +22,9 @@ export default function SetPassword() {
   async function save(e: FormEvent) {
     e.preventDefault();
     setError('');
-    if (password.length < 12) { setError('Use at least 12 characters.'); return; }
-    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) { setError('Use letters and at least one digit.'); return; }
-    if (password !== repeat) { setError('The two passwords are different.'); return; }
+    if (password.length < 12) { setError('მინიმუმ 12 სიმბოლო.'); return; }
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) { setError('გამოიყენეთ ასოები და მინიმუმ ერთი ციფრი.'); return; }
+    if (password !== repeat) { setError('ორი პაროლი არ ემთხვევა.'); return; }
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
@@ -39,28 +39,28 @@ export default function SetPassword() {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="brand"><span className="brand-mark">K</span><span>kursi business</span></div>
-        {!ready && <p className="muted">Opening your link…</p>}
+        {!ready && <p className="muted">ბმული იხსნება…</p>}
         {ready && !session && (
           <div className="stack-sm">
-            <h1>This link has expired</h1>
-            <p>Links work once and for a limited time. Ask an admin to send a new invite, or use "Forgot your password?" on the sign-in page.</p>
-            <a className="btn" href="/">Go to sign in</a>
+            <h1>ეს ბმული ვადაგასულია</h1>
+            <p>ბმული ერთხელ და შეზღუდული დროით მუშაობს. სთხოვეთ ადმინს ახალი მოწვევა, ან გამოიყენეთ „დაგავიწყდათ პაროლი?“ შესვლის გვერდზე.</p>
+            <a className="btn" href="/">შესვლაზე გადასვლა</a>
           </div>
         )}
         {ready && session && (
           <form onSubmit={save} className="stack-sm" noValidate>
-            <h1>Choose your password</h1>
-            <p className="muted small">For {session.user.email}. At least 12 characters, with letters and a digit. Nobody else, including admins, will see it.</p>
+            <h1>აირჩიეთ პაროლი</h1>
+            <p className="muted small">{session.user.email}-ისთვის. მინიმუმ 12 სიმბოლო, ასოებით და ციფრით. სხვა არავინ, ადმინიც, ვერ ნახავს.</p>
             <div className="field">
-              <label htmlFor="pw1">New password</label>
+              <label htmlFor="pw1">ახალი პაროლი</label>
               <input id="pw1" className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="pw2">Repeat it</label>
+              <label htmlFor="pw2">გაიმეორეთ</label>
               <input id="pw2" className="input" type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} />
             </div>
             {error && <p className="hint error" role="alert">{error}</p>}
-            <button type="submit" className="btn btn-dark btn-big" disabled={busy}>{busy ? 'Saving…' : 'Save password'}</button>
+            <button type="submit" className="btn btn-dark btn-big" disabled={busy}>{busy ? 'ინახება…' : 'პაროლის შენახვა'}</button>
           </form>
         )}
       </div>
