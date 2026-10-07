@@ -80,6 +80,8 @@ function describe(a: AuditRow, names: Names): string {
       if (o.client_reply !== n.client_reply && n.client_reply === 'declined') return `კლიენტმა უარი თქვა, მოთხოვნა #${a.row_key}: ${n.client_decline_reason}`;
       if (o.better_decision !== n.better_decision && n.better_decision === 'accepted') return `სახაზინომ დაადასტურა ${fmtRate(n.given_rate)}, მოთხოვნა #${a.row_key}`;
       if (o.better_decision !== n.better_decision && n.better_decision === 'corrected') return `გასწორებული კურსი ${fmtRate(n.given_rate)}, მოთხოვნა #${a.row_key}`;
+      if (o.quote_status !== 'declined' && n.quote_status === 'declined' && n.decline_reason) return `სახაზინომ უარი თქვა, მოთხოვნა #${a.row_key}: ${DECLINE_KA[n.decline_reason] ?? n.decline_reason}`;
+      if (o.client_reply === 'better' && !n.client_reply && n.quote_status === 'quoted') return `სახაზინომ დააბრუნა კურსი ${fmtRate(n.rate)}, მოთხოვნა #${a.row_key}`;
       if (o.loss_reason !== n.loss_reason || o.loss_reason_note !== n.loss_reason_note) {
         if (!n.loss_reason) return `მიზეზი გასუფთავდა მოთხოვნაზე #${a.row_key}`;
         return `მიზეზი მიეთითა მოთხოვნაზე #${a.row_key}: ${LOSS_KA[n.loss_reason] ?? n.loss_reason}${n.loss_reason_note ? ` (${n.loss_reason_note})` : ''}`;

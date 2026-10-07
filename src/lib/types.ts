@@ -43,6 +43,7 @@ export interface RequestRow {
   given_rate?: number | null;
   client_decline_reason?: string | null;
   client_replied_at?: string | null;
+  rate_written_at?: string | null;
 }
 
 export interface Rules {

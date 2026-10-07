@@ -3,7 +3,10 @@ import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
+import { useI18n } from '../lib/i18n';
+import { treasuryReason } from '../lib/requestStatus';
 import type { QueueRow, QuoteToday, ReferenceRate } from '../lib/types';
+import PairBoard from '../components/PairBoard';
 import { IconClock } from '../components/Icons';
 
 const DECLINE_REASONS: { value: string; label: string }[] = [
@@ -12,8 +15,8 @@ const DECLINE_REASONS: { value: string; label: string }[] = [
   { value: 'Need more details', label: 'მეტი დეტალია საჭირო' },
 ];
 
-function declineLabel(reason: string): string {
-  return DECLINE_REASONS.find((r) => r.value === reason)?.label ?? reason;
+function declineLabel(reason: string, lang: 'ka' | 'en'): string {
+  return treasuryReason(reason, lang) || DECLINE_REASONS.find((r) => r.value === reason)?.label || reason;
 }
 const FAR_PCT = 3;
 
@@ -54,6 +57,7 @@ interface ClientReply {
 
 export default function RateDesk() {
   const toast = useToast();
+  const { t, lang } = useI18n();
   useTick(10000);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
@@ -62,16 +66,22 @@ export default function RateDesk() {
   const [repliesNote, setRepliesNote] = useState('');
   const [fixRate, setFixRate] = useState<Record<number, string>>({});
   const [fixTried, setFixTried] = useState<number | null>(null);
+  const [betterDeclineId, setBetterDeclineId] = useState<number | null>(null);
+  const [betterDeclineReason, setBetterDeclineReason] = useState('');
+  const [betterDeclineTried, setBetterDeclineTried] = useState(false);
   const [rates, setRates] = useState<ReferenceRate[]>([]);
   const [defaultValid, setDefaultValid] = useState(15);
   const [cards, setCards] = useState<Record<number, CardState>>({});
+  const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
+  const [booked, setBooked] = useState<Record<number, true>>({});
+  const [writingId, setWritingId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
   const initial = useRef(true);
 
   const load = useCallback(async () => {
     try {
-      const [q, t] = await Promise.all([
+      const [q, quoted] = await Promise.all([
         rpc<QueueRow[]>('treasury_queue'),
         rpc<QuoteToday[]>('treasury_quotes_today'),
       ]);
@@ -81,11 +91,13 @@ export default function RateDesk() {
       }
       if (!initial.current && (q ?? []).some((r) => firstSeen.current.get(r.request_id) === now)) {
         const fresh = (q ?? []).filter((r) => firstSeen.current.get(r.request_id) === now);
-        toast(fresh.length === 1 ? `ახალი მოთხოვნა ${fresh[0].kam_name}-ისგან: ${fresh[0].client_name ?? fresh[0].client_id}` : `${fresh.length} ახალი მოთხოვნა`);
+        toast(fresh.length === 1
+          ? t('ახალი მოთხოვნა {name}-ისგან: {client}', 'New request from {name}: {client}', { name: fresh[0].kam_name, client: fresh[0].client_name ?? fresh[0].client_id })
+          : t('{n} ახალი მოთხოვნა', '{n} new requests', { n: fresh.length }));
       }
       initial.current = false;
       setQueue(q ?? []);
-      setQuotes(t ?? []);
+      setQuotes(quoted ?? []);
     } catch (err) {
       toast((err as Error).message, 'error');
     }
@@ -102,14 +114,64 @@ export default function RateDesk() {
       setOtherReasons([]);
     }
     try {
-      setReplies(await rpc<ClientReply[]>('treasury_client_replies'));
+      const list = await rpc<ClientReply[]>('treasury_client_replies');
+      setReplies(list);
       setRepliesNote('');
+      const { data: older } = await supabase
+        .from('request_outcomes')
+        .select('id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, client_reply, note')
+        .eq('source', 'app')
+        .eq('client_reply', 'approved')
+        .gte('request_date', todayTbilisi(-14))
+        .order('requested_at', { ascending: false })
+        .limit(40);
+      const extras: ClientReply[] = ((older ?? []) as {
+        id: number; kam_name: string | null; client_id: string; client_name: string | null;
+        sells_currency: string | null; gets_currency: string | null; amount: number | null; gets_amount: number | null;
+        rate: number | null; approved_rate: number | null; note: string | null;
+      }[])
+        .filter((row) => row.approved_rate != null && !list.some((r) => r.request_id === row.id))
+        .map((row) => ({
+          request_id: row.id,
+          kam_name: row.kam_name ?? '',
+          client_id: row.client_id,
+          client_name: row.client_name,
+          sells_currency: row.sells_currency ?? '',
+          gets_currency: row.gets_currency ?? '',
+          amount: row.amount,
+          gets_amount: row.gets_amount,
+          rate: row.rate,
+          client_reply: 'approved',
+          approved_rate: row.approved_rate,
+          wanted_rate: null,
+          better_decision: null,
+          given_rate: null,
+          client_decline_reason: null,
+          client_replied_at: null,
+          note: row.note,
+        }));
+      setExtraAgreed(extras);
+      const ids = [
+        ...list.filter((r) => r.client_reply === 'approved').map((r) => r.request_id),
+        ...extras.map((r) => r.request_id),
+      ];
+      if (ids.length) {
+        const { data: marks } = await supabase.from('requests').select('id, rate_written_at').in('id', ids);
+        const next: Record<number, true> = {};
+        for (const row of (marks ?? []) as { id: number; rate_written_at: string | null }[]) {
+          if (row.rate_written_at) next[row.id] = true;
+        }
+        setBooked(next);
+      } else {
+        setBooked({});
+      }
     } catch {
       setReplies([]);
-      setRepliesNote('სია ჯერ არ იტვირთება.');
+      setExtraAgreed([]);
+      setRepliesNote(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
     }
     setLoaded(true);
-  }, [toast]);
+  }, [toast, t]);
 
   useEffect(() => {
     load();
@@ -133,7 +195,7 @@ export default function RateDesk() {
     }
     try {
       const until = await rpc<string>('treasury_quote', { p_request_id: r.request_id, p_rate: rate, p_valid_minutes: c.valid });
-      toast(`კურსი ${fmtRate(rate)} გაეგზავნა ${r.kam_name.split(' ')[0]}-ს, მოქმედებს ${fmtTime(until)}-მდე`);
+      toast(t('კურსი {rate} გაეგზავნა {name}-ს, მოქმედებს {time}-მდე', 'Rate {rate} sent to {name}, valid until {time}', { rate: fmtRate(rate), name: r.kam_name.split(' ')[0], time: fmtTime(until) }));
       setCards((all) => { const n = { ...all }; delete n[r.request_id]; return n; });
       load();
     } catch (err) { toast((err as Error).message, 'error'); load(); }
@@ -141,8 +203,8 @@ export default function RateDesk() {
 
   async function acceptBetter(r: ClientReply) {
     try {
-      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'accepted' });
-      toast('დადასტურებულია.');
+      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'accepted', p_rate: null, p_reason: null });
+      toast(t('კურსი დაუბრუნდა KAM-ს.', 'The rate went back to the KAM.'));
       load();
     } catch (err) { toast((err as Error).message, 'error'); load(); }
   }
@@ -152,18 +214,44 @@ export default function RateDesk() {
     const rate = Number(raw);
     if (!raw || !(rate > 0)) { setFixTried(r.request_id); return; }
     try {
-      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'corrected', p_rate: rate });
-      toast('გასწორებული კურსი გაეგზავნა.');
+      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'corrected', p_rate: rate, p_reason: null });
+      toast(t('გასწორებული კურსი დაუბრუნდა KAM-ს.', 'The corrected rate went back to the KAM.'));
       setFixRate((m) => { const n = { ...m }; delete n[r.request_id]; return n; });
       setFixTried(null);
       load();
     } catch (err) { toast((err as Error).message, 'error'); load(); }
   }
 
+  async function declineBetter(r: ClientReply) {
+    const reason = betterDeclineReason.trim();
+    setBetterDeclineTried(true);
+    if (reason.length < 2 || reason.length > 200) return;
+    try {
+      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'declined', p_rate: null, p_reason: reason });
+      toast(t('უარი შენახულია. KAM დაინახავს მიზეზს.', 'Decline saved. The KAM will see the reason.'));
+      setBetterDeclineId(null);
+      setBetterDeclineReason('');
+      setBetterDeclineTried(false);
+      load();
+    } catch (err) { toast((err as Error).message, 'error'); load(); }
+  }
+
+  async function markWritten(r: ClientReply) {
+    setWritingId(r.request_id);
+    try {
+      await rpc('treasury_mark_rate_written', { p_request_id: r.request_id });
+      setBooked((m) => ({ ...m, [r.request_id]: true }));
+      toast(t('KAM-ს ეცნობა, რომ კურსი გაწერილია.', 'The KAM is notified that the rate is written.'));
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+    setWritingId(null);
+  }
+
   async function decline(r: QueueRow, reason: string) {
     try {
       await rpc('treasury_decline', { p_request_id: r.request_id, p_reason: reason });
-      toast(`დაუბრუნდა ${r.kam_name.split(' ')[0]}-ს: ${declineLabel(reason)}`);
+      toast(t('დაუბრუნდა {name}-ს: {reason}', 'Sent back to {name}: {reason}', { name: r.kam_name.split(' ')[0], reason: declineLabel(reason, lang) }));
       load();
     } catch (err) { toast((err as Error).message, 'error'); load(); }
   }
@@ -208,21 +296,24 @@ export default function RateDesk() {
   const validCount = quotes.filter((q) => q.quote_state === 'quoted' && !q.went_through).length;
   const waitingBetter = replies.filter((r) => r.client_reply === 'better' && !r.better_decision);
   const answeredBetter = replies.filter((r) => r.client_reply === 'better' && r.better_decision);
-  const approvedReplies = replies.filter((r) => r.client_reply === 'approved');
+  const approvedReplies = [
+    ...replies.filter((r) => r.client_reply === 'approved'),
+    ...extraAgreed.filter((r) => !replies.some((x) => x.request_id === r.request_id)),
+  ];
   const declinedReplies = replies.filter((r) => r.client_reply === 'declined');
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>კურსის მაგიდა</h1>
+          <h1>{t('კურსის მაგიდა', 'Rate desk')}</h1>
           <p>{longToday()}</p>
         </div>
         <div className="stats">
-          <div className="stat"><div className="label">კურსს ელოდება</div><div className="value" style={{ color: 'var(--aubergine)' }}>{queue.length}</div></div>
-          <div className="stat"><div className="label">მოქმედი კურსები</div><div className="value">{validCount}</div></div>
-          <div className="stat"><div className="label">დღეს გაცემული</div><div className="value">{quotes.length}</div></div>
-          <div className="stat"><div className="label">უკეთესი კურსი</div><div className="value">{waitingBetter.length}</div></div>
+          <div className="stat"><div className="label">{t('კურსს ელოდება', 'Waiting for a rate')}</div><div className="value" style={{ color: 'var(--aubergine)' }}>{queue.length}</div></div>
+          <div className="stat"><div className="label">{t('მოქმედი კურსები', 'Live rates')}</div><div className="value">{validCount}</div></div>
+          <div className="stat"><div className="label">{t('დღეს გაცემული', 'Given today')}</div><div className="value">{quotes.length}</div></div>
+          <div className="stat"><div className="label">{t('უკეთესი კურსი', 'Better rate')}</div><div className="value">{waitingBetter.length}</div></div>
         </div>
       </div>
 
@@ -230,10 +321,10 @@ export default function RateDesk() {
         <div className="col-main">
           <section aria-labelledby="queue-title">
             <div className="row-between" style={{ marginBottom: 12 }}>
-              <h2 id="queue-title" style={{ fontSize: 22 }}>კურსს ელოდება</h2>
-              <span className="small muted">ჯერ ძველი. ჩაწერეთ კურსი და დააჭირეთ Enter-ს, რომ KAM-ს გაეგზავნოს.</span>
+              <h2 id="queue-title" style={{ fontSize: 22 }}>{t('კურსს ელოდება', 'Waiting for a rate')}</h2>
+              <span className="small muted">{t('ჯერ ძველი. ჩაწერეთ კურსი და დააჭირეთ Enter-ს, რომ KAM-ს გაეგზავნოს.', 'Oldest first. Type a rate and press Enter to send it to the KAM.')}</span>
             </div>
-            {loaded && !queue.length && <div className="card"><p className="empty">არაფერი ელოდება. KAM-ების ახალი მოთხოვნები აქ ჩნდება.</p></div>}
+            {loaded && !queue.length && <div className="card"><p className="empty">{t('არაფერი ელოდება. KAM-ების ახალი მოთხოვნები აქ ჩნდება.', 'Nothing is waiting. New requests from KAMs appear here.')}</p></div>}
             <div className="stack-sm">
               {queue.map((r) => {
                 const c = card(r.request_id);
@@ -289,9 +380,10 @@ export default function RateDesk() {
                             ))}
                           </div>
                         )}
+                        <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
                         <div className="form-row" style={{ marginTop: 12 }}>
                           <div className="field" style={{ flex: '0 1 190px' }}>
-                            <label htmlFor={'rate-' + r.request_id}>კურსი</label>
+                            <label htmlFor={'rate-' + r.request_id}>{t('კურსი', 'Rate')}</label>
                             <input
                               id={'rate-' + r.request_id}
                               className={'input big' + (c.tried && !rateOk ? ' invalid' : '')}
@@ -312,8 +404,8 @@ export default function RateDesk() {
                             </div>
                           </div>
                           <div className="row" style={{ flex: '1 1 auto', justifyContent: 'flex-end', paddingTop: 27 }}>
-                            <button type="button" className="btn btn-quiet" style={{ minHeight: 52 }} onClick={() => patch(r.request_id, { declining: true })}>კურსს ვერ ვიძლევი</button>
-                            <button type="button" className="btn btn-primary btn-big" onClick={() => send(r)}>{dev > FAR_PCT && c.confirmFar ? 'მაინც გაგზავნა' : 'კურსის გაგზავნა'}</button>
+                            <button type="button" className="btn btn-quiet" style={{ minHeight: 52 }} onClick={() => patch(r.request_id, { declining: true })}>{t('კურსს ვერ ვიძლევი', 'I cannot give a rate')}</button>
+                            <button type="button" className="btn btn-primary btn-big" onClick={() => send(r)}>{dev > FAR_PCT && c.confirmFar ? t('მაინც გაგზავნა', 'Send anyway') : t('კურსის გაგზავნა', 'Send rate')}</button>
                           </div>
                         </div>
                         {dev > FAR_PCT && c.confirmFar && (
@@ -326,7 +418,7 @@ export default function RateDesk() {
                         <div className="small strong" style={{ marginBottom: 8 }}>უთხარით {r.kam_name.split(' ')[0]}-ს, რატომ</div>
                         <div className="chips">
                           {DECLINE_REASONS.map((reason) => (
-                            <button key={reason.value} type="button" className="chip" onClick={() => decline(r, reason.value)}>{reason.label}</button>
+                            <button key={reason.value} type="button" className="chip" onClick={() => decline(r, reason.value)}>{lang === 'en' ? reason.value : reason.label}</button>
                           ))}
                           <button type="button" className="link" onClick={() => patch(r.request_id, { declining: false })}>უკან</button>
                         </div>
@@ -340,7 +432,8 @@ export default function RateDesk() {
 
           <section aria-labelledby="better-title">
             <div className="row-between" style={{ margin: '28px 0 12px' }}>
-              <h2 id="better-title" style={{ fontSize: 22 }}>კლიენტს უკეთესი კურსი სურს</h2>
+              <h2 id="better-title" style={{ fontSize: 22 }}>{t('კლიენტს უკეთესი კურსი სურს', 'Client wants a better rate')}</h2>
+              <span className="small muted">დადასტურება ან გასწორებული კურსი ბრუნდება KAM-თან. უარი აჩერებს მოთხოვნას.</span>
             </div>
             {repliesNote && <div className="card"><p className="empty">{repliesNote}</p></div>}
             {loaded && !repliesNote && !waitingBetter.length && !answeredBetter.length && <div className="card"><p className="empty">არაფერი ელოდება.</p></div>}
@@ -365,13 +458,14 @@ export default function RateDesk() {
                     </div>
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? r.client_id}</div>
                     <p className="note-box">სახაზინოს კურსი: {fmtRate(r.rate)}. კლიენტს სურს {fmtRate(r.wanted_rate)}.</p>
-                    {r.note && <p className="note-box">კომენტარი: {r.note}</p>}
+                    {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
+                    <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
                     <div className="form-row" style={{ marginTop: 12 }}>
                       <div style={{ paddingTop: 27 }}>
-                        <button type="button" className="btn btn-primary btn-big" onClick={() => acceptBetter(r)}>დადასტურება</button>
+                        <button type="button" className="btn btn-primary btn-big" onClick={() => acceptBetter(r)}>{t('დადასტურება', 'Accept')}</button>
                       </div>
                       <div className="field" style={{ flex: '0 1 190px' }}>
-                        <label htmlFor={'fix-' + r.request_id}>გასწორებული კურსი</label>
+                        <label htmlFor={'fix-' + r.request_id}>{t('გასწორებული კურსი', 'Corrected rate')}</label>
                         <input
                           id={'fix-' + r.request_id}
                           className={'input big' + (fixTried === r.request_id && !rateOk ? ' invalid' : '')}
@@ -384,9 +478,43 @@ export default function RateDesk() {
                         {fixTried === r.request_id && !rateOk && <span className="hint error">ჩაწერეთ გასწორებული კურსი</span>}
                       </div>
                       <div style={{ paddingTop: 27 }}>
-                        <button type="button" className="btn btn-big" onClick={() => correctBetter(r)}>გაგზავნა</button>
+                        <button type="button" className="btn btn-big" onClick={() => correctBetter(r)}>{t('გაგზავნა', 'Send')}</button>
+                      </div>
+                      <div style={{ paddingTop: 27 }}>
+                        <button
+                          type="button"
+                          className="btn btn-quiet btn-big"
+                          aria-pressed={betterDeclineId === r.request_id}
+                          onClick={() => {
+                            setBetterDeclineId((id) => (id === r.request_id ? null : r.request_id));
+                            setBetterDeclineReason('');
+                            setBetterDeclineTried(false);
+                          }}
+                        >{t('უარი', 'Decline')}</button>
                       </div>
                     </div>
+                    {betterDeclineId === r.request_id && (
+                      <form onSubmit={(e) => { e.preventDefault(); declineBetter(r); }} noValidate style={{ marginTop: 12 }}>
+                        <div className="field" style={{ maxWidth: 420 }}>
+                          <label htmlFor={'better-no-' + r.request_id}>მიზეზი</label>
+                          <input
+                            id={'better-no-' + r.request_id}
+                            className={'input' + (betterDeclineTried && (betterDeclineReason.trim().length < 2) ? ' invalid' : '')}
+                            autoComplete="off"
+                            maxLength={200}
+                            value={betterDeclineReason}
+                            onChange={(e) => setBetterDeclineReason(e.target.value)}
+                          />
+                          <span className={'hint' + (betterDeclineTried && betterDeclineReason.trim().length < 2 ? ' error' : '')}>
+                            {betterDeclineTried && betterDeclineReason.trim().length < 2 ? 'ჩაწერეთ მიზეზი' : 'KAM დაინახავს მიზეზს. ეს აჩერებს მოთხოვნას.'}
+                          </span>
+                        </div>
+                        <div className="row" style={{ marginTop: 8 }}>
+                          <button type="submit" className="btn btn-primary">შენახვა</button>
+                          <button type="button" className="link" onClick={() => { setBetterDeclineId(null); setBetterDeclineTried(false); }}>უკან</button>
+                        </div>
+                      </form>
+                    )}
                   </article>
                 );
               })}
@@ -408,8 +536,8 @@ export default function RateDesk() {
 
           <section className="card flush" aria-labelledby="approved-desk-title" style={{ marginTop: 22 }}>
             <div className="card-head">
-              <h2 id="approved-desk-title" style={{ fontSize: 22 }}>კლიენტმა დაამტკიცა</h2>
-              <span className="small muted">მენეჯერებიც ხედავენ</span>
+              <h2 id="approved-desk-title" style={{ fontSize: 22 }}>{t('კლიენტმა დაამტკიცა', 'Client approved')}</h2>
+              <span className="small muted">{t('კურსის ძირითად სისტემაში ჩაწერის შემდეგ დააჭირეთ „კურსი გაწერილია“. KAM-ს ეცნობება.', 'After you enter the rate in the core system, press “Rate is written”. The KAM is notified.')}</span>
             </div>
             {loaded && !repliesNote && !approvedReplies.length && <p className="empty">დღეს არ არის.</p>}
             {approvedReplies.map((r) => (
@@ -421,8 +549,17 @@ export default function RateDesk() {
                 <div className="what">
                   <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
                   <div>კლიენტი იღებს {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  <div>კლიენტმა დაამტკიცა {fmtRate(r.approved_rate)}</div>
-                  {r.rate != null && <div className="tiny muted">სახაზინოს კურსი: {fmtRate(r.rate)}</div>}
+                  <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
+                  {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
+                </div>
+                <div className="actions">
+                  {booked[r.request_id]
+                    ? <span className="pill pill-ok">{t('კურსი გაწერილია', 'Rate is written')}</span>
+                    : (
+                      <button type="button" className="btn btn-primary" disabled={writingId === r.request_id} onClick={() => markWritten(r)}>
+                        {writingId === r.request_id ? t('ინახება…', 'Saving…') : t('კურსი გაწერილია', 'Rate is written')}
+                      </button>
+                    )}
                 </div>
               </div>
             ))}

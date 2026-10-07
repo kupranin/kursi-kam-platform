@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../lib/i18n';
 import { rpc } from '../lib/supabase';
 import type { ClientMatch } from '../lib/types';
 
@@ -24,6 +25,7 @@ interface Lookup { client_id: string; valid: boolean; known: boolean; name: stri
 
 /** "Client ID or name". Typing searches the shared company directory. */
 export default function ClientField({ value, onChange, onInfo, tried, big }: Props) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [matches, setMatches] = useState<ClientMatch[]>([]);
   const [active, setActive] = useState(0);
@@ -75,30 +77,30 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
   }
 
   const showList = open && !(info?.picked && info.id === raw);
-  let hint = 'აკრიფეთ ID-ის ციფრები ან სახელის ნაწილი';
+  let hint = t('აკრიფეთ ID-ის ციფრები ან სახელის ნაწილი', 'Type ID digits or part of a name');
   let tone: '' | 'ok' | 'error' = '';
   if (info?.picked && info.id === raw) {
-    hint = (info.name ?? info.id) + (info.lastSells ? '. ვალუტები ბოლო მოთხოვნიდანაა.' : '');
+    hint = (info.name ?? info.id) + (info.lastSells ? t('. ვალუტები ბოლო მოთხოვნიდანაა.', '. Currencies are from the last request.') : '');
     tone = 'ok';
   } else if (info?.valid && info.name) {
     hint = info.name; tone = 'ok';
   } else if (info?.valid && info.known) {
-    hint = 'ამ კლიენტს სახელი არ აქვს. დაამატეთ.';
+    hint = t('ამ კლიენტს სახელი არ აქვს. დაამატეთ.', 'This client has no name. Add one.');
   } else if (info?.valid) {
-    hint = 'ახალი კლიენტი. დაამატეთ სახელი.';
+    hint = t('ახალი კლიენტი. დაამატეთ სახელი.', 'New client. Add a name.');
   } else if (digits && raw.length > 11) {
-    hint = 'ზედმეტი ციფრია: კომპანიას 9 აქვს, ფიზიკურ პირს 11'; tone = 'error';
+    hint = t('ზედმეტი ციფრია: კომპანიას 9 აქვს, ფიზიკურ პირს 11', 'Too many digits: a company has 9, a person has 11'); tone = 'error';
   } else if (tried && !raw) {
-    hint = 'შეიყვანეთ კლიენტის ID ან სახელი'; tone = 'error';
+    hint = t('შეიყვანეთ კლიენტის ID ან სახელი', 'Enter a client ID or name'); tone = 'error';
   } else if (tried && !digits) {
-    hint = 'აირჩიეთ კლიენტი სიიდან, ან აკრიფეთ სრული ID'; tone = 'error';
+    hint = t('აირჩიეთ კლიენტი სიიდან, ან აკრიფეთ სრული ID', 'Pick a client from the list, or type the full ID'); tone = 'error';
   } else if (tried && !info?.valid) {
-    hint = 'შეამოწმეთ ID: კომპანიას 9 ციფრი აქვს, ფიზიკურ პირს 11'; tone = 'error';
+    hint = t('შეამოწმეთ ID: კომპანიას 9 ციფრი აქვს, ფიზიკურ პირს 11', 'Check the ID: a company has 9 digits, a person has 11'); tone = 'error';
   }
 
   return (
     <div className="field combo">
-      <label htmlFor="client-field">კლიენტის ID ან სახელი</label>
+      <label htmlFor="client-field">{t('კლიენტის ID ან სახელი', 'Client ID or name')}</label>
       <input
         id="client-field"
         className={'input' + (big ? ' big' : '') + (tone === 'error' ? ' invalid' : '')}
@@ -109,7 +111,7 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
         aria-activedescendant={showList && matches.length ? 'client-opt-' + active : undefined}
         autoComplete="off"
         spellCheck={false}
-        placeholder="დაიწყეთ აკრეფა"
+        placeholder={t('დაიწყეთ აკრეფა', 'Start typing')}
         value={value}
         onChange={(e) => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -123,8 +125,8 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
       />
       <span className={'hint ' + tone}>{hint}</span>
       {showList && (
-        <div id="client-list" role="listbox" aria-label="კომპანიები" className="combo-list">
-          <div className="head">{raw ? 'კომპანიები' : 'თქვენი ბოლო კლიენტები'}</div>
+        <div id="client-list" role="listbox" aria-label={t('კომპანიები', 'Companies')} className="combo-list">
+          <div className="head">{raw ? t('კომპანიები', 'Companies') : t('თქვენი ბოლო კლიენტები', 'Your recent clients')}</div>
           {matches.map((m, i) => (
             <button
               key={m.client_id}
@@ -137,15 +139,15 @@ export default function ClientField({ value, onChange, onInfo, tried, big }: Pro
               onMouseDown={(e) => { e.preventDefault(); pick(m); }}
             >
               <span style={{ minWidth: 0 }}>
-                <span className="strong" style={{ display: 'block' }}>{m.name ?? 'სახელი არ არის'}</span>
-                <span className="tiny muted">ID {m.client_id}, {m.kind === 'company' ? 'კომპანია' : 'ფიზიკური პირი'}</span>
+                <span className="strong" style={{ display: 'block' }}>{m.name ?? t('სახელი არ არის', 'No name')}</span>
+                <span className="tiny muted">ID {m.client_id}, {m.kind === 'company' ? t('კომპანია', 'Company') : t('ფიზიკური პირი', 'Person')}</span>
               </span>
               {m.last_sells_currency && <span className="tiny muted">{m.last_sells_currency} → {m.last_gets_currency}</span>}
             </button>
           ))}
           {!matches.length && (
             <p className="small" style={{ margin: 0, padding: 10 }}>
-              {info?.valid ? 'ახალი კომპანია. დაამატეთ სახელი და შემდეგ ჯერზე შეივსება.' : digits ? 'ჯერ ვერ მოიძებნა. განაგრძეთ ID-ის აკრეფა.' : 'ამ სახელის კომპანია ჯერ არ არის. სრული ID აკრიფეთ ახლის დასამატებლად.'}
+              {info?.valid ? t('ახალი კომპანია. დაამატეთ სახელი და შემდეგ ჯერზე შეივსება.', 'New company. Add a name and it will fill in next time.') : digits ? t('ჯერ ვერ მოიძებნა. განაგრძეთ ID-ის აკრეფა.', 'Not found yet. Keep typing the ID.') : t('ამ სახელის კომპანია ჯერ არ არის. სრული ID აკრიფეთ ახლის დასამატებლად.', 'No company with this name yet. Type the full ID to add one.')}
             </p>
           )}
         </div>

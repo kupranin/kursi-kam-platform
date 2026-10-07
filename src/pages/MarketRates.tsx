@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { downloadCsv, fmtDateTime, fmtRate, todayTbilisi } from '../lib/format';
 import { IconDownload } from '../components/Icons';
@@ -64,6 +65,7 @@ function downloadGrid(grid: RateGrid) {
 
 export default function MarketRates() {
   const toast = useToast();
+  const { t } = useI18n();
   const { profile } = useAuth();
   const canRefresh = profile?.role === 'admin' || profile?.role === 'treasury';
   const [grid, setGrid] = useState<RateGrid>(EMPTY_GRID);
@@ -141,27 +143,26 @@ export default function MarketRates() {
     <>
       <div className="page-head">
         <div>
-          <h1>კურსები</h1>
+          <h1>{t('კურსები', 'Rates')}</h1>
           <p>
-            ბოლო ყიდვა და გაყიდვა USD, EUR, RUB და CNY GEL-ის მიმართ, შემდეგ კროსები, მაგალითად EUR/USD.
-            {updated ? ' განახლდა ' + updated + '.' : ''} კურსები თავისით ახლდება ყოველ 30 წუთში.
-            ჩამოტვირთეთ კურსები 11:00–19:00 ისტორიისთვის.
+            {t('ბოლო ყიდვა და გაყიდვა USD, EUR, RUB და CNY GEL-ის მიმართ, შემდეგ კროსები, მაგალითად EUR/USD.', 'Latest buy and sell for USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.')}
+            {updated ? ' ' + t('განახლდა {when}.', 'Updated {when}.', { when: updated }) : ''} {t('კურსები თავისით ახლდება ყოველ 30 წუთში. ჩამოტვირთეთ კურსები 11:00–19:00 ისტორიისთვის.', 'Rates refresh on their own every 30 minutes. Download them for the 11:00–19:00 history.')}
           </p>
         </div>
         <div className="row">
           <button type="button" className="btn" disabled={!grid.blocks.length} onClick={() => downloadGrid(grid)}>
-            <IconDownload />კურსების ჩამოტვირთვა
+            <IconDownload />{t('კურსების ჩამოტვირთვა', 'Download rates')}
           </button>
           {canRefresh && (
             <button type="button" className="btn btn-primary" disabled={refreshing} onClick={refresh}>
-              {refreshing ? 'ახლდება…' : 'კურსების განახლება'}
+              {refreshing ? t('ახლდება…', 'Refreshing…') : t('კურსების განახლება', 'Refresh rates')}
             </button>
           )}
         </div>
       </div>
 
-      {!loaded && <p className="empty">იტვირთება…</p>}
-      {loaded && !board.rows.length && <p className="empty">კურსი ჯერ არ არის შენახული. ადმინს ან სახაზინოს შეუძლია განახლება.</p>}
+      {!loaded && <p className="empty">{t('იტვირთება…', 'Loading…')}</p>}
+      {loaded && !board.rows.length && <p className="empty">{t('კურსი ჯერ არ არის შენახული. ადმინს ან სახაზინოს შეუძლია განახლება.', 'No rate is saved yet. An admin or treasury can refresh.')}</p>}
       {board.rows.length > 0 && <CurrentBoardTable board={board} />}
     </>
   );
@@ -200,13 +201,14 @@ async function loadSnapshots(since: string): Promise<RateSnapshot[]> {
 }
 
 function CurrentBoardTable({ board }: { board: CurrentBoard }) {
+  const { t } = useI18n();
   return (
-    <section className="card flush" aria-label="მიმდინარე კურსები">
+    <section className="card flush" aria-label={t('მიმდინარე კურსები', 'Current rates')}>
       <div className="table-wrap">
         <table className="table rate-grid">
           <thead>
             <tr>
-              <th className="src" rowSpan={2} scope="col">წყარო</th>
+              <th className="src" rowSpan={2} scope="col">{t('წყარო', 'Source')}</th>
               {board.pairs.map((pair) => (
                 <th key={pair} className="num pair" colSpan={2} scope="colgroup">{pair}</th>
               ))}
@@ -234,10 +236,11 @@ function CurrentBoardTable({ board }: { board: CurrentBoard }) {
 }
 
 function PairSides() {
+  const { t } = useI18n();
   return (
     <>
-      <th className="num side pair-start" scope="col">ყიდვა</th>
-      <th className="num side" scope="col">გაყიდვა</th>
+      <th className="num side pair-start" scope="col">{t('ყიდვა', 'Buy')}</th>
+      <th className="num side" scope="col">{t('გაყიდვა', 'Sell')}</th>
     </>
   );
 }

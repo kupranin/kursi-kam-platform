@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
 import type { LossReason, RequestRow, WinbackRow } from '../lib/types';
@@ -20,6 +21,7 @@ const STEPS: { value: string; label: string }[] = [
 
 export default function FollowUps() {
   const { profile } = useAuth();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const role = profile!.role;
   const canAct = role === 'kam' || role === 'admin';
@@ -77,7 +79,7 @@ export default function FollowUps() {
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
-  const reasonText = (r: LossReason) => r.label_ka.trim() || r.label_en;
+  const reasonText = (r: LossReason) => (lang === 'en' ? r.label_en : r.label_ka).trim() || r.label_en || r.label_ka;
   const label = (code: string) => {
     const reason = reasons.find((r) => r.code === code);
     return reason ? reasonText(reason) : code;
@@ -98,15 +100,15 @@ export default function FollowUps() {
     <>
       <div className="page-head">
         <div>
-          <h1>დაბრუნება</h1>
-          <p>პასუხები და ზარები დღის მოთხოვნების შემდეგ</p>
+          <h1>{t('დაბრუნება', 'Follow-ups')}</h1>
+          <p>{t('პასუხები და ზარები დღის მოთხოვნების შემდეგ', 'Answers and calls after the day’s requests')}</p>
         </div>
       </div>
 
       <section className="card tint" aria-labelledby="ask-title">
         <div className="card-head">
           <div>
-            <h2 id="ask-title" style={{ fontSize: 22 }}>რატომ არ გავიდა ეს მოთხოვნები?</h2>
+            <h2 id="ask-title" style={{ fontSize: 22 }}>{t('რატომ არ გავიდა ეს მოთხოვნები?', 'Why did these requests not go through?')}</h2>
             <p className="small" style={{ color: 'var(--ink-2)' }}>ბოლო 7 დღის მოთხოვნები, შესაბამისი ტრანზაქციის გარეშე.{canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}</p>
           </div>
           {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'ყველას პასუხი გაეცა. გმადლობთ.' : left + ' დარჩა'}</span>}
@@ -155,7 +157,7 @@ export default function FollowUps() {
 
       <div className="page-head" style={{ marginTop: 8 }}>
         <div style={{ maxWidth: 640 }}>
-          <h2 style={{ fontSize: 22 }}>დასაბრუნებელი კლიენტები</h2>
+          <h2 style={{ fontSize: 22 }}>{t('დასაბრუნებელი კლიენტები', 'Clients to win back')}</h2>
           <p className="small" style={{ fontSize: 15 }}>კურსი ითხოვეს, შემდეგ გაჩერდნენ, წარმატებული ტრანზაქციის გარეშე. დაიწყეთ პრიორიტეტი A-დან.</p>
         </div>
         {winback.length > 0 && (

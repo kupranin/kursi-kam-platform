@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { todayTbilisi } from '../lib/format';
 
@@ -76,6 +77,7 @@ function parsePercent(text: string): number | null {
 
 export default function Kpis() {
   const toast = useToast();
+  const { t } = useI18n();
   const today = todayTbilisi();
   const [year, setYear] = useState(Number(today.slice(0, 4)));
   const [month, setMonth] = useState(Number(today.slice(5, 7)));
@@ -140,7 +142,7 @@ export default function Kpis() {
       <div className="page-head">
         <div>
           <h1>KPI</h1>
-          <p>გეგმა, ფაქტი და მარჟა. დაგეგმილი, ფაქტი % და სხვაობა გამოითვლება.</p>
+          <p>{t('გეგმა, ფაქტი და მარჟა. დაგეგმილი, ფაქტი % და სხვაობა გამოითვლება.', 'Plan, actual and margin. Planned, actual % and the gap are calculated.')}</p>
         </div>
         <div className="field" style={{ margin: 0 }}>
           <label className="sr-only" htmlFor="kpi-month">თვე</label>

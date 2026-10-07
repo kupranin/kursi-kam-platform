@@ -1,15 +1,33 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
-import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, sideAmount, todayTbilisi } from '../lib/format';
+import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
+import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
+import { treasuryReason } from '../lib/requestStatus';
 import type { RequestRow, Rules } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
+import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
+
+async function attachWritten(rows: RequestRow[]): Promise<RequestRow[]> {
+  const ids = rows.filter((r) => r.client_reply === 'approved' && r.approved_rate != null).map((r) => r.id);
+  if (!ids.length) return rows;
+  const { data, error } = await supabase.from('requests').select('id, rate_written_at').in('id', ids);
+  if (error || !data) return rows;
+  const written = new Map((data as { id: number; rate_written_at: string | null }[]).map((row) => [row.id, row.rate_written_at]));
+  return rows.map((r) => (written.has(r.id) ? { ...r, rate_written_at: written.get(r.id) ?? null } : r));
+}
+
+function bookedLine(r: RequestRow): string | null {
+  if (r.client_reply !== 'approved' || r.approved_rate == null || !r.rate_written_at) return null;
+  return rateBooked(r.approved_rate);
+}
 
 function readAmount(text: string): { ok: boolean; value: number | null } {
   if (!text.trim()) return { ok: true, value: null };
@@ -31,46 +49,30 @@ function nextMonth(isoDate: string): string {
   return `${y}-${String(m + 1).padStart(2, '0')}-01`;
 }
 
-const DECLINE_KA: Record<string, string> = {
-  'Amount too large': 'თანხა ძალიან დიდია',
-  'Market moving too fast': 'ბაზარი ძალიან სწრაფად იცვლება',
-  'Need more details': 'მეტი დეტალია საჭირო',
-};
-
-function declineLabel(reason: string | null | undefined): string {
-  if (!reason) return '';
-  return DECLINE_KA[reason] ?? reason;
+function historyStatus(r: RequestRow, went: string, missed: string, open: string): { label: string; cls: string } {
+  if (r.went_through || r.outcome === 'went_through') return { label: went, cls: 'pill-ok' };
+  if (r.outcome === 'did_not_go_through') return { label: missed, cls: 'pill-alert' };
+  return { label: open, cls: 'pill-wait' };
 }
 
-function historyStatus(r: RequestRow): { label: string; cls: string } {
-  if (r.went_through || r.outcome === 'went_through') return { label: 'გავიდა', cls: 'pill-ok' };
-  if (r.outcome === 'did_not_go_through') return { label: 'არ გავიდა', cls: 'pill-alert' };
-  return { label: 'ჯერ ღიაა', cls: 'pill-wait' };
-}
-
-function clientReplyRate(r: RequestRow): number | null {
-  if (r.client_reply === 'better' && r.given_rate != null) return r.given_rate;
-  if (r.client_reply === 'approved' && r.approved_rate != null) return r.approved_rate;
-  return r.rate;
-}
-
-function clientReplyNote(r: RequestRow): string | null {
+function clientReplyNote(r: RequestRow, t: (ka: string, en: string, vars?: Record<string, string | number>) => string): string | null {
   if (r.client_reply === 'approved' && r.approved_rate != null) {
-    return `კლიენტმა დაამტკიცა ${fmtRate(r.approved_rate)}. გაეგზავნა სახაზინოს და მენეჯერებს.`;
+    return t('კლიენტმა დაამტკიცა {rate}. გაეგზავნა სახაზინოს და მენეჯერებს.', 'Client approved {rate}. Sent to treasury and managers.', { rate: fmtRate(r.approved_rate) });
   }
   if (r.client_reply === 'better') {
-    if (r.better_decision === 'accepted' && r.given_rate != null) return `სახაზინომ დაადასტურა ${fmtRate(r.given_rate)}.`;
-    if (r.better_decision === 'corrected' && r.given_rate != null) return `გასწორებული კურსი: ${fmtRate(r.given_rate)}.`;
-    if (r.wanted_rate != null) return `სახაზინოს ელოდება. კლიენტს სურს ${fmtRate(r.wanted_rate)}.`;
+    if (r.better_decision === 'accepted' && r.given_rate != null) return t('სახაზინომ დაადასტურა {rate}.', 'Treasury accepted {rate}.', { rate: fmtRate(r.given_rate) });
+    if (r.better_decision === 'corrected' && r.given_rate != null) return t('გასწორებული კურსი: {rate}.', 'Corrected rate: {rate}.', { rate: fmtRate(r.given_rate) });
+    if (r.wanted_rate != null) return t('სახაზინოს ელოდება. კლიენტს სურს {rate}.', 'Waiting on treasury. The client wants {rate}.', { rate: fmtRate(r.wanted_rate) });
   }
   if (r.client_reply === 'declined' && r.client_decline_reason) {
-    return `კლიენტმა უარი თქვა: ${r.client_decline_reason}`;
+    return t('კლიენტმა უარი თქვა: {reason}', 'Client declined: {reason}', { reason: r.client_decline_reason });
   }
   return null;
 }
 
 export default function Requests() {
   const { profile } = useAuth();
+  const { t, lang } = useI18n();
   const toast = useToast();
   useTick(15000);
   const role = profile!.role;
@@ -92,7 +94,6 @@ export default function Requests() {
   const [name, setName] = useState('');
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState<number | null>(null);
   const [history, setHistory] = useState<RequestRow[]>([]);
   const [histCount, setHistCount] = useState<number | null>(null);
   const [histLoaded, setHistLoaded] = useState(false);
@@ -110,7 +111,7 @@ export default function Requests() {
   const [approvedLoaded, setApprovedLoaded] = useState(false);
   const [approvedError, setApprovedError] = useState('');
   const histReq = useRef(0);
-  const months = monthOptions(12).map((m) => ({ value: m.value, label: m.label.replace(', so far', '') }));
+  const months = monthOptions(12).map((m) => ({ value: m.value, label: m.label.replace(/, so far$|, ჯერჯერობით$/, '') }));
 
   const today = todayTbilisi();
 
@@ -122,7 +123,7 @@ export default function Requests() {
       .eq('kam_id', profile!.id)
       .or(`request_date.eq.${today},quote_status.eq.asking`)
       .order('asked_at', { ascending: false });
-    if (!error) setRows((data ?? []) as RequestRow[]);
+    if (!error) setRows(await attachWritten((data ?? []) as RequestRow[]));
     setLoaded(true);
   }, [profile, today, isKam]);
 
@@ -147,7 +148,9 @@ export default function Requests() {
     if (ticket !== histReq.current) return;
     if (error) setHistError(error.message);
     else {
-      setHistory((data ?? []) as RequestRow[]);
+      const written = await attachWritten((data ?? []) as RequestRow[]);
+      if (ticket !== histReq.current) return;
+      setHistory(written);
       setHistCount(count ?? 0);
       setHistError('');
     }
@@ -163,13 +166,13 @@ export default function Requests() {
       .gte('request_date', todayTbilisi(-7))
       .order('client_replied_at', { ascending: false })
       .limit(40);
-    if (error) setApprovedError('სია ჯერ არ იტვირთება.');
+    if (error) setApprovedError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
     else {
-      setApprovedRows((data ?? []) as RequestRow[]);
+      setApprovedRows(await attachWritten((data ?? []) as RequestRow[]));
       setApprovedError('');
     }
     setApprovedLoaded(true);
-  }, [seeAll]);
+  }, [seeAll, t]);
 
   useEffect(() => {
     load();
@@ -223,7 +226,7 @@ export default function Requests() {
         p_note: note.trim() || null,
         p_client_name: needsName ? name.trim() : null,
       });
-      toast('გაეგზავნა სახაზინოს. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.');
+      toast(t('გაეგზავნა სახაზინოს. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
       setRaw(''); setInfo(null); setSellsAmount(''); setGetsAmount(''); setClientRate(''); setNote(''); setName(''); setTried(false);
       load();
     } catch (err) {
@@ -235,16 +238,16 @@ export default function Requests() {
   async function askAgain(r: RequestRow) {
     try {
       await rpc('ask_again', { p_request_id: r.id, p_note: null });
-      toast('ხელახლა გაეგზავნა სახაზინოს.');
+      toast(t('ხელახლა გაეგზავნა სახაზინოს.', 'Sent to treasury again.'));
       load();
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
   async function remove(r: RequestRow) {
-    if (!window.confirm('წავშალოთ ეს მოთხოვნა? ეს მხოლოდ შეცდომის გასასწორებლად გამოიყენეთ.')) return;
+    if (!window.confirm(t('წავშალოთ ეს მოთხოვნა? ეს მხოლოდ შეცდომის გასასწორებლად გამოიყენეთ.', 'Delete this request? Use this only to fix a mistake.'))) return;
     try {
       await rpc('delete_request', { p_request_id: r.id });
-      toast('მოთხოვნა წაიშალა.');
+      toast(t('მოთხოვნა წაიშალა.', 'Request deleted.'));
       load();
     } catch (err) { toast((err as Error).message, 'error'); }
   }
@@ -268,13 +271,17 @@ export default function Requests() {
     }
     setReplyBusy(true);
     try {
-      if (reply.kind === 'declined') {
-        await rpc('kam_client_reply', { p_request_id: r.id, p_reply: 'declined', p_reason: reason });
-        toast('მიზეზი შენახულია.');
-      } else {
-        await rpc('kam_client_reply', { p_request_id: r.id, p_reply: reply.kind, p_rate: parsed.value });
-        toast(reply.kind === 'approved' ? 'გაეგზავნა სახაზინოს და მენეჯერებს.' : 'გაეგზავნა სახაზინოს.');
-      }
+      await rpc('kam_client_reply', {
+        p_request_id: r.id,
+        p_reply: reply.kind,
+        p_rate: reply.kind === 'declined' ? null : parsed.value,
+        p_reason: reply.kind === 'declined' ? reason : null,
+      });
+      toast(reply.kind === 'approved'
+        ? t('გაეგზავნა სახაზინოს და მენეჯერებს.', 'Sent to treasury and managers.')
+        : reply.kind === 'better'
+          ? t('გაეგზავნა სახაზინოს.', 'Sent to treasury.')
+          : t('მიზეზი შენახულია.', 'Reason saved.'));
       setReply(null);
       setReplyRate('');
       setReplyReason('');
@@ -285,13 +292,6 @@ export default function Requests() {
       toast((err as Error).message, 'error');
     }
     setReplyBusy(false);
-  }
-
-  async function copy(r: RequestRow) {
-    const text = `${r.client_name ?? r.client_id}: ყიდის ${sideAmount(r.sells_currency, r.amount)}, იღებს ${sideAmount(r.gets_currency, r.gets_amount)} კურსით ${fmtRate(clientReplyRate(r))}, მოქმედებს ${fmtTime(r.rate_valid_until)}-მდე`;
-    try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked: the label still confirms */ }
-    setCopied(r.id);
-    window.setTimeout(() => setCopied(null), 3000);
   }
 
   // a quoted rate whose time has passed is expired, even before the next reload
@@ -307,18 +307,18 @@ export default function Requests() {
     <>
       <div className="page-head">
         <div>
-          <h1>მოთხოვნები</h1>
-          <p>{isKam ? longToday() : 'ყველა გარიგება, იმ KAM-ის ქვეშ, ვინც აწარმოა'}</p>
+          <h1>{t('მოთხოვნები', 'Requests')}</h1>
+          <p>{isKam ? longToday() : t('ყველა გარიგება, იმ KAM-ის ქვეშ, ვინც აწარმოა', 'Every deal, under the KAM who ran it')}</p>
         </div>
         {isKam && <div className="stats">
-          <div className="stat"><div className="label">დღეს</div><div className="value">{todayCount}</div></div>
-          <div className="stat"><div className="label">ღია</div><div className="value" style={{ color: 'var(--aubergine)' }}>{open.length}</div></div>
-          <div className="stat"><div className="label">გავიდა</div><div className="value ok-text">{done.length}</div></div>
+          <div className="stat"><div className="label">{t('დღეს', 'Today')}</div><div className="value">{todayCount}</div></div>
+          <div className="stat"><div className="label">{t('ღია', 'Open')}</div><div className="value" style={{ color: 'var(--aubergine)' }}>{open.length}</div></div>
+          <div className="stat"><div className="label">{t('გავიდა', 'Went through')}</div><div className="value ok-text">{done.length}</div></div>
         </div>}
       </div>
 
       {isKam && <section className="card" aria-labelledby="new-title">
-        <h2 id="new-title" style={{ marginBottom: 16 }}>ახალი მოთხოვნა</h2>
+        <h2 id="new-title" style={{ marginBottom: 16 }}>{t('ახალი მოთხოვნა', 'New request')}</h2>
         <form onSubmit={submit} noValidate>
           <div className="form-row">
             <div style={{ flex: '1 1 230px', minWidth: 210 }}>
@@ -326,49 +326,49 @@ export default function Requests() {
             </div>
             {needsName && (
               <div className="field" style={{ flex: '1 1 220px' }}>
-                <label htmlFor="cname">კლიენტის სახელი</label>
-                <input id="cname" className={'input attention' + (tried && !nameOk ? ' invalid' : '')} autoComplete="off" placeholder="კომპანიის ან პირის სრული სახელი" value={name} onChange={(e) => setName(e.target.value)} />
-                <span className={'hint' + (tried && !nameOk ? ' error' : '')}>{tried && !nameOk ? 'ჩაწერეთ კლიენტის სახელი' : 'ახალი კლიენტისთვის აუცილებელია. შემდეგ ჯერზე შეინახება.'}</span>
+                <label htmlFor="cname">{t('კლიენტის სახელი', 'Client name')}</label>
+                <input id="cname" className={'input attention' + (tried && !nameOk ? ' invalid' : '')} autoComplete="off" placeholder={t('კომპანიის ან პირის სრული სახელი', 'Full name of the company or person')} value={name} onChange={(e) => setName(e.target.value)} />
+                <span className={'hint' + (tried && !nameOk ? ' error' : '')}>{tried && !nameOk ? t('ჩაწერეთ კლიენტის სახელი', 'Enter the client name') : t('ახალი კლიენტისთვის აუცილებელია. შემდეგ ჯერზე შეინახება.', 'Required for a new client. It is saved for next time.')}</span>
               </div>
             )}
           </div>
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
-              <CurrencyPicker label="კლიენტი ყიდის" value={sells} onChange={pickSells} />
+              <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />
               <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
-                <label htmlFor="sells-amount">თანხა</label>
+                <label htmlFor="sells-amount">{t('თანხა', 'Amount')}</label>
                 <input id="sells-amount" className={'input' + (tried && !sellsSide.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={sellsAmount} onChange={(e) => setSellsAmount(e.target.value)} />
-                {tried && !sellsSide.ok && <span className="hint error">ჩაწერეთ სწორი თანხა, ან დატოვეთ ეს მხარე ცარიელი</span>}
+                {tried && !sellsSide.ok && <span className="hint error">{t('ჩაწერეთ სწორი თანხა, ან დატოვეთ ეს მხარე ცარიელი', 'Enter a valid amount, or leave this side blank')}</span>}
               </div>
             </div>
             <div className="deal-side">
-              <CurrencyPicker label="კლიენტი იღებს" value={gets} onChange={setGets} disabledValue={sells} />
+              <CurrencyPicker label={t('კლიენტი იღებს', 'Client gets')} value={gets} onChange={setGets} disabledValue={sells} />
               <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
-                <label htmlFor="gets-amount">თანხა</label>
+                <label htmlFor="gets-amount">{t('თანხა', 'Amount')}</label>
                 <input id="gets-amount" className={'input' + (tried && !getsSide.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={getsAmount} onChange={(e) => setGetsAmount(e.target.value)} />
-                {tried && !getsSide.ok && <span className="hint error">ჩაწერეთ სწორი თანხა, ან დატოვეთ ეს მხარე ცარიელი</span>}
+                {tried && !getsSide.ok && <span className="hint error">{t('ჩაწერეთ სწორი თანხა, ან დატოვეთ ეს მხარე ცარიელი', 'Enter a valid amount, or leave this side blank')}</span>}
               </div>
             </div>
           </div>
           <p className={'hint' + (tried && (!currenciesOk || bothBlank) ? ' error' : '')} style={{ margin: '8px 0 0' }}>
             {tried && !currenciesOk
-              ? 'აირჩიეთ ორი განსხვავებული ვალუტა'
+              ? t('აირჩიეთ ორი განსხვავებული ვალუტა', 'Choose two different currencies')
               : tried && bothBlank
-                ? 'ჩაწერეთ თანხა ერთ მხარეს'
-                : 'შეავსეთ ერთი თანხა. მეორე დატოვეთ ცარიელი, თუ არ გაქვთ.'}
+                ? t('ჩაწერეთ თანხა ერთ მხარეს', 'Enter an amount on one side')
+                : t('შეავსეთ ერთი თანხა. მეორე დატოვეთ ცარიელი, თუ არ გაქვთ.', 'Fill in one amount. Leave the other blank if you do not have it.')}
           </p>
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="field" style={{ flex: '1 1 200px', minWidth: 180 }}>
-              <label htmlFor="client-rate">კურსი, რომელსაც კლიენტი ითხოვს <span className="muted" style={{ fontWeight: 400 }}>(არასავალდებულო)</span></label>
+              <label htmlFor="client-rate">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
               <input id="client-rate" className={'input' + (tried && !rateSide.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={clientRate} onChange={(e) => setClientRate(e.target.value)} />
-              <span className={'hint' + (tried && !rateSide.ok ? ' error' : '')}>{tried && !rateSide.ok ? 'ჩაწერეთ კურსი, რომელსაც კლიენტი ითხოვს, ან დატოვეთ ცარიელი' : 'დატოვეთ ცარიელი, თუ კლიენტს კურსი არ უთხოვია'}</span>
+              <span className={'hint' + (tried && !rateSide.ok ? ' error' : '')}>{tried && !rateSide.ok ? t('ჩაწერეთ კურსი, რომელსაც კლიენტი ითხოვს, ან დატოვეთ ცარიელი', 'Enter the rate the client wants, or leave it blank') : t('დატოვეთ ცარიელი, თუ კლიენტს კურსი არ უთხოვია', 'Leave blank if the client did not ask for a rate')}</span>
             </div>
             <div className="field" style={{ flex: '2 1 240px', minWidth: 200 }}>
-              <label htmlFor="treasury-comment">კომენტარი სახაზინოსთვის <span className="muted" style={{ fontWeight: 400 }}>(არასავალდებულო)</span></label>
+              <label htmlFor="treasury-comment">{t('კომენტარი სახაზინოსთვის', 'Comment for treasury')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
               <input id="treasury-comment" className="input" autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             <div style={{ paddingTop: 27 }}>
-              <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? 'იგზავნება…' : 'კურსის თხოვნა სახაზინოს'}</button>
+              <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? t('იგზავნება…', 'Sending…') : t('კურსის თხოვნა სახაზინოს', 'Ask treasury for a rate')}</button>
             </div>
           </div>
         </form>
@@ -376,14 +376,17 @@ export default function Requests() {
 
       {isKam && <section className="card flush" aria-labelledby="open-title">
         <div className="card-head">
-          <h2 id="open-title" style={{ fontSize: 22 }}>ღია მოთხოვნები</h2>
-          <span className="small muted">სახაზინოს კურსი აქ ჩნდება. მოთხოვნა თავისით იხურება, როცა კლიენტის ტრანზაქცია მოდის.</span>
+          <h2 id="open-title" style={{ fontSize: 22 }}>{t('ღია მოთხოვნები', 'Open requests')}</h2>
+          <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. მოთხოვნა თავისით იხურება, როცა კლიენტის ტრანზაქცია მოდის.', 'Treasury’s rate appears here. The request closes itself when the client’s transaction arrives.')}</span>
         </div>
-        {loaded && !open.length && <p className="empty">ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.</p>}
+        {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
         {open.map((r) => {
           const st = stateOf(r);
           const fresh = st === 'asking' && r.source === 'app' && minutesSince(r.requested_at) < deleteMinutes;
-          const answer = clientReplyNote(r);
+          const answer = clientReplyNote(r, t);
+          const chatText = r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
+          const transferText = bookedLine(r);
+          const offerText = !chatText && r.rate != null && (st === 'quoted' || st === 'expired') ? clientOffer(r.rate, r.rate_valid_until) : null;
           const canAnswer = st === 'quoted' && !r.client_reply;
           const replyOpen = canAnswer && reply?.id === r.id ? reply.kind : null;
           const parsedReply = readRate(replyRate);
@@ -404,56 +407,58 @@ export default function Requests() {
               </div>
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
-                {r.client_rate != null && <div className="tiny muted">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</div>}
-                {r.note && <div className="tiny muted">კომენტარი: {r.note}</div>}
+                {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
+                {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {answer
                   ? <div className="tiny muted">{answer}</div>
                   : (
                     <div className="tiny muted">
-                      {st === 'asking' && 'იკითხა ' + fmtTime(r.asked_at) + '-ზე'}
-                      {st === 'quoted' && 'კლიენტს უთხარით კურსი და ჩაწერეთ პასუხი.'}
-                      {st === 'expired' && 'ხელახლა იკითხეთ, თუ კლიენტს კვლავ სურს კონვერტაცია'}
-                      {st === 'declined' && 'დაამატეთ დეტალები და ხელახლა იკითხეთ'}
+                      {st === 'asking' && t('იკითხა {time}-ზე', 'Asked at {time}', { time: fmtTime(r.asked_at) })}
+                      {st === 'quoted' && t('კლიენტს უთხარით კურსი და ჩაწერეთ პასუხი.', 'Tell the client the rate and record the answer.')}
+                      {st === 'expired' && t('ხელახლა იკითხეთ, თუ კლიენტს კვლავ სურს კონვერტაცია', 'Ask again if the client still wants to convert')}
+                      {st === 'declined' && (r.decline_reason ? t('სახაზინომ უარი თქვა: {reason}', 'Treasury declined: {reason}', { reason: treasuryReason(r.decline_reason, lang) }) : t('დაამატეთ დეტალები და ხელახლა იკითხეთ', 'Add details and ask again'))}
                     </div>
                   )}
               </div>
-              {st === 'asking' && <span className="pill pill-wait"><IconClock />სახაზინოს ელოდება</span>}
-              {st === 'quoted' && <span className="pill pill-warn">კურსი {fmtRate(r.rate)}, მოქმედებს {fmtTime(r.rate_valid_until)}-მდე</span>}
-              {st === 'expired' && <span className="pill pill-wait">კურსი {fmtRate(r.rate)}, ვადა გაუვიდა {fmtTime(r.rate_valid_until)}-ზე</span>}
-              {st === 'declined' && <span className="pill pill-alert">სახაზინო: {declineLabel(r.decline_reason)}</span>}
+              {st === 'asking' && <span className="pill pill-wait"><IconClock />{t('სახაზინოს ელოდება', 'Waiting on treasury')}</span>}
+              {st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
+              {st === 'expired' && <span className="pill pill-wait">{t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
+              {st === 'declined' && <span className="pill pill-alert">{t('სახაზინო', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
               <div className="actions">
-                {st === 'quoted' && r.client_reply !== 'declined' && <button type="button" className="btn btn-primary" onClick={() => copy(r)}>{copied === r.id ? 'დაკოპირდა' : 'კოპირება კლიენტისთვის'}</button>}
                 {canAnswer && (
                   <>
-                    <button type="button" className="btn btn-primary" aria-pressed={replyOpen === 'approved'} onClick={() => openReply(r.id, 'approved')}>კლიენტმა დაამტკიცა</button>
-                    <button type="button" className="btn" aria-pressed={replyOpen === 'better'} onClick={() => openReply(r.id, 'better')}>კლიენტს უკეთესი კურსი სურს</button>
-                    <button type="button" className="btn btn-quiet" aria-pressed={replyOpen === 'declined'} onClick={() => openReply(r.id, 'declined')}>კლიენტმა უარი თქვა</button>
+                    <button type="button" className="btn btn-primary" aria-pressed={replyOpen === 'approved'} onClick={() => openReply(r.id, 'approved')}>{t('კლიენტმა დაამტკიცა', 'Client approved')}</button>
+                    <button type="button" className="btn" aria-pressed={replyOpen === 'better'} onClick={() => openReply(r.id, 'better')}>{t('კლიენტს უკეთესი კურსი სურს', 'Client wants a better rate')}</button>
+                    <button type="button" className="btn btn-quiet" aria-pressed={replyOpen === 'declined'} onClick={() => openReply(r.id, 'declined')}>{t('კლიენტმა უარი თქვა', 'Client declined')}</button>
                   </>
                 )}
-                {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>ხელახლა კითხვა</button>}
-                {fresh && <button type="button" className="link danger" onClick={() => remove(r)}>წაშლა</button>}
+                {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
+                {fresh && <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>}
               </div>
+              {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
+              {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
+              {offerText && <CopyLine label={t('ტექსტი კლიენტისთვის', 'Text for the client')} text={offerText} />}
               {replyOpen && (
                 <form onSubmit={(e) => { e.preventDefault(); saveReply(r); }} noValidate style={{ flex: '1 1 100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
                   {replyOpen !== 'declined' ? (
                     <div className="field" style={{ flex: '1 1 200px', maxWidth: 280 }}>
-                      <label htmlFor={'reply-rate-' + r.id}>ჩაწერეთ კურსი</label>
+                      <label htmlFor={'reply-rate-' + r.id}>{t('ჩაწერეთ კურსი', 'Enter the rate')}</label>
                       <input id={'reply-rate-' + r.id} className={'input' + (replyTried && !replyRateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={replyRate} onChange={(e) => setReplyRate(e.target.value)} />
                       <span className={'hint' + (replyTried && !replyRateOk ? ' error' : '')}>
-                        {replyTried && !replyRateOk ? 'ჩაწერეთ კურსი' : replyOpen === 'approved' ? 'მოთხოვნა მიდის სახაზინოსთან და მენეჯერებთან.' : 'მოთხოვნა მიდის მხოლოდ სახაზინოსთან.'}
+                        {replyTried && !replyRateOk ? t('ჩაწერეთ კურსი', 'Enter the rate') : replyOpen === 'approved' ? t('მოთხოვნა მიდის სახაზინოსთან და მენეჯერებთან.', 'This goes to treasury and to managers.') : t('მოთხოვნა მიდის მხოლოდ სახაზინოსთან. სახაზინოს პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
                       </span>
                     </div>
                   ) : (
                     <div className="field" style={{ flex: '1 1 280px' }}>
-                      <label htmlFor={'reply-reason-' + r.id}>მიზეზი</label>
+                      <label htmlFor={'reply-reason-' + r.id}>{t('მიზეზი', 'Reason')}</label>
                       <input id={'reply-reason-' + r.id} className={'input' + (replyTried && !replyReasonOk ? ' invalid' : '')} autoComplete="off" value={replyReason} onChange={(e) => setReplyReason(e.target.value)} />
                       <span className={'hint' + (replyTried && !replyReasonOk ? ' error' : '')}>
-                        {replyTried && !replyReasonOk ? 'ჩაწერეთ მიზეზი' : 'სახაზინო დაინახავს მიზეზს.'}
+                        {replyTried && !replyReasonOk ? t('ჩაწერეთ მიზეზი', 'Enter a reason') : t('სახაზინო დაინახავს მიზეზს.', 'Treasury will see the reason.')}
                       </span>
                     </div>
                   )}
-                  <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? 'იგზავნება…' : replyOpen === 'declined' ? 'შენახვა' : 'გაგზავნა'}</button>
-                  <button type="button" className="link" onClick={() => setReply(null)}>უკან</button>
+                  <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? t('იგზავნება…', 'Sending…') : replyOpen === 'declined' ? t('შენახვა', 'Save') : t('გაგზავნა', 'Send')}</button>
+                  <button type="button" className="link" onClick={() => setReply(null)}>{t('უკან', 'Back')}</button>
                 </form>
               )}
             </div>
@@ -462,27 +467,31 @@ export default function Requests() {
       </section>}
 
       {isKam && <section className="card flush" aria-labelledby="done-title">
-        <div className="card-head"><h2 id="done-title" style={{ fontSize: 18 }}>დღეს გავიდა</h2></div>
-        {loaded && !done.length && <p className="empty">დღეს ჯერ არაფერია.</p>}
-        {done.map((r) => (
+        <div className="card-head"><h2 id="done-title" style={{ fontSize: 18 }}>{t('დღეს გავიდა', 'Went through today')}</h2></div>
+        {loaded && !done.length && <p className="empty">{t('დღეს ჯერ არაფერია.', 'Nothing yet today.')}</p>}
+        {done.map((r) => {
+          const transferText = bookedLine(r);
+          return (
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
             <span className="who strong">{r.client_name ?? r.client_id}</span>
-            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' კურსით ' + fmtRate(r.rate) : ''}</span>
-            <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />გავიდა</span>
+            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}</span>
+            <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
+            {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
           </div>
-        ))}
+          );
+        })}
       </section>}
 
       {seeAll && <section className="card flush" aria-labelledby="approved-title">
         <div className="card-head">
           <div>
-            <h2 id="approved-title" style={{ fontSize: 22 }}>კლიენტმა დაამტკიცა</h2>
-            <p className="small muted">ბოლო 7 დღის დადასტურებები. სახაზინოც და მენეჯერებიც ხედავენ.</p>
+            <h2 id="approved-title" style={{ fontSize: 22 }}>{t('კლიენტმა დაამტკიცა', 'Client approved')}</h2>
+            <p className="small muted">{t('ბოლო 7 დღის დადასტურებები. სახაზინოც და მენეჯერებიც ხედავენ.', 'Approvals from the last 7 days. Treasury and managers both see them.')}</p>
           </div>
         </div>
         {approvedError && <p className="empty">{approvedError}</p>}
-        {approvedLoaded && !approvedError && !approvedRows.length && <p className="empty">ჯერ არაფერია.</p>}
+        {approvedLoaded && !approvedError && !approvedRows.length && <p className="empty">{t('ჯერ არაფერია.', 'Nothing yet.')}</p>}
         {approvedRows.map((r) => (
           <div key={r.id} className="list-row">
             <div className="when">
@@ -492,12 +501,12 @@ export default function Requests() {
             <div className="who">
               <div className="name">{r.client_name ?? r.client_id}</div>
               <div className="tiny muted">ID {r.client_id}</div>
-              <div className="small">{r.kam_name ?? 'KAM არ არის'}</div>
+              <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>
             </div>
             <div className="what">
               <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
-              <div>კლიენტმა დაამტკიცა {fmtRate(r.approved_rate)}</div>
-              {r.rate != null && <div className="tiny muted">სახაზინოს კურსი: {fmtRate(r.rate)}</div>}
+              <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
+              {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
             </div>
           </div>
         ))}
@@ -506,12 +515,12 @@ export default function Requests() {
       <section className="card flush" aria-labelledby="history-title">
         <div className="card-head">
           <div>
-            <h2 id="history-title" style={{ fontSize: 22 }}>{isKam ? 'წინა მოთხოვნები' : 'ყველა მოთხოვნა'}</h2>
+            <h2 id="history-title" style={{ fontSize: 22 }}>{isKam ? t('წინა მოთხოვნები', 'Earlier requests') : t('ყველა მოთხოვნა', 'All requests')}</h2>
             <p className="small muted">
               {isKam
-                ? 'თქვენი გარიგებები დღევანდელამდე, შეთანხმების ფაილის ჩათვლით. დასრულებული გარიგება აქ რჩება, როგორც გავიდა.'
-                : 'დღევანდელი და ყველა ძველი გარიგება, იმ KAM-ის ქვეშ, ვინც გააკეთა. აირჩიეთ ერთი ადამიანი ან ერთი თვე, ან დატოვეთ ორივე „ყველა“-ზე.'}
-              {histLoaded && histCount != null ? ` ${fmtWhole(histCount)} ამ ხედში.` : ''}
+                ? t('თქვენი გარიგებები დღევანდელამდე, შეთანხმების ფაილის ჩათვლით. დასრულებული გარიგება აქ რჩება, როგორც გავიდა.', 'Your deals before today, including the agreement file. A finished deal stays here as went through.')
+                : t('დღევანდელი და ყველა ძველი გარიგება, იმ KAM-ის ქვეშ, ვინც გააკეთა. აირჩიეთ ერთი ადამიანი ან ერთი თვე, ან დატოვეთ ორივე „ყველა“-ზე.', 'Today and every older deal, under the KAM who did it. Pick one person or one month, or leave both on All.')}
+              {histLoaded && histCount != null ? ' ' + t('{n} ამ ხედში.', '{n} in this view.', { n: fmtWhole(histCount) }) : ''}
             </p>
           </div>
           <div className="row">
@@ -519,31 +528,33 @@ export default function Requests() {
               <label className="field" style={{ flex: '0 1 280px' }}>
                 <span className="sr-only">KAM</span>
                 <select className="select" style={{ width: 'auto' }} value={kamFilter} onChange={(e) => { setKamFilter(e.target.value); setShown(PAGE_SIZE); setHistory([]); setHistCount(null); setHistError(''); setHistLoaded(false); }}>
-                  <option value="all">ყველა KAM</option>
+                  <option value="all">{t('ყველა KAM', 'All KAMs')}</option>
                   {kams.map((k) => <option key={k.id} value={k.id}>{k.full_name}</option>)}
                 </select>
               </label>
             )}
             <label className="field" style={{ flex: '0 1 220px' }}>
-              <span className="sr-only">თვე</span>
+              <span className="sr-only">{t('თვე', 'Month')}</span>
               <select className="select" style={{ width: 'auto' }} value={month} onChange={(e) => { setMonth(e.target.value); setShown(PAGE_SIZE); setHistory([]); setHistCount(null); setHistError(''); setHistLoaded(false); }}>
-                <option value="all">ყველა თვე</option>
+                <option value="all">{t('ყველა თვე', 'All months')}</option>
                 {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </label>
           </div>
         </div>
         {histError && <p className="alert-box" role="alert">{histError}</p>}
-        {!histLoaded && <p className="empty">იტვირთება…</p>}
+        {!histLoaded && <p className="empty">{t('იტვირთება…', 'Loading…')}</p>}
         {histLoaded && !histError && !history.length && (
           <p className="empty">
             {month === 'all' && kamFilter === 'all'
-              ? 'წინა მოთხოვნა ჯერ არ არის. აქ გამოჩნდება, როცა შეთანხმების ფაილი ჩაიტვირთება.'
-              : 'ამ არჩევანზე არაფერია.'}
+              ? t('წინა მოთხოვნა ჯერ არ არის. აქ გამოჩნდება, როცა შეთანხმების ფაილი ჩაიტვირთება.', 'No earlier requests yet. They appear here when the agreement file is loaded.')
+              : t('ამ არჩევანზე არაფერია.', 'Nothing for this choice.')}
           </p>
         )}
         {histLoaded && history.map((r) => {
-          const st = historyStatus(r);
+          const st = historyStatus(r, t('გავიდა', 'Went through'), t('არ გავიდა', 'Did not go through'), t('ჯერ ღიაა', 'Still open'));
+          const chatText = isKam && r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
+          const transferText = isKam ? bookedLine(r) : null;
           return (
             <div key={r.id} className="list-row">
               <div className="when">
@@ -553,14 +564,16 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
-                {seeAll && <div className="small">{r.kam_name ?? 'KAM არ არის'}</div>}
+                {seeAll && <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>}
               </div>
               <div className="what">
-                <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' კურსით ' + fmtRate(r.rate) : ''}</div>
-                {r.client_rate != null && <div className="tiny muted">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</div>}
-                {r.note && <div className="tiny muted">კომენტარი: {r.note}</div>}
-                {r.loss_reason_note && <div className="tiny muted">სხვა მიზეზი: {r.loss_reason_note}</div>}
-                {clientReplyNote(r) && <div className="tiny muted">{clientReplyNote(r)}</div>}
+                <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}</div>
+                {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
+                {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
+                {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>}
+                {clientReplyNote(r, t) && <div className="tiny muted">{clientReplyNote(r, t)}</div>}
+                {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
+                {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
               </div>
               <span className={'pill ' + st.cls} style={{ marginLeft: 'auto' }}>
                 {st.cls === 'pill-ok' && <IconCheck />}{st.label}
@@ -570,8 +583,8 @@ export default function Requests() {
         })}
         {histLoaded && history.length < (histCount ?? 0) && (
           <p className="empty">
-            <button type="button" className="btn" onClick={() => setShown((n) => n + PAGE_SIZE)}>მეტის ჩვენება</button>
-            <span className="small muted" style={{ marginLeft: 12 }}>{fmtWhole(history.length)} {fmtWhole(histCount)}-დან</span>
+            <button type="button" className="btn" onClick={() => setShown((n) => n + PAGE_SIZE)}>{t('მეტის ჩვენება', 'Show more')}</button>
+            <span className="small muted" style={{ marginLeft: 12 }}>{t('{shown} {total}-დან', '{shown} of {total}', { shown: fmtWhole(history.length), total: fmtWhole(histCount) })}</span>
           </p>
         )}
       </section>

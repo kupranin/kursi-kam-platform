@@ -246,6 +246,30 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .sheet .section-row td { background: var(--lavender-pale); font-weight: 600; color: var(--aubergine-deep); }
 .cell-input { min-height: 36px; height: 36px; padding: 0 8px; text-align: right; }
 
+.lang-switch { display: inline-flex; border: 1px solid rgba(255,255,255,.35); border-radius: 999px; overflow: hidden; }
+.lang-switch button { border: 0; background: transparent; color: var(--lavender-text); padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.lang-switch button[aria-pressed="true"] { background: #fff; color: var(--aubergine-deep); font-weight: 600; }
+.auth-card .lang-switch { border-color: var(--line); align-self: flex-start; }
+.auth-card .lang-switch button { color: var(--ink-2); }
+.auth-card .lang-switch button[aria-pressed="true"] { background: var(--aubergine); color: #fff; }
+
+.bell { position: relative; }
+.bell-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; border: 0; background: transparent; color: #fff; cursor: pointer; }
+.bell-btn .badge { position: absolute; top: -2px; right: -4px; }
+.bell-panel { position: absolute; right: 0; top: 46px; z-index: 40; width: min(360px, 86vw); max-height: 70vh; overflow: auto; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(60,24,60,.16); padding: 8px; }
+.bell-item { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 8px; text-decoration: none; color: inherit; }
+.bell-item:hover { background: var(--lavender-pale); }
+.bell-item.unread { background: var(--lavender-pale); }
+
+.copy-line { flex: 1 1 100%; margin-top: 8px; padding: 10px 12px; background: var(--ground); border-radius: 10px; }
+.copy-line-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.copy-line-text { margin: 4px 0 0; font-weight: 500; overflow-wrap: anywhere; }
+
+.pair-board { margin-top: 14px; padding: 10px 12px; background: var(--ground); border-radius: 12px; }
+.pair-table th, .pair-table td { padding-top: 8px; padding-bottom: 8px; }
+.pair-board .table th:first-child, .pair-board .table td:first-child { padding-left: 8px; }
+.pair-board .table th:last-child, .pair-board .table td:last-child { padding-right: 8px; }
+
 @media (max-width: 640px) {
   .page { padding: 20px 16px 64px; }
   h1 { font-size: 26px; }

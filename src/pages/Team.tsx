@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { downloadCsv, fmtShort, fmtWhole, monthOptions } from '../lib/format';
 import type { PortfolioRow, Rules, SummaryRow, WinbackRow } from '../lib/types';
 import { IconDownload } from '../components/Icons';
 
 export default function Team() {
   const { profile } = useAuth();
+  const { t } = useI18n();
   const role = profile!.role;
   const isKam = role === 'kam';
   const months = monthOptions(role === 'admin' ? 36 : 6);
@@ -52,7 +54,7 @@ export default function Team() {
   const maxTurnover = Math.max(1, ...summary.map((r) => Number(r.turnover)));
   const failedShare = total.turnover > 0 ? Math.round((total.tns / total.turnover) * 100) : 0;
   const biggestFailed = [...portfolio].sort((a, b) => Number(b.turnover_not_successful) - Number(a.turnover_not_successful)).filter((p) => Number(p.turnover_not_successful) > 0).slice(0, 3);
-  const monthLabel = (months.find((m) => m.value === month)?.label ?? month).replace(', so far', ', ჯერჯერობით');
+  const monthLabel = months.find((m) => m.value === month)?.label ?? month;
 
   function exportCsv() {
     downloadCsv(`kam-portfolio-${month.slice(0, 7)}.csv`, [
@@ -65,13 +67,13 @@ export default function Team() {
     <>
       <div className="page-head">
         <div>
-          <h1>{isKam ? 'ჩემი ციფრები' : 'გუნდი'}</h1>
+          <h1>{isKam ? t('ჩემი ციფრები', 'My numbers') : t('გუნდი', 'Team')}</h1>
           <p>{isKam ? 'თქვენი პორტფელი, იგივე წესით, როგორც ყველასი' : 'ყველა KAM-ის პორტფელი, იგივე წესით'}</p>
         </div>
         <div className="row">
           <label className="sr-only" htmlFor="month">თვე</label>
           <select id="month" className="select" style={{ width: 'auto' }} value={month} onChange={(e) => setMonth(e.target.value)}>
-            {months.map((m) => <option key={m.value} value={m.value}>{m.label.replace(', so far', ', ჯერჯერობით')}</option>)}
+            {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <button type="button" className="btn" onClick={exportCsv} disabled={!portfolio.length}><IconDownload />ჩამოტვირთვა Excel-ისთვის</button>
         </div>

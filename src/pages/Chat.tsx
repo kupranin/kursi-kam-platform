@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { rpc, supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime } from '../lib/format';
-import { ROLE_NAMES, type Role, type StaffMessage, type StaffPerson } from '../lib/types';
+import type { StaffMessage, StaffPerson } from '../lib/types';
 
 const MAX_BODY = 2000;
 
@@ -12,12 +13,9 @@ function preview(body: string): string {
   return one.length > 80 ? one.slice(0, 79) + '…' : one;
 }
 
-function roleLabel(role: string): string {
-  return ROLE_NAMES[role as Role] ?? role;
-}
-
 export default function Chat() {
   const { profile } = useAuth();
+  const { t, roleName } = useI18n();
   const me = profile!.id;
   // Same split as private.can_see_all(): admin and manager.
   const canSeeAll = profile!.role === 'admin' || profile!.role === 'manager';
@@ -151,7 +149,7 @@ export default function Chat() {
     <>
       <div className="page-head">
         <div>
-          <h1>{showingLog ? 'შეტყობინებების ჟურნალი' : 'ჩატი'}</h1>
+          <h1>{showingLog ? t('შეტყობინებების ჟურნალი', 'Message log') : t('ჩატი', 'Chat')}</h1>
           <p>{showingLog
             ? 'ყველა შეტყობინება, რომელიც პლატფორმაზე გაიგზავნა. ეს ჩანაწერია.'
             : 'გაუგზავნეთ შეტყობინება გუნდის წევრს.'}</p>
@@ -238,7 +236,7 @@ export default function Chat() {
                   >
                     <option value="">აირჩიეთ ადამიანი</option>
                     {choices.map((p) => (
-                      <option key={p.id} value={p.id}>{p.full_name} ({roleLabel(p.role)})</option>
+                      <option key={p.id} value={p.id}>{p.full_name} ({roleName(p.role)})</option>
                     ))}
                   </select>
                 </div>
@@ -269,7 +267,7 @@ export default function Chat() {
                 <div className="card-head">
                   <div>
                     <h2>{nameOf(selected)}</h2>
-                    {person && <p className="small muted">{roleLabel(person.role)}{person.active ? '' : ' · აღარ არის აქტიური'}</p>}
+                    {person && <p className="small muted">{roleName(person.role)}{person.active ? '' : ' · აღარ არის აქტიური'}</p>}
                   </div>
                 </div>
                 <div className="chat-stream" ref={streamRef} role="log" aria-label="შეტყობინებები">

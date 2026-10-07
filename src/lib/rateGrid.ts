@@ -12,6 +12,8 @@
 // not crossed. Kursi used to save a cross on the GEL row (the dollar row
 // became the yuan or ruble cross). Those stored rows are relabeled here.
 
+import { getLang } from './lang';
+
 const TZ = 'Asia/Tbilisi';
 
 export const RATE_SLOTS = [11, 13, 15, 17, 19] as const;
@@ -404,10 +406,10 @@ export function historySheet(grid: RateGrid): (string | number | null)[][] {
     if (index) lines.push([]);
     const hours = grid.columns.flatMap((col) => {
       const stamp = col.day + ' ' + String(col.slot).padStart(2, '0') + ':00';
-      return [stamp + ' ყიდვა', stamp + ' გაყიდვა'];
+      return [stamp + (getLang() === 'en' ? ' Buy' : ' ყიდვა'), stamp + (getLang() === 'en' ? ' Sell' : ' გაყიდვა')];
     });
     lines.push([block.pair]);
-    lines.push(['წყარო', ...hours]);
+    lines.push([getLang() === 'en' ? 'Source' : 'წყარო', ...hours]);
     for (const row of block.rows) {
       lines.push([
         row.label,
@@ -416,6 +418,57 @@ export function historySheet(grid: RateGrid): (string | number | null)[][] {
     }
   });
   return lines;
+}
+
+/** Direction of the rate treasury is typing: foreign/GEL, or sells/gets for a cross. */
+export function dealPair(sells: string, gets: string): { base: string; quote: string } {
+  if (sells && gets && sells !== 'GEL' && gets !== 'GEL') return { base: sells, quote: gets };
+  if (sells === 'GEL') return { base: gets, quote: 'GEL' };
+  return { base: sells, quote: 'GEL' };
+}
+
+export interface PairSourceQuote {
+  key: string;
+  label: string;
+  order: number;
+  buy: number | null;
+  sell: number | null;
+}
+
+function asRequestDirection(row: RateSnapshot, base: string, quote: string): RateSnapshot | null {
+  if (row.currency === base && row.quote_currency === quote) return row;
+  if (row.currency === quote && row.quote_currency === base) {
+    const flipped = invertSides(row);
+    return { ...flipped, currency: base, quote_currency: quote };
+  }
+  return null;
+}
+
+/** Latest buy and sell for one pair, in the request's direction. Sources with no rate are left out. */
+export function latestQuotesForPair(rows: RateSnapshot[], base: string, quote: string): { quotes: PairSourceQuote[]; updatedAt: string | null } {
+  const best = new Map<string, { quote: PairSourceQuote; at: string; rank: number }>();
+  let updatedAt: string | null = null;
+  for (const raw of rows) {
+    const oriented = orientSnapshot(raw);
+    const row = asRequestDirection(oriented, base, quote) ?? asRequestDirection(raw, base, quote);
+    if (!row || (row.buy == null && row.sell == null)) continue;
+    const identity = rowIdentity(raw);
+    if (!identity) continue;
+    if (!updatedAt || raw.fetched_at > updatedAt) updatedAt = raw.fetched_at;
+    const rank = sourceRank(raw.source);
+    const prev = best.get(identity.key);
+    if (!prev || raw.fetched_at > prev.at || (raw.fetched_at === prev.at && rank < prev.rank)) {
+      best.set(identity.key, {
+        at: raw.fetched_at,
+        rank,
+        quote: { key: identity.key, label: identity.label, order: identity.order, buy: row.buy, sell: row.sell },
+      });
+    }
+  }
+  const quotes = [...best.values()]
+    .map((hit) => hit.quote)
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+  return { quotes, updatedAt };
 }
 
 function quoteAt(rates: SlottedRate[], rowKey: string, day: string, slot: number): RateQuote {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { fmtShort, fmtWhole } from '../lib/format';
 import { readTransactionFile, type UploadRow } from '../lib/transactionFile';
@@ -50,6 +51,7 @@ function monthLabel(start: string): string {
 
 export default function Analytics() {
   const { profile } = useAuth();
+  const { t } = useI18n();
   const toast = useToast();
   const isAdmin = profile!.role === 'admin';
   const [month, setMonth] = useState('all');
@@ -121,7 +123,7 @@ export default function Analytics() {
     <>
       <div className="page-head">
         <div>
-          <h1>ანალიტიკა</h1>
+          <h1>{t('ანალიტიკა', 'Analytics')}</h1>
           <p>ბრუნვა და შემოსავალი, ტრანზაქციების ფაილიდან</p>
         </div>
         <div className="row">

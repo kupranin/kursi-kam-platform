@@ -1,51 +1,59 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../lib/i18n';
 import { rpc, supabase } from '../lib/supabase';
 import { fmtDateTime, todayTbilisi } from '../lib/format';
 import { useLive } from '../lib/useLive';
-import { ROLE_NAMES, type Role } from '../lib/types';
+import type { Role } from '../lib/types';
+import LangSwitch from './LangSwitch';
+import NotificationBell from './NotificationBell';
 
-const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queue' }[]> = {
+const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' }[]> = {
   kam: [
-    { to: '/requests', label: 'მოთხოვნები' },
-    { to: '/follow-ups', label: 'დაბრუნება', badge: 'followups' },
-    { to: '/clients', label: 'ჩემი კლიენტები' },
-    { to: '/rates', label: 'კურსები' },
-    { to: '/team', label: 'ჩემი ციფრები' },
-    { to: '/chat', label: 'ჩატი' },
+    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups', badge: 'followups' },
+    { to: '/clients', ka: 'ჩემი კლიენტები', en: 'My clients' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/team', ka: 'ჩემი ციფრები', en: 'My numbers' },
+    { to: '/log', ka: 'ჟურნალი', en: 'Log' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
   ],
   treasury: [
-    { to: '/rate-desk', label: 'კურსის მაგიდა', badge: 'queue' },
-    { to: '/rates', label: 'კურსები' },
-    { to: '/chat', label: 'ჩატი' },
+    { to: '/rate-desk', ka: 'კურსის მაგიდა', en: 'Rate desk', badge: 'queue' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/log', ka: 'ჟურნალი', en: 'Log' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
   ],
   admin: [
-    { to: '/team', label: 'გუნდი' },
-    { to: '/requests', label: 'მოთხოვნები' },
-    { to: '/rate-desk', label: 'კურსის მაგიდა', badge: 'queue' },
-    { to: '/follow-ups', label: 'დაბრუნება' },
-    { to: '/clients', label: 'კლიენტები' },
-    { to: '/analytics', label: 'ანალიტიკა' },
-    { to: '/kpis', label: 'KPI' },
-    { to: '/rates', label: 'კურსები' },
-    { to: '/chat', label: 'ჩატი' },
-    { to: '/admin', label: 'ადმინი' },
+    { to: '/team', ka: 'გუნდი', en: 'Team' },
+    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/rate-desk', ka: 'კურსის მაგიდა', en: 'Rate desk', badge: 'queue' },
+    { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups' },
+    { to: '/clients', ka: 'კლიენტები', en: 'Clients' },
+    { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },
+    { to: '/kpis', ka: 'KPI', en: 'KPI' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/log', ka: 'ჟურნალი', en: 'Log' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
+    { to: '/admin', ka: 'ადმინი', en: 'Admin' },
   ],
   manager: [
-    { to: '/team', label: 'გუნდი' },
-    { to: '/requests', label: 'მოთხოვნები' },
-    { to: '/follow-ups', label: 'დაბრუნება' },
-    { to: '/clients', label: 'კლიენტები' },
-    { to: '/analytics', label: 'ანალიტიკა' },
-    { to: '/kpis', label: 'KPI' },
-    { to: '/rates', label: 'კურსები' },
-    { to: '/chat', label: 'ჩატი' },
+    { to: '/team', ka: 'გუნდი', en: 'Team' },
+    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups' },
+    { to: '/clients', ka: 'კლიენტები', en: 'Clients' },
+    { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },
+    { to: '/kpis', ka: 'KPI', en: 'KPI' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/log', ka: 'ჟურნალი', en: 'Log' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
   ],
 };
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { profile, signOut } = useAuth();
+  const { t, roleName } = useI18n();
   const [fresh, setFresh] = useState<string | null>(null);
   const [counts, setCounts] = useState<{ followups: number; queue: number }>({ followups: 0, queue: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -92,30 +100,32 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Link to="/" className="brand">
             <span className="brand-mark">K</span>
             <span>kursi business</span>
-            {role === 'treasury' && <span className="role-tag">სახაზინო</span>}
+            {role === 'treasury' && <span className="role-tag">{t('სახაზინო', 'Treasury')}</span>}
           </Link>
-          <nav className="nav" aria-label="მთავარი">
+          <nav className="nav" aria-label={t('მთავარი', 'Main')}>
             {items.map((i) => (
               <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? 'active' : '')}>
-                {i.label}
+                {t(i.ka, i.en)}
                 {i.badge && counts[i.badge] > 0 && <span className="badge">{counts[i.badge]}</span>}
               </NavLink>
             ))}
           </nav>
           <div className="topbar-right">
-            <span className="freshness">{fresh ? 'ტრანზაქციები განახლდა ' + fmtDateTime(fresh) : 'ტრანზაქციები ჯერ არ არის სინქრონიზებული'}</span>
+            <span className="freshness">{fresh ? t('ტრანზაქციები განახლდა {when}', 'Transactions updated {when}', { when: fmtDateTime(fresh) }) : t('ტრანზაქციები ჯერ არ არის სინქრონიზებული', 'Transactions are not synced yet')}</span>
+            <LangSwitch />
+            <NotificationBell />
             <div className="user-menu" ref={menuRef}>
-              <button type="button" className="avatar" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={'შესული ხართ: ' + profile!.full_name} onClick={() => setMenuOpen((o) => !o)}>
+              <button type="button" className="avatar" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t('შესული ხართ: {name}', 'Signed in as {name}', { name: profile!.full_name })} onClick={() => setMenuOpen((o) => !o)}>
                 {initials}
               </button>
               {menuOpen && (
                 <div className="menu" role="menu">
                   <div className="menu-head">
                     <div className="strong">{profile!.full_name}</div>
-                    <div className="tiny muted">{ROLE_NAMES[role]}, {profile!.email}</div>
+                    <div className="tiny muted">{roleName(role)}, {profile!.email}</div>
                   </div>
-                  <Link to="/security" role="menuitem" onClick={() => setMenuOpen(false)}>პაროლი და შესვლა</Link>
-                  <button type="button" role="menuitem" onClick={signOut}>გასვლა</button>
+                  <Link to="/security" role="menuitem" onClick={() => setMenuOpen(false)}>{t('პაროლი და შესვლა', 'Password and sign-in')}</Link>
+                  <button type="button" role="menuitem" onClick={signOut}>{t('გასვლა', 'Sign out')}</button>
                 </div>
               )}
             </div>
