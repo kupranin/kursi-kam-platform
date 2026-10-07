@@ -57,17 +57,18 @@ export default function RateDesk() {
     } catch (err) {
       toast((err as Error).message, 'error');
     }
-    supabase.from('request_outcomes')
-      .select('id, client_name, client_id, kam_name, sells_currency, gets_currency, amount, gets_amount, loss_reason_note, request_date')
-      .not('loss_reason_note', 'is', null)
-      .gte('request_date', todayTbilisi(-7))
-      .order('request_date', { ascending: false })
-      .limit(30)
-      .then(({ data, error }) => {
-        if (error) { setOtherReasons([]); return; }
-        setOtherReasons(((data ?? []) as OtherReason[]).filter((row) => row.loss_reason_note.trim()));
-      })
-      .catch(() => setOtherReasons([]));
+    try {
+      const { data, error } = await supabase.from('request_outcomes')
+        .select('id, client_name, client_id, kam_name, sells_currency, gets_currency, amount, gets_amount, loss_reason_note, request_date')
+        .not('loss_reason_note', 'is', null)
+        .gte('request_date', todayTbilisi(-7))
+        .order('request_date', { ascending: false })
+        .limit(30);
+      if (error) setOtherReasons([]);
+      else setOtherReasons(((data ?? []) as OtherReason[]).filter((row) => row.loss_reason_note.trim()));
+    } catch {
+      setOtherReasons([]);
+    }
     setLoaded(true);
   }, [toast]);
 
