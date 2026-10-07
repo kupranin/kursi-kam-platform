@@ -20,6 +20,7 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
   ],
   admin: [
     { to: '/team', label: 'Team' },
+    { to: '/requests', label: 'Requests' },
     { to: '/rate-desk', label: 'Rate desk', badge: 'queue' },
     { to: '/follow-ups', label: 'Follow-ups' },
     { to: '/clients', label: 'Clients' },
@@ -30,6 +31,7 @@ const NAV: Record<Role, { to: string; label: string; badge?: 'followups' | 'queu
   ],
   manager: [
     { to: '/team', label: 'Team' },
+    { to: '/requests', label: 'Requests' },
     { to: '/follow-ups', label: 'Follow-ups' },
     { to: '/clients', label: 'Clients' },
     { to: '/analytics', label: 'Analytics' },

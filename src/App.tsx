@@ -27,8 +27,8 @@ const HOME: Record<Role, string> = {
 const PAGES: Record<Role, string[]> = {
   kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates'],
   treasury: ['/rate-desk', '/rates'],
-  admin: ['/team', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/admin'],
-  manager: ['/team', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates'],
+  admin: ['/team', '/requests', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/admin'],
+  manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates'],
 };
 
 export default function App() {

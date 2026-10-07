@@ -15,6 +15,9 @@
 //   set_role    { profile_id, role }
 //   deactivate  { profile_id }               login stops working at once
 //   reactivate  { profile_id }
+//   copy_invite { profile_id }               a fresh set-password link for someone
+//                                            who has not signed in yet. Nothing is emailed,
+//                                            and no SMS or WhatsApp is sent.
 //   send_password_reset { profile_id }       emails a reset link
 //
 // Nobody, including admins, ever sees or sets another person's password.
@@ -138,6 +141,50 @@ function plainInviteError(message: string): string {
     return "This person already has a login";
   }
   return message;
+}
+
+function alreadyRegistered(message: string): boolean {
+  const text = message.toLowerCase();
+  return text.includes("already") || text.includes("registered") || text.includes("exists");
+}
+
+// A link for someone who already has a login but has not signed in.
+// generateLink does not send email (unlike inviteUserByEmail, which is capped
+// at two emails an hour). Invite is tried first. If this email is already
+// registered, a recovery link opens the same set-password page. If that is
+// refused because they never confirmed, a magic link to the same page is used.
+async function linkForExistingLogin(admin: SupabaseClient, email: string, authUserId: string): Promise<string> {
+  if (!APP_URL) throw new HttpError(500, "APP_URL is not set for this function");
+  const redirectTo = `${APP_URL}/set-password`;
+
+  const invited = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: { redirectTo },
+  });
+  if (invited.data?.user && invited.data.user.id !== authUserId) {
+    await admin.auth.admin.deleteUser(invited.data.user.id);
+  }
+  const inviteLink = invited.data?.user?.id === authUserId ? invited.data.properties?.action_link ?? "" : "";
+  if (inviteLink) return inviteLink;
+  if (invited.error && !alreadyRegistered(invited.error.message)) {
+    throw new HttpError(400, plainInviteError(invited.error.message));
+  }
+
+  const recovered = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo },
+  });
+  if (recovered.data?.properties?.action_link) return recovered.data.properties.action_link;
+
+  const magic = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: { redirectTo },
+  });
+  if (magic.data?.properties?.action_link) return magic.data.properties.action_link;
+  throw new HttpError(400, recovered.error?.message ?? magic.error?.message ?? invited.error?.message ?? "Could not create the link");
 }
 
 // Same outbox as every other message: one row, then the database posts it to
@@ -378,6 +425,17 @@ Deno.serve(async (req: Request) => {
         }
         await audit(admin, me.id, "reactivate_user", target.id, { email: target.email });
         return reply({ ok: true }, 200, origin);
+      }
+
+      case "copy_invite": {
+        const target = await getProfile(admin, body.profile_id);
+        if (!target.auth_user_id) throw new HttpError(409, "This person has no login yet. Invite them first.");
+        const { data: userWrap, error: lookupError } = await admin.auth.admin.getUserById(target.auth_user_id);
+        if (lookupError || !userWrap?.user) throw new HttpError(409, "This person has no login yet. Invite them first.");
+        if (userWrap.user.last_sign_in_at) throw new HttpError(409, "This person already chose a password");
+        const link = await linkForExistingLogin(admin, target.email, target.auth_user_id);
+        await audit(admin, me.id, "copy_invite", target.id, { email: target.email });
+        return reply({ link }, 200, origin);
       }
 
       case "send_password_reset": {

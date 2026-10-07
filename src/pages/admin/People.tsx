@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { adminUsers } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 import { useToast } from '../../lib/toast';
@@ -88,6 +88,11 @@ export default function People() {
   const [contact, setContact] = useState({ phone: '', channels: ['email'] as string[] });
   const [ready, setReady] = useState<InviteReady | null>(null);
   const [copied, setCopied] = useState(false);
+  const [shown, setShown] = useState<{ id: string; name: string; link: string } | null>(null);
+  const [shownCopied, setShownCopied] = useState(false);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
+  const shownRow = useRef<HTMLTableRowElement>(null);
+  const readyBox = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +102,8 @@ export default function People() {
     setLoaded(true);
   }, [toast]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (shown) shownRow.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [shown]);
+  useEffect(() => { if (ready) readyBox.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [ready]);
 
   const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(inv.email.trim());
   const nameOk = inv.full_name.trim().length >= 2;
@@ -141,15 +148,42 @@ export default function People() {
     catch (err) { toast((err as Error).message, 'error'); }
   }
 
-  async function copyLink() {
-    if (!ready) return;
+  async function copyText(link: string, mark: (on: boolean) => void) {
     try {
-      await navigator.clipboard.writeText(ready.link);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 3000);
+      await navigator.clipboard.writeText(link);
+      mark(true);
+      window.setTimeout(() => mark(false), 3000);
+      return true;
     } catch {
       toast('Select the link and copy it.', 'error');
+      return false;
     }
+  }
+
+  async function copyLink() {
+    if (!ready) return;
+    await copyText(ready.link, setCopied);
+  }
+
+  async function copyInvite(p: Person) {
+    setCopyingId(p.id);
+    try {
+      const res = await adminUsers<{ link?: string }>({ action: 'copy_invite', profile_id: p.id });
+      if (!res.link) {
+        toast('No link came back. Paste the updated admin-users function in Supabase, then try again.', 'error');
+      } else {
+        setShown({ id: p.id, name: p.full_name, link: res.link });
+        setShownCopied(false);
+        const ok = await copyText(res.link, setShownCopied);
+        if (ok) toast(`Invite link copied for ${p.full_name}.`);
+      }
+    } catch (err) {
+      const message = (err as Error).message;
+      toast(/unknown action/i.test(message)
+        ? 'Copy invite link is not on the server yet. Paste the updated admin-users function in Supabase and deploy it, then try again.'
+        : message, 'error');
+    }
+    setCopyingId(null);
   }
 
   async function saveContact(p: Person) {
@@ -176,7 +210,7 @@ export default function People() {
       </div>
 
       {ready && (
-        <div role="status" style={{ margin: '0 24px 18px', padding: 20, borderRadius: 12, background: ready.message_channels.length && !['sent', 'pending', 'delivered'].includes(ready.message_status ?? '') ? 'var(--warn-bg)' : 'var(--ok-bg)' }}>
+        <div ref={readyBox} role="status" style={{ margin: '0 24px 18px', padding: 20, borderRadius: 12, background: ready.message_channels.length && !['sent', 'pending', 'delivered'].includes(ready.message_status ?? '') ? 'var(--warn-bg)' : 'var(--ok-bg)' }}>
           <h3 style={{ fontSize: 18 }}>Invite ready for {ready.name}</h3>
           <p className="small" style={{ margin: '8px 0 12px', color: 'var(--ink-2)' }}>
             Copy this link and send it to them. They open it and choose their own password. The link works once.
@@ -236,14 +270,16 @@ export default function People() {
       {!loaded && <p className="empty">Loading…</p>}
       {loaded && (
         <div className="table-wrap">
-          <table className="table" style={{ minWidth: 980 }}>
+          <table className="table" style={{ minWidth: 1120 }}>
             <thead><tr><th>Person</th><th>Role</th><th>Login</th><th>Last signed in</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {people.map((p) => {
                 const st = status(p);
                 const me = p.auth_user_id != null && p.id === profile!.id;
+                const needsLink = !me && p.has_login && !p.password_set;
                 return (
-                  <tr key={p.id} style={{ background: p.active ? undefined : '#FBF9FC' }}>
+                  <Fragment key={p.id}>
+                  <tr style={{ background: p.active ? undefined : '#FBF9FC' }}>
                     <td>
                       <div className="strong" style={{ fontWeight: 500 }}>{p.full_name}</div>
                       <div className="tiny muted">{p.email}{p.phone ? ', ' + p.phone : ''}</div>
@@ -277,6 +313,7 @@ export default function People() {
                     <td>
                       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                         {me && <span className="small muted">This is you</span>}
+                        {needsLink && <button type="button" className="btn btn-dark" style={{ minHeight: 40 }} disabled={copyingId === p.id} onClick={() => copyInvite(p)}>{copyingId === p.id ? 'Preparing the link…' : 'Copy invite link'}</button>}
                         {!me && !p.has_login && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => { setInviting(true); setInv({ full_name: p.full_name.includes('@') ? '' : p.full_name, email: p.email, role: p.role, phone: '', channels: ['email'] }); }}>Invite</button>}
                         {!me && p.has_login && p.active && <button type="button" className="btn btn-quiet" style={{ minHeight: 40 }} onClick={() => act({ action: 'send_password_reset', profile_id: p.id }, `Password reset link sent to ${p.email}.`)}>{p.password_set ? 'Send password reset' : 'Resend invite'}</button>}
                         {!me && p.has_login && (p.active
@@ -285,6 +322,27 @@ export default function People() {
                       </div>
                     </td>
                   </tr>
+                  {shown?.id === p.id && (
+                    <tr ref={shownRow}>
+                      <td colSpan={5}>
+                        <div role="status" style={{ margin: '4px 0 8px', padding: 20, borderRadius: 12, background: 'var(--ok-bg)' }}>
+                          <h3 style={{ fontSize: 18 }}>Invite ready for {shown.name}</h3>
+                          <p className="small" style={{ margin: '8px 0 12px', color: 'var(--ink-2)' }}>
+                            Copy this link and send it to them. They open it and choose their own password. The link works once. It was not emailed.
+                          </p>
+                          <div className="field">
+                            <label htmlFor={'invite-link-' + p.id}>Link</label>
+                            <textarea id={'invite-link-' + p.id} className="input" readOnly rows={3} value={shown.link} onFocus={(e) => e.currentTarget.select()} />
+                          </div>
+                          <div className="row" style={{ marginTop: 12 }}>
+                            <button type="button" className="btn btn-dark" onClick={() => copyText(shown.link, setShownCopied)}>{shownCopied ? 'Copied' : 'Copy link'}</button>
+                            <button type="button" className="btn btn-quiet" onClick={() => setShown(null)}>Done</button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
