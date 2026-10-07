@@ -2,29 +2,29 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { downloadCsv, fmtDateTime, fmtDay, fmtRate, todayTbilisi } from '../lib/format';
+import { downloadCsv, fmtDateTime, fmtRate, todayTbilisi } from '../lib/format';
 import { IconDownload } from '../components/Icons';
 import {
   assignRateSlots,
+  buildCurrentBoard,
   buildRateGrid,
+  historySheet,
+  orientSnapshot,
   pairAllowed,
-  type RateBlock,
-  type RateColumn,
+  type CurrentBoard,
   type RateGrid,
+  type RateQuote,
   type RateSnapshot,
   type SlottedRate,
 } from '../lib/rateGrid';
 
-const EMPTY: RateGrid = { columns: [], blocks: [], updatedAt: null };
+const EMPTY_GRID: RateGrid = { columns: [], blocks: [], updatedAt: null };
+const EMPTY_BOARD: CurrentBoard = { pairs: [], rows: [], updatedAt: null };
 
 function num(value: number | string | null | undefined): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function slotLabel(slot: number): string {
-  return String(slot).padStart(2, '0') + ':00';
 }
 
 function asList(data: unknown): unknown[] {
@@ -59,21 +59,15 @@ function toSlotted(row: Record<string, unknown>): SlottedRate | null {
 }
 
 function downloadGrid(grid: RateGrid) {
-  const headers = ['Pair', 'Side', 'Source', ...grid.columns.map((col) => col.day + ' ' + slotLabel(col.slot))];
-  const lines = grid.blocks.flatMap((block) => block.rows.map((row) => [
-    block.pair,
-    block.side === 'buy' ? 'Buy' : 'Sell',
-    row.label,
-    ...row.cells.map((value) => (value == null ? '' : fmtRate(value))),
-  ]));
-  downloadCsv(`kursi-rates-${todayTbilisi()}.csv`, [headers, ...lines]);
+  downloadCsv(`kursi-rates-${todayTbilisi()}.csv`, historySheet(grid));
 }
 
 export default function MarketRates() {
   const toast = useToast();
   const { profile } = useAuth();
   const canRefresh = profile?.role === 'admin' || profile?.role === 'treasury';
-  const [grid, setGrid] = useState<RateGrid>(EMPTY);
+  const [grid, setGrid] = useState<RateGrid>(EMPTY_GRID);
+  const [board, setBoard] = useState<CurrentBoard>(EMPTY_BOARD);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -81,12 +75,16 @@ export default function MarketRates() {
     const { data, error } = await supabase.rpc('market_rate_grid', { p_days: 14 });
     if (!error) {
       const slotted = asList(data).map((row) => toSlotted(row as Record<string, unknown>)).filter((row): row is SlottedRate => row != null);
+      const latest = await loadRecentSnapshots();
       setGrid(buildRateGrid(slotted));
+      setBoard(buildCurrentBoard(latest.length ? latest : slotted));
       return;
     }
     const missing = /market_rate_grid|schema cache|Could not find the function/i.test(error.message);
     if (!missing) throw new Error(error.message);
-    setGrid(buildRateGrid(assignRateSlots(await loadRawSnapshots())));
+    const raw = await loadRawSnapshots();
+    setGrid(buildRateGrid(assignRateSlots(raw)));
+    setBoard(buildCurrentBoard(raw));
   }, []);
 
   useEffect(() => {
@@ -123,7 +121,7 @@ export default function MarketRates() {
     }
   }
 
-  const updated = grid.updatedAt ? fmtDateTime(grid.updatedAt) : '';
+  const updated = board.updatedAt ? fmtDateTime(board.updatedAt) : '';
 
   return (
     <>
@@ -131,8 +129,8 @@ export default function MarketRates() {
         <div>
           <h1>Rates</h1>
           <p>
-            USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.
-            Each column is the closest stored rate{updated ? '. Updated ' + updated : ''}.
+            Latest buy and sell for USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.
+            {updated ? ' Updated ' + updated + '.' : ''} Download rates for the 11:00–19:00 history.
           </p>
         </div>
         <div className="row">
@@ -148,14 +146,21 @@ export default function MarketRates() {
       </div>
 
       {!loaded && <p className="empty">Loading…</p>}
-      {loaded && !grid.blocks.length && <p className="empty">No rates stored yet. An admin or treasury can update them.</p>}
-      {grid.blocks.map((block) => <RateBlockTable key={block.id} block={block} columns={grid.columns} />)}
+      {loaded && !board.rows.length && <p className="empty">No rates stored yet. An admin or treasury can update them.</p>}
+      {board.rows.length > 0 && <CurrentBoardTable board={board} />}
     </>
   );
 }
 
+async function loadRecentSnapshots(): Promise<RateSnapshot[]> {
+  return loadSnapshots(new Date(Date.now() - 2 * 86_400_000).toISOString());
+}
+
 async function loadRawSnapshots(): Promise<RateSnapshot[]> {
-  const since = new Date(Date.now() - 15 * 86_400_000).toISOString();
+  return loadSnapshots(new Date(Date.now() - 15 * 86_400_000).toISOString());
+}
+
+async function loadSnapshots(since: string): Promise<RateSnapshot[]> {
   const pageSize = 1000;
   const all: RateSnapshot[] = [];
   for (let from = 0; from < 20000; from += pageSize) {
@@ -171,7 +176,7 @@ async function loadRawSnapshots(): Promise<RateSnapshot[]> {
     if (error) throw new Error(error.message);
     const batch = (data ?? []) as Record<string, unknown>[];
     for (const row of batch) {
-      const snap = toSnapshot(row);
+      const snap = orientSnapshot(toSnapshot(row));
       if (pairAllowed(snap.currency, snap.quote_currency)) all.push(snap);
     }
     if (batch.length < pageSize) break;
@@ -179,41 +184,54 @@ async function loadRawSnapshots(): Promise<RateSnapshot[]> {
   return all;
 }
 
-function RateBlockTable({ block, columns }: { block: RateBlock; columns: RateColumn[] }) {
+function CurrentBoardTable({ board }: { board: CurrentBoard }) {
   return (
-    <section className="card flush" aria-label={block.title}>
+    <section className="card flush" aria-label="Current rates">
       <div className="table-wrap">
         <table className="table rate-grid">
           <thead>
             <tr>
-              <th className="src" rowSpan={2} scope="col">{block.title}</th>
-              {columns.map((col) => (
-                <th key={col.day + col.slot} className="num slot" scope="col">{fmtDay(col.day)}</th>
+              <th className="src" rowSpan={2} scope="col">Source</th>
+              {board.pairs.map((pair) => (
+                <th key={pair} className="num pair" colSpan={2} scope="colgroup">{pair}</th>
               ))}
             </tr>
             <tr>
-              {columns.map((col) => (
-                <th key={col.day + '-' + col.slot} className="num slot" scope="col">{slotLabel(col.slot)}</th>
+              {board.pairs.map((pair) => (
+                <PairSides key={pair} />
               ))}
             </tr>
           </thead>
           <tbody>
-            {block.rows.map((row) => (
+            {board.rows.map((row) => (
               <tr key={row.key}>
                 <th className="src" scope="row">{row.label}</th>
-                {row.cells.map((value, i) => {
-                  const col = columns[i];
-                  return (
-                    <td key={col.day + col.slot} className="num slot" title={col.day + ' ' + slotLabel(col.slot)}>
-                      {fmtRate(value)}
-                    </td>
-                  );
-                })}
+                {row.quotes.map((quote, i) => (
+                  <QuoteCells key={board.pairs[i]} quote={quote} />
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </section>
+  );
+}
+
+function PairSides() {
+  return (
+    <>
+      <th className="num side pair-start" scope="col">Buy</th>
+      <th className="num side" scope="col">Sell</th>
+    </>
+  );
+}
+
+function QuoteCells({ quote }: { quote: RateQuote }) {
+  return (
+    <>
+      <td className="num pair-start">{fmtRate(quote.buy)}</td>
+      <td className="num">{fmtRate(quote.sell)}</td>
+    </>
   );
 }

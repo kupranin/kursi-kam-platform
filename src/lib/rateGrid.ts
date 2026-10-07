@@ -1,5 +1,16 @@
-// Turns stored market-rate snapshots into the rates sheet:
-// one block per pair and side, columns at 11:00, 13:00, 15:00, 17:00, 19:00.
+// Turns stored market-rate snapshots into the rates sheet.
+// On screen: the latest buy and sell for each source.
+// Download: one block per pair, columns at 11:00, 13:00, 15:00, 17:00, 19:00,
+// with Buy and Sell beside each other.
+//
+// A pair is BASE/QUOTE: how many quote units for 1 base.
+// GEL pairs are foreign/GEL (lari per 1 USD, EUR, RUB or CNY).
+// Crosses are only EUR/USD, EUR/RUB, USD/RUB, USD/CNY and EUR/CNY.
+// If a source publishes the opposite pair, the rate is inverted (1/rate)
+// and buy is swapped with sell. A label that is backwards but already
+// carries the canonical number is only relabeled, so buy and sell are
+// not crossed. Kursi used to save a cross on the GEL row (the dollar row
+// became the yuan or ruble cross). Those stored rows are relabeled here.
 
 const TZ = 'Asia/Tbilisi';
 
@@ -14,14 +25,22 @@ const ORPHAN_MIN = 180;
 const GEL_ORDER = ['USD', 'EUR', 'RUB', 'CNY'] as const;
 const LEGS = new Set<string>(GEL_ORDER);
 
-const CROSS_ORDER = [
-  'EUR/USD', 'USD/EUR',
-  'USD/RUB', 'RUB/USD',
-  'EUR/RUB', 'RUB/EUR',
-  'USD/CNY', 'CNY/USD',
-  'EUR/CNY', 'CNY/EUR',
-  'RUB/CNY', 'CNY/RUB',
-];
+const CROSS_ORDER = ['EUR/USD', 'EUR/RUB', 'USD/RUB', 'USD/CNY', 'EUR/CNY'];
+
+/** Plausible quote-per-1-base band for each pair we show. */
+const SCALE: Record<string, [number, number]> = {
+  'USD/GEL': [1.5, 4.2],
+  'EUR/GEL': [1.6, 4.8],
+  'RUB/GEL': [0.008, 0.15],
+  'CNY/GEL': [0.15, 0.8],
+  'EUR/USD': [0.95, 1.55],
+  'EUR/RUB': [40, 200],
+  'USD/RUB': [40, 200],
+  'USD/CNY': [4.5, 12],
+  'EUR/CNY': [5, 14],
+};
+
+const CANONICAL = new Set<string>([...GEL_ORDER.map((currency) => currency + '/GEL'), ...CROSS_ORDER]);
 
 const SOURCE_RANK: Record<string, number> = {
   kursi: 0,
@@ -52,17 +71,21 @@ export interface RateColumn {
   slot: number;
 }
 
+export interface RateQuote {
+  buy: number | null;
+  sell: number | null;
+}
+
 export interface RateGridRow {
   key: string;
   label: string;
-  cells: (number | null)[];
+  cells: RateQuote[];
 }
 
 export interface RateBlock {
   id: string;
   title: string;
   pair: string;
-  side: 'buy' | 'sell';
   rows: RateGridRow[];
 }
 
@@ -72,9 +95,82 @@ export interface RateGrid {
   updatedAt: string | null;
 }
 
+export interface CurrentBoard {
+  pairs: string[];
+  rows: { key: string; label: string; quotes: RateQuote[] }[];
+  updatedAt: string | null;
+}
+
 export function pairAllowed(currency: string, quote: string): boolean {
   if (!LEGS.has(currency) || currency === quote) return false;
   return quote === 'GEL' || LEGS.has(quote);
+}
+
+function positiveSides(row: { buy: number | null; sell: number | null }): number[] {
+  return [row.buy, row.sell].filter((value): value is number => value != null && value > 0);
+}
+
+function inScale(pair: string, value: number): boolean {
+  const band = SCALE[pair];
+  return !!band && value >= band[0] && value <= band[1];
+}
+
+function sidesIn(pair: string, row: { buy: number | null; sell: number | null }): boolean {
+  const values = positiveSides(row);
+  return values.length > 0 && values.every((value) => inScale(pair, value));
+}
+
+function invert(value: number | null): number | null {
+  if (value == null || value === 0) return null;
+  return 1 / value;
+}
+
+/** Opposite quote: new buy is 1/old sell, new sell is 1/old buy. */
+function invertSides<T extends RateSnapshot>(row: T): T {
+  if (row.buy != null && row.sell != null) {
+    return { ...row, buy: invert(row.sell), sell: invert(row.buy) };
+  }
+  return { ...row, buy: invert(row.buy), sell: invert(row.sell) };
+}
+
+function looksReciprocal(pair: string, row: RateSnapshot): boolean {
+  const values = positiveSides(row);
+  if (!values.length || values.some((value) => inScale(pair, value))) return false;
+  return values.every((value) => inScale(pair, 1 / value));
+}
+
+/**
+ * Older Kursi fetches ignored the quote currency and kept one GEL row per
+ * foreign currency. The last cross won, so USD/GEL could hold USD/CNY (~6.6)
+ * or USD/RUB (~80), and EUR/GEL could hold EUR/USD (~1.12) or EUR/RUB (~90).
+ * The number is already the cross, so only the quote changes.
+ */
+function kursiGelMisfile(row: RateSnapshot): string | null {
+  if (row.source !== 'kursi' || row.quote_currency !== 'GEL') return null;
+  const gel = row.currency + '/GEL';
+  if (sidesIn(gel, row)) return null;
+  if (row.currency === 'USD' && sidesIn('USD/CNY', row)) return 'CNY';
+  if (row.currency === 'USD' && sidesIn('USD/RUB', row)) return 'RUB';
+  if (row.currency === 'EUR' && sidesIn('EUR/USD', row)) return 'USD';
+  if (row.currency === 'EUR' && sidesIn('EUR/RUB', row)) return 'RUB';
+  return null;
+}
+
+export function orientSnapshot<T extends RateSnapshot>(row: T): T {
+  const misfile = kursiGelMisfile(row);
+  if (misfile) return { ...row, quote_currency: misfile };
+
+  const pair = row.currency + '/' + row.quote_currency;
+  const flipped = row.quote_currency + '/' + row.currency;
+  if (CANONICAL.has(pair)) return looksReciprocal(pair, row) ? invertSides(row) : row;
+  if (!CANONICAL.has(flipped)) return row;
+
+  if (sidesIn(flipped, row)) {
+    return { ...row, currency: row.quote_currency, quote_currency: row.currency };
+  }
+  const relabeled = { ...row, currency: row.quote_currency, quote_currency: row.currency };
+  if (looksReciprocal(flipped, relabeled)) return invertSides(relabeled);
+  return row;
 }
 
 export function tbilisiClock(iso: string): { day: string; minutes: number } {
@@ -109,7 +205,8 @@ function candidatesFor(row: RateSnapshot): Candidate[] {
 /** One snapshot per source, venue, pair and hour. The closest reading wins. */
 export function assignRateSlots(rows: RateSnapshot[]): SlottedRate[] {
   const grouped = new Map<string, Candidate[]>();
-  for (const row of rows) {
+  for (const raw of rows) {
+    const row = orientSnapshot(raw);
     if (!pairAllowed(row.currency, row.quote_currency)) continue;
     if (row.venue_kind === 'kiosk' || row.venue.endsWith(' app')) continue;
     for (const cand of candidatesFor(row)) {
@@ -199,7 +296,8 @@ export function buildRateGrid(slotted: SlottedRate[]): RateGrid {
   let updatedAt: string | null = null;
   const visible: SlottedRate[] = [];
 
-  for (const rate of slotted) {
+  for (const raw of slotted) {
+    const rate = orientSnapshot(raw);
     if (!pairAllowed(rate.currency, rate.quote_currency)) continue;
     const identity = rowIdentity(rate);
     if (!identity) continue;
@@ -222,39 +320,111 @@ export function buildRateGrid(slotted: SlottedRate[]): RateGrid {
 
   for (const pair of pairList(have)) {
     const pairRates = inWindow.filter((rate) => rate.currency === pair.currency && rate.quote_currency === pair.quote);
-    for (const side of ['buy', 'sell'] as const) {
-      const gridRows: RateGridRow[] = [];
-      for (const row of ordered) {
-        const cells = columns.map((col) => figureAt(pairRates, row.key, col.day, col.slot, side));
-        if (cells.some((value) => value != null)) gridRows.push({ key: row.key, label: row.label, cells });
-      }
-      if (!gridRows.length) continue;
-      const title = pair.currency + '/' + pair.quote + ' ' + side;
-      blocks.push({
-        id: pair.currency + '-' + pair.quote + '-' + side,
-        title,
-        pair: pair.currency + '/' + pair.quote,
-        side,
-        rows: gridRows,
-      });
+    const gridRows: RateGridRow[] = [];
+    for (const row of ordered) {
+      const cells = columns.map((col) => quoteAt(pairRates, row.key, col.day, col.slot));
+      if (cells.some((cell) => cell.buy != null || cell.sell != null)) gridRows.push({ key: row.key, label: row.label, cells });
     }
+    if (!gridRows.length) continue;
+    const title = pair.currency + '/' + pair.quote;
+    blocks.push({
+      id: pair.currency + '-' + pair.quote,
+      title,
+      pair: title,
+      rows: gridRows,
+    });
   }
 
   return { columns, blocks, updatedAt };
 }
 
-function figureAt(rates: SlottedRate[], rowKey: string, day: string, slot: number, side: 'buy' | 'sell'): number | null {
-  let best: { rank: number; fetched_at: string; value: number } | null = null;
+const EMPTY_QUOTE: RateQuote = { buy: null, sell: null };
+
+/** Latest buy and sell for each source. One row per source, pairs across. */
+export function buildCurrentBoard(rows: RateSnapshot[]): CurrentBoard {
+  const best = new Map<string, { row: RateSnapshot; identity: RowId; rank: number }>();
+  let updatedAt: string | null = null;
+
+  for (const raw of rows) {
+    const row = orientSnapshot(raw);
+    if (!pairAllowed(row.currency, row.quote_currency)) continue;
+    const identity = rowIdentity(row);
+    if (!identity) continue;
+    if (row.buy == null && row.sell == null) continue;
+    if (!updatedAt || row.fetched_at > updatedAt) updatedAt = row.fetched_at;
+    const key = identity.key + '|' + row.currency + '/' + row.quote_currency;
+    const rank = sourceRank(row.source);
+    const prev = best.get(key);
+    if (!prev || row.fetched_at > prev.row.fetched_at || (row.fetched_at === prev.row.fetched_at && rank < prev.rank)) {
+      best.set(key, { row, identity, rank });
+    }
+  }
+
+  const shown = new Map<string, ShownRow>();
+  const have = new Set<string>();
+  for (const hit of best.values()) {
+    have.add(hit.row.currency + '/' + hit.row.quote_currency);
+    const prev = shown.get(hit.identity.key);
+    if (!prev) shown.set(hit.identity.key, { ...hit.identity, labelRank: hit.rank });
+    else if (hit.rank < prev.labelRank) shown.set(hit.identity.key, { ...prev, label: hit.identity.label, labelRank: hit.rank });
+  }
+
+  const pairs = pairList(have);
+  const ordered = [...shown.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
+  const boardRows = ordered.map((identity) => ({
+    key: identity.key,
+    label: identity.label,
+    quotes: pairs.map((pair) => {
+      const hit = best.get(identity.key + '|' + pair.currency + '/' + pair.quote);
+      return hit ? { buy: hit.row.buy, sell: hit.row.sell } : EMPTY_QUOTE;
+    }),
+  })).filter((row) => row.quotes.some((quote) => quote.buy != null || quote.sell != null));
+
+  return {
+    pairs: pairs.map((pair) => pair.currency + '/' + pair.quote),
+    rows: boardRows,
+    updatedAt,
+  };
+}
+
+function rateText(value: number | null): string {
+  return value == null ? '' : value.toFixed(4);
+}
+
+/** History spreadsheet: one block per pair, Buy and Sell under each hour. */
+export function historySheet(grid: RateGrid): (string | number | null)[][] {
+  const lines: (string | number | null)[][] = [];
+  grid.blocks.forEach((block, index) => {
+    if (index) lines.push([]);
+    const hours = grid.columns.flatMap((col) => {
+      const stamp = col.day + ' ' + String(col.slot).padStart(2, '0') + ':00';
+      return [stamp + ' Buy', stamp + ' Sell'];
+    });
+    lines.push([block.pair]);
+    lines.push(['Source', ...hours]);
+    for (const row of block.rows) {
+      lines.push([
+        row.label,
+        ...row.cells.flatMap((cell) => [rateText(cell.buy), rateText(cell.sell)]),
+      ]);
+    }
+  });
+  return lines;
+}
+
+function quoteAt(rates: SlottedRate[], rowKey: string, day: string, slot: number): RateQuote {
+  let best: SlottedRate | null = null;
+  let bestRank = Infinity;
   for (const rate of rates) {
     if (rate.day !== day || rate.slot !== slot) continue;
-    const value = rate[side];
-    if (value == null) continue;
+    if (rate.buy == null && rate.sell == null) continue;
     const identity = rowIdentity(rate);
     if (identity?.key !== rowKey) continue;
     const rank = sourceRank(rate.source);
-    if (!best || rank < best.rank || (rank === best.rank && rate.fetched_at > best.fetched_at)) {
-      best = { rank, fetched_at: rate.fetched_at, value };
+    if (!best || rank < bestRank || (rank === bestRank && rate.fetched_at > best.fetched_at)) {
+      best = rate;
+      bestRank = rank;
     }
   }
-  return best ? best.value : null;
+  return best ? { buy: best.buy, sell: best.sell } : EMPTY_QUOTE;
 }

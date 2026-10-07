@@ -136,6 +136,70 @@ function code(value: string): string {
   return upper === "RUR" ? "RUB" : upper;
 }
 
+// Same pair rule as src/lib/rateGrid.ts. BASE/QUOTE is quote per 1 base.
+// GEL pairs are foreign/GEL. Crosses stay EUR/USD, EUR/RUB, USD/RUB, USD/CNY, EUR/CNY.
+// An opposite pair is inverted and buy is swapped with sell. A backwards label
+// that already has the canonical number is only relabeled.
+const PAIR_SCALE: Record<string, [number, number]> = {
+  "USD/GEL": [1.5, 4.2],
+  "EUR/GEL": [1.6, 4.8],
+  "RUB/GEL": [0.008, 0.15],
+  "CNY/GEL": [0.15, 0.8],
+  "EUR/USD": [0.95, 1.55],
+  "EUR/RUB": [40, 200],
+  "USD/RUB": [40, 200],
+  "USD/CNY": [4.5, 12],
+  "EUR/CNY": [5, 14],
+};
+const CANONICAL_PAIRS = new Set(Object.keys(PAIR_SCALE));
+
+function pairSides(row: Row): number[] {
+  return [row.buy, row.sell].filter((value): value is number => value != null && value > 0);
+}
+
+function inPairScale(pair: string, value: number): boolean {
+  const band = PAIR_SCALE[pair];
+  return !!band && value >= band[0] && value <= band[1];
+}
+
+function sidesInPair(pair: string, row: Row): boolean {
+  const values = pairSides(row);
+  return values.length > 0 && values.every((value) => inPairScale(pair, value));
+}
+
+function invertRate(value: number | null): number | null {
+  if (value == null || value === 0) return null;
+  return 1 / value;
+}
+
+function invertRowSides(row: Row): Row {
+  if (row.buy != null && row.sell != null) return { ...row, buy: invertRate(row.sell), sell: invertRate(row.buy) };
+  return { ...row, buy: invertRate(row.buy), sell: invertRate(row.sell) };
+}
+
+function rowLooksReciprocal(pair: string, row: Row): boolean {
+  const values = pairSides(row);
+  if (!values.length || values.some((value) => inPairScale(pair, value))) return false;
+  return values.every((value) => inPairScale(pair, 1 / value));
+}
+
+function orientRow(row: Row): Row {
+  if (row.source === "kursi" && row.quote_currency === "GEL" && !sidesInPair(row.currency + "/GEL", row)) {
+    if (row.currency === "USD" && sidesInPair("USD/CNY", row)) return { ...row, quote_currency: "CNY" };
+    if (row.currency === "USD" && sidesInPair("USD/RUB", row)) return { ...row, quote_currency: "RUB" };
+    if (row.currency === "EUR" && sidesInPair("EUR/USD", row)) return { ...row, quote_currency: "USD" };
+    if (row.currency === "EUR" && sidesInPair("EUR/RUB", row)) return { ...row, quote_currency: "RUB" };
+  }
+  const pair = row.currency + "/" + row.quote_currency;
+  const flipped = row.quote_currency + "/" + row.currency;
+  if (CANONICAL_PAIRS.has(pair)) return rowLooksReciprocal(pair, row) ? invertRowSides(row) : row;
+  if (!CANONICAL_PAIRS.has(flipped)) return row;
+  if (sidesInPair(flipped, row)) return { ...row, currency: row.quote_currency, quote_currency: row.currency };
+  const relabeled = { ...row, currency: row.quote_currency, quote_currency: row.currency };
+  if (rowLooksReciprocal(flipped, relabeled)) return invertRowSides(relabeled);
+  return row;
+}
+
 function parseMyvaluta(html: string, kind: "bank" | "kiosk"): Row[] {
   const tokens = html.match(/<h2[^>]*>[\s\S]*?<\/h2>|<table[\s\S]*?<\/table>/g) ?? [];
   let currency: string | null = null;
@@ -330,7 +394,10 @@ Deno.serve(async (req: Request) => {
       try {
         const rows = await load();
         const unique = new Map<string, Row>();
-        for (const row of rows) unique.set([row.source, row.venue, row.currency, row.quote_currency].join("|"), row);
+        for (const row of rows) {
+          const oriented = orientRow(row);
+          unique.set([oriented.source, oriented.venue, oriented.currency, oriented.quote_currency].join("|"), oriented);
+        }
         const clean = [...unique.values()];
         if (!clean.length) {
           problems.push(name + " returned no rates");

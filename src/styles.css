@@ -169,6 +169,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .table.rate-grid .src { position: sticky; left: 0; z-index: 1; min-width: 168px; box-shadow: 1px 0 0 var(--line); }
 .table.rate-grid thead .src { z-index: 2; font-weight: 600; color: var(--ink); font-size: 14px; }
 .table.rate-grid .slot { min-width: 84px; }
+.table.rate-grid .pair { text-align: center; color: var(--ink); font-weight: 600; }
+.table.rate-grid .side { min-width: 76px; }
+.table.rate-grid .pair-start { box-shadow: inset 1px 0 0 var(--line); }
 .table.rate-grid tbody tr:hover th,
 .table.rate-grid tbody tr:hover td { background: #FBF8FD; }
 .list-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 24px; border-top: 1px solid var(--line-soft); }
