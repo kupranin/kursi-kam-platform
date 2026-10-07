@@ -54,9 +54,13 @@ export default function FollowUps() {
 
   async function answer(row: RequestRow, code: string | null) {
     const reason = reasons.find((r) => r.code === code);
-    const detail = reason && isOther(reason) ? (otherText[row.id] ?? '').trim() : null;
+    const detail = reason && isOther(reason) ? (otherText[row.id] ?? '').trim() : '';
     try {
-      await rpc('set_loss_reason', { p_request_id: row.id, p_reason: code, p_detail: detail || null });
+      await rpc('set_loss_reason', {
+        p_request_id: row.id,
+        p_reason: code,
+        ...(detail ? { p_detail: detail } : {}),
+      });
       setAnswered((m) => {
         const next = { ...m };
         if (code) next[row.id] = code; else delete next[row.id];
