@@ -13,6 +13,20 @@ export const fmtAmount = (n: number | null | undefined) => (n == null ? '' : amo
 export const fmtWhole = (n: number | null | undefined) => (n == null ? '' : wholeFmt.format(Number(n)));
 export const fmtRate = (n: number | null | undefined) => (n == null ? '' : Number(n).toFixed(4));
 
+/**
+ * The rate someone typed. A comma is a decimal point.
+ * "2.6021" stays the text "2.6021" — it is not rounded and not replaced.
+ * Empty is allowed (an optional rate). Anything else that is not a positive decimal is rejected.
+ */
+export function parseRate(text: string): { ok: boolean; text: string; value: number | null } {
+  const clean = text.trim().replace(/,/g, '.');
+  if (!clean) return { ok: true, text: '', value: null };
+  if (!/^\d+(\.\d+)?$/.test(clean)) return { ok: false, text: clean, value: null };
+  const value = Number(clean);
+  if (!(value > 0) || !Number.isFinite(value)) return { ok: false, text: clean, value: null };
+  return { ok: true, text: clean, value };
+}
+
 /** 83,300,000 -> "83.3 მლნ", 22,158 -> "22,158" */
 export function fmtShort(n: number | null | undefined): string {
   if (n == null) return '';

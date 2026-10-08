@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
-import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
+import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { treasuryReason } from '../lib/requestStatus';
 import type { QueueRow, QuoteToday, ReferenceRate } from '../lib/types';
@@ -78,6 +78,9 @@ export default function RateDesk() {
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
   const initial = useRef(true);
+  // Latest digits in the rate box, updated as they are typed. Send uses this,
+  // so a later click (such as 30 minutes) cannot put an older rate back.
+  const draftRate = useRef<Record<number, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -182,20 +185,29 @@ export default function RateDesk() {
   }, [load]);
   useLive(['requests'], load, 15000);
 
-  const card = (id: number): CardState => cards[id] ?? { rate: '', valid: defaultValid, declining: false, confirmFar: false, tried: false };
-  const patch = (id: number, p: Partial<CardState>) => setCards((c) => ({ ...c, [id]: { ...card(id), ...p } }));
+  const blankCard = (valid: number): CardState => ({ rate: '', valid, declining: false, confirmFar: false, tried: false });
+  const card = (id: number): CardState => cards[id] ?? blankCard(defaultValid);
+  // Merge into the card already stored, not into a copy from the last render.
+  // A click on "30 წთ" must not restore a rate that was just typed over.
+  const patch = (id: number, p: Partial<CardState>) => setCards((c) => {
+    const prev = c[id] ?? blankCard(defaultValid);
+    return { ...c, [id]: { ...prev, ...p } };
+  });
+  const rememberRate = (id: number, rate: string) => { draftRate.current[id] = rate; };
 
   async function send(r: QueueRow) {
     const c = card(r.request_id);
-    const rate = Number(c.rate.trim());
-    if (!c.rate.trim() || !(rate > 0)) { patch(r.request_id, { tried: true }); return; }
+    const parsed = parseRate(draftRate.current[r.request_id] ?? c.rate);
+    if (!parsed.text || parsed.value == null) { patch(r.request_id, { tried: true }); return; }
+    const rate = parsed.value;
     if (r.standard_rate && Math.abs(rate - r.standard_rate) / r.standard_rate * 100 > FAR_PCT && !c.confirmFar) {
       patch(r.request_id, { confirmFar: true });
       return;
     }
     try {
-      const until = await rpc<string>('treasury_quote', { p_request_id: r.request_id, p_rate: rate, p_valid_minutes: c.valid });
+      const until = await rpc<string>('treasury_quote', { p_request_id: r.request_id, p_rate: parsed.value, p_valid_minutes: c.valid });
       toast(t('კურსი {rate} გაეგზავნა {name}-ს, მოქმედებს {time}-მდე', 'Rate {rate} sent to {name}, valid until {time}', { rate: fmtRate(rate), name: r.kam_name.split(' ')[0], time: fmtTime(until) }));
+      delete draftRate.current[r.request_id];
       setCards((all) => { const n = { ...all }; delete n[r.request_id]; return n; });
       load();
     } catch (err) { toast((err as Error).message, 'error'); load(); }
@@ -210,11 +222,11 @@ export default function RateDesk() {
   }
 
   async function correctBetter(r: ClientReply) {
-    const raw = (fixRate[r.request_id] ?? '').trim().replace(',', '.');
-    const rate = Number(raw);
-    if (!raw || !(rate > 0)) { setFixTried(r.request_id); return; }
+    const parsed = parseRate(fixRate[r.request_id] ?? '');
+    if (!parsed.text || parsed.value == null) { setFixTried(r.request_id); return; }
+    const rate = parsed.value;
     try {
-      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'corrected', p_rate: rate, p_reason: null });
+      await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'corrected', p_rate: parsed.value, p_reason: null });
       toast(t('გასწორებული კურსი დაუბრუნდა KAM-ს.', 'The corrected rate went back to the KAM.'));
       setFixRate((m) => { const n = { ...m }; delete n[r.request_id]; return n; });
       setFixTried(null);
@@ -374,7 +386,7 @@ export default function RateDesk() {
                           <div className="row" style={{ marginTop: 16, gap: 8 }}>
                             <span className="small strong" style={{ marginRight: 4 }}>კურსები ამ გარიგებაზე</span>
                             {refs.map((x) => (
-                              <button key={x.label} type="button" className="ref-chip" title="საწყისად გამოყენება" onClick={() => patch(r.request_id, { rate: fmtRate(x.value), confirmFar: false, tried: false })}>
+                              <button key={x.label} type="button" className="ref-chip" title="საწყისად გამოყენება" onClick={() => { const rate = fmtRate(x.value); rememberRate(r.request_id, rate); patch(r.request_id, { rate, confirmFar: false, tried: false }); }}>
                                 <span>{x.label}</span><span>{fmtRate(x.value)}</span>
                               </button>
                             ))}
@@ -390,7 +402,7 @@ export default function RateDesk() {
                               inputMode="decimal"
                               autoComplete="off"
                               value={c.rate}
-                              onChange={(e) => patch(r.request_id, { rate: e.target.value.replace(',', '.'), confirmFar: false })}
+                              onChange={(e) => { const rate = e.target.value.replace(/,/g, '.'); rememberRate(r.request_id, rate); patch(r.request_id, { rate, confirmFar: false }); }}
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(r); } }}
                             />
                             <span className={'hint' + (c.tried && !rateOk ? ' error' : '')}>{c.tried && !rateOk ? 'ჯერ ჩაწერეთ კურსი' : rateUnit(r.sells_currency, r.gets_currency)}</span>
