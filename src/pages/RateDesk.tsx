@@ -224,7 +224,6 @@ export default function RateDesk() {
   async function correctBetter(r: ClientReply) {
     const parsed = parseRate(fixRate[r.request_id] ?? '');
     if (!parsed.text || parsed.value == null) { setFixTried(r.request_id); return; }
-    const rate = parsed.value;
     try {
       await rpc('treasury_answer_better', { p_request_id: r.request_id, p_decision: 'corrected', p_rate: parsed.value, p_reason: null });
       toast(t('გასწორებული კურსი დაუბრუნდა KAM-ს.', 'The corrected rate went back to the KAM.'));
@@ -484,7 +483,7 @@ export default function RateDesk() {
                           inputMode="decimal"
                           autoComplete="off"
                           value={raw}
-                          onChange={(e) => { setFixRate((m) => ({ ...m, [r.request_id]: e.target.value.replace(',', '.') })); setFixTried(null); }}
+                          onChange={(e) => { setFixRate((m) => ({ ...m, [r.request_id]: e.target.value.replace(/,/g, '.') })); setFixTried(null); }}
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); correctBetter(r); } }}
                         />
                         {fixTried === r.request_id && !rateOk && <span className="hint error">ჩაწერეთ გასწორებული კურსი</span>}
