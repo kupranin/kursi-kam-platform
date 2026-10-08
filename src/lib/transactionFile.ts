@@ -24,6 +24,14 @@ export interface UploadRow {
 
 export type UploadMode = 'tx-id' | 'amount';
 
+/** Why a data row was not a transaction. A missing transaction id is not one of these. */
+export interface UploadMissing {
+  date: number;
+  client: number;
+  status: number;
+  amount: number;
+}
+
 const SKIP_OPS = new Set(['position-close-in-bank', 'fastoo', 'bitnet', 'unipay']);
 
 /** Server import_transactions rejects lists longer than this. */
@@ -189,9 +197,14 @@ function hasHeader(headers: string[], names: readonly string[]): boolean {
   return names.some((name) => keys.has(headerKey(name)));
 }
 
+function emptyMissing(): UploadMissing {
+  return { date: 0, client: 0, status: 0, amount: 0 };
+}
+
+/** A lari amount column means we match without a transaction id, even if that column also exists. */
 function fileMode(headers: string[]): UploadMode {
-  if (hasHeader(headers, TX_ID_HEADERS)) return 'tx-id';
   if (hasHeader(headers, AMOUNT_HEADERS)) return 'amount';
+  if (hasHeader(headers, TX_ID_HEADERS)) return 'tx-id';
   throw new TransactionFileError('no-amount');
 }
 
@@ -200,7 +213,13 @@ function currencyCode(value: unknown): string | null {
   return /^[A-Z]{3}$/.test(text) ? text : null;
 }
 
-function oneRow(headers: string[], values: unknown[], seen: Set<string> | null, mode: UploadMode): UploadRow | null {
+function oneRow(
+  headers: string[],
+  values: unknown[],
+  seen: Set<string> | null,
+  mode: UploadMode,
+  missing: UploadMissing,
+): UploadRow | null {
   const keyed: Record<string, unknown> = {};
   for (let i = 0; i < headers.length; i++) {
     const key = headerKey(headers[i] ?? '');
@@ -216,11 +235,17 @@ function oneRow(headers: string[], values: unknown[], seen: Set<string> | null, 
   const clientId = normalizeId(textId(pick(keyed, ['sender id', 'sender_id', 'client_id', 'client id'])));
   const status = textId(pick(keyed, ['payment status', 'payment_status'])).toUpperCase();
   const operation = textId(pick(keyed, ['operation type', 'operation_type'])) || null;
-  if (!txDate || !clientId || !status || (operation && SKIP_OPS.has(operation.toLowerCase()))) return null;
+  if (operation && SKIP_OPS.has(operation.toLowerCase())) return null;
   const sells = currencyCode(pick(keyed, SELL_CCY_HEADERS));
   const gets = currencyCode(pick(keyed, GET_CCY_HEADERS));
   const absGel = numberOrZero(pick(keyed, ['abs_gel', 'abs gel']));
   const crossGel = numberOrZero(pick(keyed, ['cross_gel', 'cross gel']));
+  const hasAmount = absGel !== 0 || crossGel !== 0;
+  if (!txDate) missing.date += 1;
+  if (!clientId) missing.client += 1;
+  if (!status) missing.status += 1;
+  if (!hasAmount) missing.amount += 1;
+  if (!txDate || !clientId || !status || !hasAmount) return null;
   if (mode === 'tx-id') {
     if (!txId || seen?.has(txId)) return null;
     seen?.add(txId);
