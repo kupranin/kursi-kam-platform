@@ -4,6 +4,8 @@
 --
 -- An analyst can read every request: both amounts, the rate, the lari
 -- value, whether it succeeded or was lost, and the reason when it was lost.
+-- The row also names the treasury person who quoted (requests.quoted_by).
+-- Until someone quotes, that name is empty. The client id is its own column.
 -- They cannot change anything. Admin can read the same list.
 --
 -- Two times, in minutes:
@@ -107,6 +109,14 @@ revoke all on function private.request_gel(text, text, numeric, numeric, numeric
 revoke all on function private.first_response_minutes(bigint, timestamptz, timestamptz, timestamptz, text) from public, anon, authenticated;
 revoke all on function private.rate_write_minutes(text, timestamptz, timestamptz, text) from public, anon, authenticated;
 
+-- The list calls these three. A signed-in user needs execute on them, and
+-- so does the owner of the list. Same grant as the other private helpers.
+grant execute on function
+  private.request_gel(text, text, numeric, numeric, numeric),
+  private.first_response_minutes(bigint, timestamptz, timestamptz, timestamptz, text),
+  private.rate_write_minutes(text, timestamptz, timestamptz, text)
+to postgres, service_role, authenticated;
+
 -- The list. Runs as the owner so an analyst can read it without being
 -- given write access to requests. The last line hides it from every
 -- other role.
@@ -128,7 +138,8 @@ select
   d.status,
   case when d.status = 'lost' then d.reason else null end as loss_reason,
   d.first_response_minutes,
-  d.rate_write_minutes
+  d.rate_write_minutes,
+  d.quoted_by_name
 from (
   select
     r.id,
@@ -159,10 +170,13 @@ from (
       nullif(btrim(r.decline_reason), '')
     ), '') as reason,
     private.first_response_minutes(r.id, r.asked_at, r.requested_at, r.quoted_at, r.source) as first_response_minutes,
-    private.rate_write_minutes(r.client_reply, r.client_replied_at, r.rate_written_at, r.source) as rate_write_minutes
+    private.rate_write_minutes(r.client_reply, r.client_replied_at, r.rate_written_at, r.source) as rate_write_minutes,
+    nullif(btrim(qb.full_name), '') as quoted_by_name
   from public.requests r
   join public.clients c on c.client_id = r.client_id
   left join public.profiles p on p.id = r.kam_id
+  -- The view owner reads the name, so an analyst needs no grant on profiles.
+  left join public.profiles qb on qb.id = r.quoted_by
   left join public.loss_reasons lr on lr.code = r.loss_reason
   cross join lateral (
     select
@@ -193,7 +207,7 @@ from (
 where private.my_role() in ('analyst', 'admin');
 
 comment on view public.analyst_deals is
-  'Every request for an analyst or an admin. Read only. Dates, both amounts, the lari value, success or lost, the reason, and the two treasury times in minutes.';
+  'Every request for an analyst or an admin. Read only. Dates, both amounts, the lari value, success or lost, the reason, the treasury person who quoted (empty until someone quotes), the client id in its own column, and the two treasury times in minutes.';
 
 revoke all on public.analyst_deals from public, anon;
 grant select on public.analyst_deals to authenticated;

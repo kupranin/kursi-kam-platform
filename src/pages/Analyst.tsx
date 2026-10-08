@@ -23,6 +23,7 @@ interface Deal {
   loss_reason: string | null;
   first_response_minutes: number | null;
   rate_write_minutes: number | null;
+  quoted_by_name: string | null;
 }
 
 const PAGE = 100;
@@ -147,6 +148,7 @@ export default function Analyst() {
         t('იღებს', 'Gets'),
         t('მისაღები თანხა', 'Amount to receive'),
         t('კურსი', 'Rate'),
+        t('კურსი გასცა', 'Quoted by'),
         t('თანხა GEL', 'Amount GEL'),
         t('სტატუსი', 'Status'),
         t('მიზეზი', 'Reason'),
@@ -158,13 +160,14 @@ export default function Analyst() {
           r.first_response_minutes,
           r.rate_write_minutes,
           r.kam_name,
-          r.client_name,
+          r.client_name ?? '',
           r.client_id,
           r.sells_currency,
           r.sell_amount,
           r.gets_currency,
           r.gets_amount,
           r.rate,
+          r.quoted_by_name ?? '',
           r.amount_gel,
           statusText(r.status),
           r.status === 'lost' ? r.loss_reason : '',
@@ -226,7 +229,7 @@ export default function Analyst() {
         {loaded && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: 1280 }}>
+            <table className="table" style={{ minWidth: 1520 }}>
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
@@ -234,11 +237,13 @@ export default function Analyst() {
                   <th className="num">{t('კურსის გაწერა', 'Rate writing')}</th>
                   <th>KAM</th>
                   <th>{t('კლიენტი', 'Client')}</th>
+                  <th>ID</th>
                   <th>{t('ყიდის', 'Sells')}</th>
                   <th className="num">{t('მოთხოვნილი თანხა', 'Amount asked')}</th>
                   <th>{t('იღებს', 'Gets')}</th>
                   <th className="num">{t('მისაღები თანხა', 'Amount to receive')}</th>
                   <th className="num">{t('კურსი', 'Rate')}</th>
+                  <th>{t('კურსი გასცა', 'Quoted by')}</th>
                   <th className="num">{t('თანხა GEL', 'Amount GEL')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
@@ -251,15 +256,14 @@ export default function Analyst() {
                     <td className="num">{fmtMinutes(r.first_response_minutes)}</td>
                     <td className="num">{fmtMinutes(r.rate_write_minutes)}</td>
                     <td>{r.kam_name}</td>
-                    <td>
-                      <div className="strong">{r.client_name ?? r.client_id}</div>
-                      <div className="tiny muted">ID {r.client_id}</div>
-                    </td>
+                    <td className="strong">{r.client_name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</td>
+                    <td className="nowrap">{r.client_id}</td>
                     <td>{r.sells_currency}</td>
                     <td className="num">{fmtAmount(r.sell_amount)}</td>
                     <td>{r.gets_currency}</td>
                     <td className="num">{fmtAmount(r.gets_amount)}</td>
                     <td className="num">{r.rate != null ? fmtRate(r.rate) : ''}</td>
+                    <td>{r.quoted_by_name ?? ''}</td>
                     <td className="num">{fmtAmount(r.amount_gel)}</td>
                     <td>
                       <span className={'pill ' + (r.status === 'success' ? 'pill-ok' : r.status === 'lost' ? 'pill-alert' : 'pill-wait')}>
