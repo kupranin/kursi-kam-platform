@@ -118,6 +118,7 @@ textarea.input { padding: 10px 12px; min-height: 80px; }
 .input.big { font-size: 20px; font-weight: 500; min-height: 52px; }
 .input.invalid, .select.invalid { border-color: var(--error); }
 .input.attention { border-color: var(--lavender); }
+.input.from-file:read-only { background: var(--ground); }
 .hint { font-size: 13px; color: var(--muted); }
 .hint.error { color: var(--error); }
 .hint.ok { color: var(--ok); }

@@ -1,7 +1,8 @@
 -- Paste this in the Supabase SQL editor. Safe to paste again.
 -- Paste it after 11_client_reply.sql. Do not re-run 1_platform.sql.
--- If you paste 10_request_sides.sql or 11_client_reply.sql again,
--- paste this file once more so the outcomes list still includes the bank.
+-- If you paste 10_request_sides.sql, 11_client_reply.sql, or 4_company_search.sql again,
+-- paste this file once more so the request still stores every bank and
+-- client search still returns the banks already saved for that client.
 --
 -- The request form and the rate desk read the last requests from
 -- public.request_outcomes. That view uses the caller's own rights.
@@ -11,17 +12,84 @@
 -- The standard comparison is the latest Kursi board row already stored
 -- in public.market_rates. Those same roles can already read it.
 -- Nothing here sends a message.
+--
+-- One request can use any combination of TBC, BOG, and Liberty, including
+-- all three. At least one is required on a new request typed in the app.
+-- Imported history can still have no bank. An older row that stored one
+-- bank is copied into the set the first time this file runs.
 
 alter table public.requests add column if not exists bank text;
+alter table public.requests add column if not exists banks text[];
+alter table public.clients add column if not exists banks text[];
 
 comment on column public.requests.bank is
-  'Bank the client is sending to: TBC, BOG, or Liberty. Empty on imported history and on requests made before this column.';
+  'Banks on this request, written as text for older screens: TBC, BOG, Liberty, or a comma-separated combination. Empty on imported history.';
 
+comment on column public.requests.banks is
+  'Banks this deal uses, in order TBC, BOG, Liberty. One, two, or all three. Empty on imported history and on requests made before this column.';
+
+comment on column public.clients.banks is
+  'Banks this client has used. A later request adds banks; it does not remove one already stored here.';
+
+-- A second paste drops the check and adds the same one again.
+-- NOT VALID does not scan existing rows, so this stays a short lock.
+-- New inserts are still checked. One code, or "TBC, BOG, Liberty", is allowed.
 alter table public.requests drop constraint if exists requests_bank_ok;
-alter table public.requests add constraint requests_bank_ok
-  check (bank is null or bank in ('TBC', 'BOG', 'Liberty'));
+alter table public.requests
+  add constraint requests_bank_ok
+  check (
+    bank is null
+    or bank ~ '^(TBC|BOG|Liberty)(, (TBC|BOG|Liberty)){0,2}$'
+  ) not valid;
 
--- Outcomes view: same columns as 11_client_reply.sql, then the bank.
+alter table public.requests drop constraint if exists requests_banks_ok;
+alter table public.requests
+  add constraint requests_banks_ok
+  check (
+    banks is null
+    or (
+      cardinality(banks) between 1 and 3
+      and banks <@ array['TBC', 'BOG', 'Liberty']::text[]
+    )
+  ) not valid;
+
+alter table public.clients drop constraint if exists clients_banks_ok;
+alter table public.clients
+  add constraint clients_banks_ok
+  check (
+    banks is null
+    or (
+      cardinality(banks) between 1 and 3
+      and banks <@ array['TBC', 'BOG', 'Liberty']::text[]
+    )
+  ) not valid;
+
+-- Copy a single stored bank into the set. A second paste leaves rows that
+-- already have a set alone, so it does not drop a bank.
+update public.requests as r
+set banks = parsed.banks
+from (
+  select
+    req.id,
+    (
+      select array_agg(x order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x))
+      from (
+        select distinct btrim(piece) as x
+        from unnest(string_to_array(req.bank, ',')) as u(piece)
+      ) s
+      where x in ('TBC', 'BOG', 'Liberty')
+    ) as banks
+  from public.requests as req
+  where req.banks is null
+    and req.bank is not null
+    and btrim(req.bank) <> ''
+) as parsed
+where r.id = parsed.id
+  and parsed.banks is not null;
+
+-- Outcomes view: same columns as 11_client_reply.sql, then the banks
+-- for this request as one text value. The column stays text, so this
+-- replace does not change the view's shape.
 create or replace view public.request_outcomes
 with (security_invoker = true)
 as
@@ -70,7 +138,17 @@ select
   r.client_decline_reason,
   r.client_replied_at,
   r.better_decided_at,
-  r.bank
+  case
+    when r.banks is not null and cardinality(r.banks) > 0 then (
+      select string_agg(x, ', ' order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x))
+      from (
+        select distinct btrim(u.x) as x
+        from unnest(r.banks) as u(x)
+      ) s
+      where x in ('TBC', 'BOG', 'Liberty')
+    )
+    else r.bank
+  end as bank
 from public.requests r
 join public.clients c on c.client_id = r.client_id
 left join public.profiles p on p.id = r.kam_id
@@ -100,8 +178,115 @@ cross join lateral (
     )) as file_open
 ) w;
 
--- A new request typed in the app must name TBC, BOG, or Liberty.
--- Imported rows are not inserted here, so they can stay empty.
+-- Return type gains the client's saved banks, so replace, do not alter in place.
+do $drop_client_lookup$
+declare
+  r record;
+begin
+  for r in
+    select p.oid::regprocedure as sig
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('lookup_client', 'search_my_clients')
+  loop
+    execute format('drop function if exists %s', r.sig);
+  end loop;
+end
+$drop_client_lookup$;
+
+create or replace function public.lookup_client(p_client_id text)
+returns table (client_id text, valid boolean, known boolean, name text, kind text, banks text[])
+language plpgsql stable security definer set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_id text := private.normalize_client_id(p_client_id);
+begin
+  if private.my_profile_id() is null then
+    raise exception 'Not signed in, or the account is inactive' using errcode = '42501';
+  end if;
+  return query
+  select v_id,
+         v_id ~ '^([0-9]{9}|[0-9]{11})$',
+         c.client_id is not null,
+         c.name,
+         case when length(v_id) = 9 then 'company' when length(v_id) = 11 then 'person' end,
+         c.banks
+  from (select 1) d
+  left join public.clients c on c.client_id = v_id;
+end;
+$$;
+
+-- Same search as 4_company_search.sql, plus the banks saved on the client.
+create or replace function public.search_my_clients(p_query text default '', p_limit int default 8)
+returns table (
+  client_id            text,
+  name                 text,
+  kind                 text,
+  last_request_date    date,
+  last_sells_currency  text,
+  last_gets_currency   text,
+  banks                text[]
+)
+language plpgsql stable security definer set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_me     uuid := private.my_profile_id();
+  v_all    boolean := private.can_see_all();
+  v_q      text := trim(coalesce(p_query, ''));
+  v_digits boolean;
+  v_like   text;
+  v_limit  int := least(greatest(coalesce(p_limit, 8), 1), 20);
+begin
+  if v_me is null then
+    raise exception 'Not signed in, or the account is inactive' using errcode = '42501';
+  end if;
+
+  v_digits := v_q ~ '^[0-9 ]+$';
+  if v_digits then
+    v_q := replace(v_q, ' ', '');
+  end if;
+  v_like := replace(replace(replace(v_q, '\', '\\'), '%', '\%'), '_', '\_');
+
+  return query
+  with pool as (
+    select c.client_id, c.name, c.kind, c.banks
+    from public.clients c
+    where (v_q = '' and (
+            v_all
+         or c.assigned_kam_id = v_me
+         or exists (select 1 from public.requests r where r.client_id = c.client_id and r.kam_id = v_me)
+          ))
+       or v_q <> ''
+  ),
+  last_req as (
+    select distinct on (r.client_id)
+           r.client_id, r.request_date, r.sells_currency, r.gets_currency, r.requested_at
+    from public.requests r
+    where r.client_id in (select p.client_id from pool p)
+      and (v_all or r.kam_id = v_me)
+    order by r.client_id, r.requested_at desc
+  )
+  select p.client_id, p.name, p.kind, lr.request_date, lr.sells_currency, lr.gets_currency, p.banks
+  from pool p
+  left join last_req lr on lr.client_id = p.client_id
+  where v_q = ''
+     or (v_digits and (p.client_id like v_like || '%' or p.client_id like '0' || v_like || '%'))
+     or (not v_digits and p.name ilike '%' || v_like || '%')
+  order by lr.requested_at desc nulls last, p.name
+  limit v_limit;
+end;
+$$;
+
+revoke execute on function public.lookup_client(text) from public, anon;
+grant execute on function public.lookup_client(text) to authenticated;
+revoke execute on function public.search_my_clients(text, int) from public, anon;
+grant execute on function public.search_my_clients(text, int) to authenticated;
+
+-- A new request typed in the app must name at least one of TBC, BOG, Liberty.
+-- p_bank is the set: one, two, or all three. Imported rows are not inserted here.
 do $drop_log_request$
 declare
   r record;
@@ -127,7 +312,7 @@ create or replace function public.log_request(
   p_client_name    text default null,
   p_gets_amount    numeric default null,
   p_client_rate    numeric default null,
-  p_bank           text default null
+  p_bank           text[] default null
 )
 returns bigint
 language plpgsql volatile security definer set search_path = ''
@@ -139,6 +324,8 @@ declare
   v_gets       text := upper(trim(coalesce(p_gets_currency, '')));
   v_sell_amt   numeric := case when p_amount is null then null else round(p_amount, 2) end;
   v_gets_amt   numeric := case when p_gets_amount is null then null else round(p_gets_amount, 2) end;
+  v_banks      text[];
+  v_saved      text[];
   v_new        boolean;
   v_request_id bigint;
 begin
@@ -171,9 +358,31 @@ begin
   if length(coalesce(trim(p_note), '')) > 500 then
     raise exception 'The comment is too long' using errcode = '22023';
   end if;
-  if p_bank is null or p_bank not in ('TBC', 'BOG', 'Liberty') then
+  if length(coalesce(trim(p_client_name), '')) > 200 then
+    raise exception 'სახელი 200 სიმბოლოზე გრძელია' using errcode = '22023';
+  end if;
+
+  if p_bank is null or cardinality(p_bank) < 1 then
+    raise exception 'აირჩიეთ ერთი ბანკი მაინც: TBC, BOG ან Liberty' using errcode = '22023';
+  end if;
+  if exists (
+    select 1
+    from unnest(p_bank) as u(x)
+    where btrim(coalesce(x, '')) not in ('TBC', 'BOG', 'Liberty')
+  ) then
     raise exception 'აირჩიეთ ბანკი: TBC, BOG ან Liberty' using errcode = '22023';
   end if;
+  select coalesce(array_agg(x order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x)), '{}'::text[])
+    into v_banks
+  from (
+    select distinct btrim(x) as x
+    from unnest(p_bank) as u(x)
+  ) s
+  where x in ('TBC', 'BOG', 'Liberty');
+  if cardinality(v_banks) < 1 or cardinality(v_banks) > 3 then
+    raise exception 'აირჩიეთ ბანკი: TBC, BOG ან Liberty' using errcode = '22023';
+  end if;
+
   if not exists (select 1 from public.clients c where c.client_id = v_id and c.name is not null)
      and length(coalesce(trim(p_client_name), '')) < 2 then
     raise exception 'New client: enter the client''s name' using errcode = '22023';
@@ -184,10 +393,23 @@ begin
   on conflict (client_id) do nothing;
   v_new := found;
 
+  -- Fill a missing name. Do not replace a name that is already stored.
   if not v_new and nullif(trim(p_client_name), '') is not null then
     update public.clients c set name = trim(p_client_name)
     where c.client_id = v_id and c.name is null;
   end if;
+
+  -- Remember every bank this client has used. This request does not remove one.
+  select c.banks into v_saved from public.clients c where c.client_id = v_id;
+  update public.clients c
+  set banks = (
+    select coalesce(array_agg(x order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x)), '{}'::text[])
+    from (
+      select distinct unnest(coalesce(v_saved, '{}'::text[]) || v_banks) as x
+    ) u
+    where x in ('TBC', 'BOG', 'Liberty')
+  )
+  where c.client_id = v_id;
 
   if v_new then
     insert into private.backfill_queue (client_id) values (v_id)
@@ -195,14 +417,15 @@ begin
   end if;
 
   insert into public.requests (
-    kam_id, client_id, sells_currency, gets_currency, amount, gets_amount, client_rate, note, bank
+    kam_id, client_id, sells_currency, gets_currency, amount, gets_amount, client_rate, note, bank, banks
   )
   values (
     v_me, v_id, v_sells, v_gets,
     v_sell_amt, v_gets_amt,
     case when p_client_rate is null then null else round(p_client_rate, 6) end,
     nullif(trim(p_note), ''),
-    p_bank
+    array_to_string(v_banks, ', '),
+    v_banks
   )
   returning id into v_request_id;
 
@@ -210,5 +433,5 @@ begin
 end;
 $$;
 
-revoke execute on function public.log_request(text, text, text, numeric, text, text, numeric, numeric, text) from public, anon;
-grant execute on function public.log_request(text, text, text, numeric, text, text, numeric, numeric, text) to authenticated;
+revoke execute on function public.log_request(text, text, text, numeric, text, text, numeric, numeric, text[]) from public, anon;
+grant execute on function public.log_request(text, text, text, numeric, text, text, numeric, numeric, text[]) to authenticated;

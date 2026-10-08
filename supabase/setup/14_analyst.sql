@@ -2,6 +2,10 @@
 -- Paste it after 12_inbox.sql. It does not change how a request is asked,
 -- quoted, or counted.
 --
+-- The role check is its own short step, and the new column is the next
+-- short step. Each one locks one table, then finishes, before the list
+-- below is built. If a step says lock timeout, paste this file again.
+--
 -- An analyst can read every request: both amounts, the rate, the lari
 -- value, whether it succeeded or was lost, and the reason when it was lost.
 -- The row also names the treasury person who quoted (requests.quoted_by).
@@ -17,14 +21,21 @@
 -- Old rows brought in from the agreement file are not timed.
 
 
-alter table public.requests add column if not exists rate_written_at timestamptz;
-
+-- Locks profiles only. commit lets that lock go before anything else runs.
+begin;
+set local lock_timeout = '3s';
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
   check (role in ('admin', 'manager', 'treasury', 'kam', 'analyst'));
-
 comment on table public.profiles is
   'One row per person. Roles: admin = everything incl. users and rules; manager = sees everything, changes nothing; treasury = gives rates, sees all requests; kam = own requests, clients and follow-ups; analyst = reads every request and the treasury times, changes nothing.';
+commit;
+
+-- Locks requests only. commit lets that lock go before the list is built.
+begin;
+set local lock_timeout = '3s';
+alter table public.requests add column if not exists rate_written_at timestamptz;
+commit;
 
 create or replace function private.is_analyst()
 returns boolean

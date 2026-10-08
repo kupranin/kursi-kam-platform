@@ -8,7 +8,7 @@ import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
 import { treasuryReason } from '../lib/requestStatus';
-import { CURRENCIES, type RequestRow, type Rules } from '../lib/types';
+import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow, type Rules } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
@@ -16,7 +16,6 @@ import CurrencyPicker from '../components/CurrencyPicker';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
-const BANKS = ['TBC', 'BOG', 'Liberty'] as const;
 
 async function attachWritten(rows: RequestRow[]): Promise<RequestRow[]> {
   const ids = rows.filter((r) => r.client_reply === 'approved' && r.approved_rate != null).map((r) => r.id);
@@ -86,16 +85,16 @@ export default function Requests() {
   const [loaded, setLoaded] = useState(false);
   const [rules, setRules] = useState<Rules | null>(null);
 
-  const [raw, setRaw] = useState('');
   const [info, setInfo] = useState<ClientInfo | null>(null);
+  const [clientForm, setClientForm] = useState(0);
   const [sells, setSells] = useState('USD');
   const [gets, setGets] = useState('GEL');
   const [sellsAmount, setSellsAmount] = useState('');
   const [getsAmount, setGetsAmount] = useState('');
   const [clientRate, setClientRate] = useState('');
-  const [bank, setBank] = useState('');
+  const [banks, setBanks] = useState<string[]>([]);
+  const [banksFromClient, setBanksFromClient] = useState(false);
   const [note, setNote] = useState('');
-  const [name, setName] = useState('');
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<RequestRow[]>([]);
@@ -115,6 +114,10 @@ export default function Requests() {
   const [approvedLoaded, setApprovedLoaded] = useState(false);
   const [approvedError, setApprovedError] = useState('');
   const histReq = useRef(0);
+  const appliedClient = useRef<string | null>(null);
+  const bankClient = useRef<string | null>(null);
+  const bankClientKnown = useRef(false);
+  const banksTouched = useRef(false);
   const months = monthOptions(12).map((m) => ({ value: m.value, label: m.label.replace(/, so far$|, ჯერჯერობით$/, '') }));
 
   const today = todayTbilisi();
@@ -192,22 +195,44 @@ export default function Requests() {
       .then(({ data }) => setKams((data ?? []) as { id: string; full_name: string; email: string }[]));
   }, [seeAll]);
 
-  const needsName = Boolean(info?.valid && !info?.name);
   const sellsSide = readAmount(sellsAmount);
   const getsSide = readAmount(getsAmount);
   const rateSide = readRate(clientRate);
   const hasAmount = (sellsSide.value != null) || (getsSide.value != null);
   const bothBlank = sellsSide.ok && getsSide.ok && !hasAmount;
   const currenciesOk = sells !== gets && (CURRENCIES as readonly string[]).includes(sells) && (CURRENCIES as readonly string[]).includes(gets);
-  const nameOk = name.trim().length >= 2;
+  const chosenBanks = bankList(banks);
 
   function onInfo(next: ClientInfo | null) {
     setInfo(next);
-    const known = CURRENCIES as readonly string[];
-    if (next?.picked && next.lastSells && next.lastGets && known.includes(next.lastSells) && known.includes(next.lastGets)) {
-      setSells(next.lastSells);
-      setGets(next.lastGets);
+    if (next?.picked && next.lastSells && next.lastGets && appliedClient.current !== next.id) {
+      const known = CURRENCIES as readonly string[];
+      if (known.includes(next.lastSells) && known.includes(next.lastGets)) {
+        appliedClient.current = next.id;
+        setSells(next.lastSells);
+        setGets(next.lastGets);
+      }
     }
+    if (!next?.valid || !next.id) return;
+    if (bankClient.current === next.id) return;
+    const previousKnown = bankClientKnown.current;
+    bankClient.current = next.id;
+    bankClientKnown.current = next.known;
+    if (next.known) {
+      const remembered = bankList(next.banks);
+      setBanks(remembered);
+      setBanksFromClient(remembered.length > 0);
+      banksTouched.current = false;
+    } else if (previousKnown && !banksTouched.current) {
+      setBanks([]);
+      setBanksFromClient(false);
+    }
+  }
+
+  function toggleBank(code: string) {
+    banksTouched.current = true;
+    setBanksFromClient(false);
+    setBanks((cur) => bankList(cur.includes(code) ? cur.filter((item) => item !== code) : [...cur, code]));
   }
 
   function pickSells(c: string) {
@@ -218,7 +243,7 @@ export default function Requests() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTried(true);
-    if (!info?.valid || !bank || !hasAmount || !sellsSide.ok || !getsSide.ok || !rateSide.ok || !currenciesOk || (needsName && !nameOk)) return;
+    if (!info?.ready || !info.name || chosenBanks.length < 1 || !hasAmount || !sellsSide.ok || !getsSide.ok || !rateSide.ok || !currenciesOk) return;
     setBusy(true);
     try {
       await rpc('log_request', {
@@ -229,11 +254,23 @@ export default function Requests() {
         p_gets_amount: getsSide.value,
         p_client_rate: rateSide.value,
         p_note: note.trim() || null,
-        p_client_name: needsName ? name.trim() : null,
-        p_bank: bank,
+        p_client_name: info.nameFromFile ? null : info.name,
+        p_bank: chosenBanks,
       });
       toast(t('გაეგზავნა სახაზინოს. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
-      setRaw(''); setInfo(null); setSellsAmount(''); setGetsAmount(''); setClientRate(''); setBank(''); setNote(''); setName(''); setTried(false);
+      setInfo(null);
+      setClientForm((n) => n + 1);
+      setSellsAmount('');
+      setGetsAmount('');
+      setClientRate('');
+      setBanks([]);
+      setBanksFromClient(false);
+      setNote('');
+      setTried(false);
+      appliedClient.current = null;
+      bankClient.current = null;
+      bankClientKnown.current = false;
+      banksTouched.current = false;
       load();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -327,33 +364,30 @@ export default function Requests() {
         <h2 id="new-title" style={{ marginBottom: 16 }}>{t('ახალი მოთხოვნა', 'New request')}</h2>
         <form onSubmit={submit} noValidate>
           <div className="form-row">
-            <div style={{ flex: '1 1 230px', minWidth: 210 }}>
-              <ClientField value={raw} onChange={setRaw} onInfo={onInfo} tried={tried} />
-            </div>
-            <div className="field" style={{ flex: '0 1 220px', minWidth: 180 }}>
-              <label htmlFor="client-bank">{t('ბანკი, სადაც კლიენტი აგზავნის', 'Bank the client is sending to')}</label>
-              <select
-                id="client-bank"
-                className={'select' + (tried && !bank ? ' invalid' : '')}
-                value={bank}
-                required
-                aria-invalid={tried && !bank}
-                onChange={(e) => setBank(e.target.value)}
-              >
-                <option value="">{t('აირჩიეთ', 'Choose')}</option>
-                {BANKS.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-              <span className={'hint' + (tried && !bank ? ' error' : '')}>
-                {tried && !bank ? t('აირჩიეთ ბანკი', 'Choose a bank') : 'TBC, BOG, Liberty'}
+            <ClientField key={clientForm} tried={tried} onInfo={onInfo} />
+            <div className="field" style={{ flex: '1 1 280px', minWidth: 220 }}>
+              <span className="label" id="client-banks-label">{t('ბანკი, სადაც კლიენტი აგზავნის', 'Bank the client is sending to')}</span>
+              <div className="row" role="group" aria-labelledby="client-banks-label" aria-invalid={tried && chosenBanks.length < 1}>
+                {BANKS.map((code) => (
+                  <label key={code} className="checkbox" htmlFor={'client-bank-' + code}>
+                    <input
+                      id={'client-bank-' + code}
+                      type="checkbox"
+                      checked={chosenBanks.includes(code)}
+                      onChange={() => toggleBank(code)}
+                    />
+                    {code}
+                  </label>
+                ))}
+              </div>
+              <span className={'hint' + (tried && chosenBanks.length < 1 ? ' error' : '')}>
+                {tried && chosenBanks.length < 1
+                  ? t('აირჩიეთ ერთი ბანკი მაინც', 'Choose at least one bank')
+                  : banksFromClient
+                    ? t('შენახული ბანკები ჩანს. ამ გარიგებისთვის შეგიძლიათ შეცვალოთ. სამივე ერთადაც შეიძლება.', 'Saved banks are checked. You can change them for this deal. All three together is allowed.')
+                    : t('მონიშნეთ TBC, BOG, Liberty — ერთი, ორი ან სამივე.', 'Check TBC, BOG, Liberty — one, two, or all three.')}
               </span>
             </div>
-            {needsName && (
-              <div className="field" style={{ flex: '1 1 220px' }}>
-                <label htmlFor="cname">{t('კლიენტის სახელი', 'Client name')}</label>
-                <input id="cname" className={'input attention' + (tried && !nameOk ? ' invalid' : '')} autoComplete="off" placeholder={t('კომპანიის ან პირის სრული სახელი', 'Full name of the company or person')} value={name} onChange={(e) => setName(e.target.value)} />
-                <span className={'hint' + (tried && !nameOk ? ' error' : '')}>{tried && !nameOk ? t('ჩაწერეთ კლიენტის სახელი', 'Enter the client name') : t('ახალი კლიენტისთვის აუცილებელია. შემდეგ ჯერზე შეინახება.', 'Required for a new client. It is saved for next time.')}</span>
-              </div>
-            )}
           </div>
           {info?.valid && info.id && <ClientHistory clientId={info.id} kamId={profile!.id} />}
           <div className="form-row" style={{ marginTop: 16 }}>
@@ -428,7 +462,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
-                {r.bank && <div className="tiny">{t('ბანკი', 'Bank')}: {r.bank}</div>}
+                {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
               </div>
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
@@ -501,7 +535,7 @@ export default function Requests() {
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
             <span className="who strong">{r.client_name ?? r.client_id}</span>
-            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}</span>
+            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}</span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
             {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
             {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
@@ -591,7 +625,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
-                {r.bank && <div className="tiny">{t('ბანკი', 'Bank')}: {r.bank}</div>}
+                {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
                 {seeAll && <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>}
               </div>
               <div className="what">

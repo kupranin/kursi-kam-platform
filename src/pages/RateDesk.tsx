@@ -5,7 +5,7 @@ import { useLive, useTick } from '../lib/useLive';
 import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { treasuryReason } from '../lib/requestStatus';
-import type { QueueRow, QuoteToday, ReferenceRate } from '../lib/types';
+import { formatBanks, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import ClientHistory from '../components/ClientHistory';
@@ -198,14 +198,19 @@ export default function RateDesk() {
     ]));
     if (!ids.length) { setBanks({}); return; }
     let live = true;
-    supabase.from('requests').select('id, bank').in('id', ids).then(({ data, error }) => {
-      if (!live || error || !data) return;
+    (async () => {
+      const withSet = await supabase.from('requests').select('id, bank, banks').in('id', ids);
+      const res = withSet.error
+        ? await supabase.from('requests').select('id, bank').in('id', ids)
+        : withSet;
+      if (!live || res.error || !res.data) return;
       const next: Record<number, string> = {};
-      for (const row of data as { id: number; bank: string | null }[]) {
-        if (row.bank) next[row.id] = row.bank;
+      for (const row of res.data as { id: number; bank: string | null; banks?: string[] | string | null }[]) {
+        const label = formatBanks(row.banks) || formatBanks(row.bank);
+        if (label) next[row.id] = label;
       }
       setBanks(next);
-    });
+    })();
     return () => { live = false; };
   }, [queue, replies, extraAgreed, quotes]);
 

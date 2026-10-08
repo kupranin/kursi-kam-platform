@@ -77,6 +77,8 @@ export interface ClientMatch {
   last_request_date: string | null;
   last_sells_currency: string | null;
   last_gets_currency: string | null;
+  /** Banks already stored for this client. Absent until that column is loaded. */
+  banks?: string[] | string | null;
 }
 
 export interface WinbackRow {
@@ -173,6 +175,22 @@ export interface PortfolioRow {
 }
 
 export const CURRENCIES = ['GEL', 'USD', 'EUR', 'RUB', 'CNY'];
+
+export const BANKS = ['TBC', 'BOG', 'Liberty'] as const;
+
+export type BankCode = (typeof BANKS)[number];
+
+/** TBC, then BOG, then Liberty. Accepts one code, a comma-separated list, or an array. */
+export function bankList(value: readonly string[] | string | null | undefined): BankCode[] {
+  if (value == null || value === '') return [];
+  const parts = Array.isArray(value) ? value : String(value).replace(/^\{|\}$/g, '').split(',');
+  const cleaned = parts.map((part) => part.trim().replace(/^"|"$/g, '')).filter(Boolean);
+  return BANKS.filter((code) => cleaned.includes(code));
+}
+
+export function formatBanks(value: readonly string[] | string | null | undefined): string {
+  return bankList(value).join(', ');
+}
 
 export const ROLE_NAMES: Record<Role, string> = {
   admin: 'ადმინი',
