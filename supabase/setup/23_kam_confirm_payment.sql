@@ -2,6 +2,7 @@
 -- Paste it after 22_analytics_turnover.sql. Do not re-run 1_platform.sql.
 -- If you paste 16_client_history.sql, 17_amount_match.sql, or
 -- 21_delete_and_loss_approval.sql again, paste this file once more afterwards.
+-- If you paste this file again, paste 24_treasury_loss_comment.sql afterwards.
 -- Do not delete requests. Do not insert a transactions row.
 --
 -- Until bank payments sync in real time, a KAM can say that a request's

@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
-import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
+import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
+import { loadMarketRateData } from '../lib/marketBoard';
+import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { treasuryReason } from '../lib/requestStatus';
-import { bankList, type QueueRow, type QuoteToday, type ReferenceRate, type RequestRow } from '../lib/types';
+import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
+import { hideEarlierDeals } from '../lib/requestStatus';
 import DeleteRequestButton from '../components/DeleteRequestButton';
-import LossApproval from '../components/LossApproval';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import ClientHistory from '../components/ClientHistory';
@@ -149,6 +151,51 @@ interface ClientReply {
   note: string | null;
 }
 
+const EMPTY_MARKET_BOARD: CurrentBoard = { pairs: [], rows: [], updatedAt: null };
+
+/** Same pairs, buy and sell as the Rates board. Per 1 unit, including ruble. */
+function DeskMarketRates({ board }: { board: CurrentBoard }) {
+  const { t } = useI18n();
+  return (
+    <>
+      {board.pairs.map((pair, index) => {
+        const lines = board.rows
+          .map((row) => ({ key: row.key, label: row.label, quote: row.quotes[index] }))
+          .filter((line) => line.quote && (line.quote.buy != null || line.quote.sell != null));
+        if (!lines.length) return null;
+        return (
+          <div key={pair}>
+            <p className="small strong" style={{ margin: '12px 24px 0' }}>{pair}</p>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('წყარო', 'Source')}</th>
+                  <th className="num">{t('ყიდვა', 'Buy')}</th>
+                  <th className="num">{t('გაყიდვა', 'Sell')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => (
+                  <tr key={line.key}>
+                    <th scope="row">{line.label}</th>
+                    <td className="num strong">{fmtRate(line.quote.buy)}</td>
+                    <td className="num strong">{fmtRate(line.quote.sell)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+      {board.updatedAt && (
+        <p className="tiny muted" style={{ margin: '8px 24px 12px' }}>
+          {t('განახლდა {when}.', 'Updated {when}.', { when: fmtDateTime(board.updatedAt) })}
+        </p>
+      )}
+    </>
+  );
+}
+
 export default function RateDesk() {
   const toast = useToast();
   const { t, lang } = useI18n();
@@ -157,8 +204,6 @@ export default function RateDesk() {
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
   const [otherReasons, setOtherReasons] = useState<OtherReason[]>([]);
-  const [losses, setLosses] = useState<RequestRow[]>([]);
-  const [lossCount, setLossCount] = useState(0);
   const [replies, setReplies] = useState<ClientReply[]>([]);
   const [repliesNote, setRepliesNote] = useState('');
   const [fixRate, setFixRate] = useState<Record<number, string>>({});
@@ -167,12 +212,15 @@ export default function RateDesk() {
   const [betterDeclineReason, setBetterDeclineReason] = useState('');
   const [betterDeclineTried, setBetterDeclineTried] = useState(false);
   const [rates, setRates] = useState<ReferenceRate[]>([]);
+  const [marketBoard, setMarketBoard] = useState<CurrentBoard>(EMPTY_MARKET_BOARD);
+  const [marketLoaded, setMarketLoaded] = useState(false);
   const [defaultValid, setDefaultValid] = useState(15);
   const [cards, setCards] = useState<Record<number, CardState>>({});
   const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
   const [booked, setBooked] = useState<Record<number, true>>({});
   const [banks, setBanks] = useState<Record<number, string[]>>({});
   const [clientIds, setClientIds] = useState<Record<number, string>>({});
+  const [hidePast, setHidePast] = useState<Record<number, true>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
@@ -214,24 +262,6 @@ export default function RateDesk() {
       else setOtherReasons(((data ?? []) as OtherReason[]).filter((row) => row.loss_reason_note.trim()));
     } catch {
       setOtherReasons([]);
-    }
-    try {
-      const { data, error, count } = await supabase
-        .from('request_outcomes')
-        .select('*', { count: 'exact' })
-        .eq('loss_open', true)
-        .order('request_date', { ascending: false })
-        .limit(40);
-      if (error) {
-        setLosses([]);
-        setLossCount(0);
-      } else {
-        setLosses((data ?? []) as RequestRow[]);
-        setLossCount(count ?? 0);
-      }
-    } catch {
-      setLosses([]);
-      setLossCount(0);
     }
     try {
       const list = await rpc<ClientReply[]>('treasury_client_replies');
@@ -300,6 +330,21 @@ export default function RateDesk() {
       if (data?.default_quote_minutes) setDefaultValid(data.default_quote_minutes);
     });
   }, [load]);
+  useEffect(() => {
+    let live = true;
+    const run = () => {
+      loadMarketRateData()
+        .then((view) => { if (live) setMarketBoard(view.board); })
+        .catch(() => { /* keep the last board; the empty line stays only when there are no rows */ })
+        .finally(() => { if (live) setMarketLoaded(true); });
+    };
+    run();
+    const timer = window.setInterval(run, 5 * 60 * 1000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
   useLive(['requests'], load, 15000);
 
   useEffect(() => {
@@ -310,7 +355,7 @@ export default function RateDesk() {
       ...quotes.map((q) => q.request_id),
       ...otherReasons.map((r) => r.id),
     ]));
-    if (!ids.length) { setBanks({}); setClientIds({}); return; }
+    if (!ids.length) { setBanks({}); setClientIds({}); setHidePast({}); return; }
     let live = true;
     (async () => {
       const withSet = await supabase.from('requests').select('id, client_id, bank, banks').in('id', ids);
@@ -328,6 +373,31 @@ export default function RateDesk() {
       }
       setBanks(next);
       setClientIds(clients);
+    })();
+    (async () => {
+      const full = await supabase.from('request_outcomes')
+        .select('id, went_through, rate_written_at, payment_confirmed_at, loss_open, outcome, quote_status, client_reply')
+        .in('id', ids);
+      const res = full.error
+        ? await supabase.from('request_outcomes')
+          .select('id, went_through, rate_written_at, outcome, quote_status, client_reply')
+          .in('id', ids)
+        : full;
+      if (!live || res.error || !res.data) return;
+      const next: Record<number, true> = {};
+      for (const row of res.data as {
+        id: number;
+        went_through?: boolean | null;
+        rate_written_at?: string | null;
+        payment_confirmed_at?: string | null;
+        loss_open?: boolean | null;
+        outcome?: string | null;
+        quote_status?: string | null;
+        client_reply?: string | null;
+      }[]) {
+        if (hideEarlierDeals(row)) next[row.id] = true;
+      }
+      setHidePast(next);
     })();
     return () => { live = false; };
   }, [queue, replies, extraAgreed, quotes, otherReasons]);
@@ -480,35 +550,6 @@ export default function RateDesk() {
 
       <div className="cols">
         <div className="col-main">
-          {losses.length > 0 && (
-            <section aria-labelledby="loss-title" style={{ marginBottom: 28 }}>
-              <div className="row-between" style={{ marginBottom: 12 }}>
-                <h2 id="loss-title" style={{ fontSize: 22 }}>{t('დაკარგული მოთხოვნები', 'Lost requests')}</h2>
-                <span className="small muted">{t(
-                  'სანამ კომენტარით არ დაადასტურებთ, დანაკარგი საბოლოო არ არის. გაწერილი კურსი აქ არ მოხვდება.',
-                  'Until you approve with a comment, the loss is not final. A written rate does not appear here.',
-                )}{lossCount > losses.length ? ' ' + t('ნაჩვენებია {shown} {total}-დან.', 'Showing {shown} of {total}.', { shown: losses.length, total: lossCount }) : ''}</span>
-              </div>
-              <div className="stack-sm">
-                {losses.map((r) => (
-                  <article key={r.id} className="req-card">
-                    <div className="row-between" style={{ gap: 12 }}>
-                      <div>
-                        <div className="name">{r.client_name ?? r.client_id}</div>
-                        <div className="tiny muted">ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
-                        <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
-                        <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                        {r.client_reply === 'declined' && r.client_decline_reason && <p className="note-box">{t('კლიენტმა უარი თქვა', 'Client declined')}: {r.client_decline_reason}</p>}
-                        {r.quote_status === 'declined' && r.decline_reason && <p className="note-box">{t('სახაზინომ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>}
-                      </div>
-                      {adminDelete(r.id)}
-                    </div>
-                    <LossApproval row={r} onDone={load} />
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
           <section aria-labelledby="queue-title">
             <div className="row-between" style={{ marginBottom: 12 }}>
               <h2 id="queue-title" style={{ fontSize: 22 }}>{t('კურსს ელოდება', 'Waiting for a rate')}</h2>
@@ -618,7 +659,7 @@ export default function RateDesk() {
                         </div>
                       </div>
                     )}
-                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
+                    {!hidePast[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
                   </article>
                 );
               })}
@@ -714,7 +755,7 @@ export default function RateDesk() {
                         </div>
                         </form>
                     )}
-                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
+                    {!hidePast[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
                   </article>
                 );
               })}
@@ -735,7 +776,7 @@ export default function RateDesk() {
                   {(r.rate != null || r.given_rate != null) && <QuotedRateEditor requestId={r.request_id} rate={r.rate ?? r.given_rate} onChanged={load} />}
                 </div>
                 {adminDelete(r.request_id)}
-                <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
+                {!hidePast[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
               </div>
             ))}
           </section>
@@ -774,7 +815,7 @@ export default function RateDesk() {
                 </div>
                 <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />
                 {r.approved_rate != null && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatHandoff(r.client_id, r.approved_rate)} />}
-                <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
+                {!hidePast[r.request_id] && !booked[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
               </div>
             ))}
           </section>
@@ -801,7 +842,7 @@ export default function RateDesk() {
                   {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
                 {adminDelete(r.request_id)}
-                <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
+                {!hidePast[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
               </div>
             ))}
           </section>
@@ -837,7 +878,7 @@ export default function RateDesk() {
                       : <span className="pill pill-wait">{t('ვადა გაუვიდა {time}-ზე', 'Expired at {time}', { time: fmtTime(q.valid_until) })}</span>}
                     {adminDelete(q.request_id)}
                   </div>
-                  {clientIds[q.request_id] && <ClientHistory clientId={clientIds[q.request_id]} excludeId={q.request_id} />}
+                  {clientIds[q.request_id] && !hidePast[q.request_id] && <ClientHistory clientId={clientIds[q.request_id]} excludeId={q.request_id} />}
                 </div>
               );
             })}
@@ -870,7 +911,7 @@ export default function RateDesk() {
                   {r.rate != null && <QuotedRateEditor requestId={r.id} rate={r.rate} onChanged={load} />}
                 </div>
                 {adminDelete(r.id)}
-                <ClientHistory clientId={r.client_id} excludeId={r.id} />
+                {!hidePast[r.id] && <ClientHistory clientId={r.client_id} excludeId={r.id} />}
               </div>
             ))}
           </section>
@@ -882,7 +923,8 @@ export default function RateDesk() {
               <h2 id="rates-title">კურსები ახლა</h2>
               <p className="small" style={{ color: 'var(--ink-2)' }}>GEL 1 ერთეულზე. ვყიდულობთ, როცა კლიენტი ყიდის.</p>
             </div>
-            {!rates.length && <p className="empty">კურსი ჯერ არ არის ჩატვირთული. ისინი კურსის წყაროებიდან მოდის (იხილეთ დაყენების გზამკვლევი).</p>}
+            {marketLoaded && !rates.length && !marketBoard.rows.length && <p className="empty">კურსი ჯერ არ არის ჩატვირთული. ისინი კურსის წყაროებიდან მოდის (იხილეთ დაყენების გზამკვლევი).</p>}
+            {marketBoard.rows.length > 0 && <DeskMarketRates board={marketBoard} />}
             {gelRows.length > 0 && (
               <table className="table">
                 <thead><tr><th>ვალუტა</th><th className="num">NBG</th><th className="num">ვყიდულობთ</th><th className="num">ვყიდით</th></tr></thead>

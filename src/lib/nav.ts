@@ -10,13 +10,13 @@ export const HOME: Record<Role, string> = {
 
 export const PAGES: Record<Role, string[]> = {
   kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat'],
-  treasury: ['/rate-desk', '/rates', '/log', '/chat'],
-  admin: ['/team', '/requests', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
+  treasury: ['/rate-desk', '/lost-requests', '/rates', '/log', '/chat'],
+  admin: ['/team', '/requests', '/rate-desk', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
   manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
   analyst: ['/analysis', '/analytics'],
 };
 
-export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' }[]> = {
+export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' }[]> = {
   kam: [
     { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
     { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups', badge: 'followups' },
@@ -28,6 +28,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
   ],
   treasury: [
     { to: '/rate-desk', ka: 'კურსის მაგიდა', en: 'Rate desk', badge: 'queue' },
+    { to: '/lost-requests', ka: 'დაკარგული მოთხოვნები', en: 'Lost requests', badge: 'losses' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
     { to: '/chat', ka: 'ჩატი', en: 'Chat' },
@@ -36,6 +37,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/team', ka: 'გუნდი', en: 'Team' },
     { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
     { to: '/rate-desk', ka: 'კურსის მაგიდა', en: 'Rate desk', badge: 'queue' },
+    { to: '/lost-requests', ka: 'დაკარგული მოთხოვნები', en: 'Lost requests', badge: 'losses' },
     { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups' },
     { to: '/clients', ka: 'კლიენტები', en: 'Clients' },
     { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },

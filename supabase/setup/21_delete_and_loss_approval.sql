@@ -9,11 +9,13 @@
 -- The client row stays. Quotes under the request go with it. Notifications
 -- and a matched payment are unlinked so they do not block the delete.
 --
--- A lost app request is not final until treasury (or an admin) approves it
--- and writes a comment. The comment is required. A KAM cannot approve a
--- loss, including their own. A written rate (rate_written_at) is still a
--- deal that went through, never a loss. Client decline or treasury decline
--- with no written rate stays on this lost path.
+-- A lost app request is not final until treasury (or an admin) approves it.
+-- An explanation is optional. A KAM cannot approve a loss, including their
+-- own. A written rate (rate_written_at) is still a deal that went through,
+-- never a loss. Client decline or treasury decline with no written rate
+-- stays on this lost path. If you paste this file again, paste
+-- 24_treasury_loss_comment.sql afterwards so the explanation stays optional
+-- and the analyst file keeps the treasury comment column.
 
 -- Columns first. Comments and the index come after, so a fresh paste
 -- does not trip on a missing column.
@@ -48,7 +50,7 @@ begin
       add constraint requests_loss_comment_len
       check (
         loss_approval_comment is null
-        or char_length(loss_approval_comment) between 2 and 500
+        or char_length(loss_approval_comment) between 1 and 500
       );
   end if;
 end
@@ -59,7 +61,7 @@ comment on column public.requests.loss_approved_at is
 comment on column public.requests.loss_approved_by is
   'Profile that approved the loss. A KAM cannot approve their own loss.';
 comment on column public.requests.loss_approval_comment is
-  'Required comment written when the loss is approved.';
+  'Optional explanation treasury or an admin may write when approving a loss. Empty is allowed.';
 
 create index if not exists requests_loss_approval_idx
   on public.requests (request_date desc)
@@ -634,10 +636,7 @@ begin
   )) then
     raise exception 'კამ-ს არ შეუძლია საკუთარი დანაკარგის დადასტურება' using errcode = '42501';
   end if;
-  if v_comment is null or length(v_comment) < 2 then
-    raise exception 'ჩაწერეთ კომენტარი' using errcode = '22023';
-  end if;
-  if length(v_comment) > 500 then
+  if v_comment is not null and length(v_comment) > 500 then
     raise exception 'კომენტარი ძალიან გრძელია' using errcode = '22023';
   end if;
 

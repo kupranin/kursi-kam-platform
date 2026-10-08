@@ -16,7 +16,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { role, realRole } = useViewAs();
   const { t, roleName } = useI18n();
   const [fresh, setFresh] = useState<string | null>(null);
-  const [counts, setCounts] = useState<{ followups: number; queue: number }>({ followups: 0, queue: 0 });
+  const [counts, setCounts] = useState<{ followups: number; queue: number; losses: number }>({ followups: 0, queue: 0, losses: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const items = NAV[role];
@@ -28,6 +28,11 @@ export default function Layout({ children }: { children: ReactNode }) {
         const { count } = await supabase.from('requests').select('id', { count: 'exact', head: true })
           .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null)');
         setCounts((c) => ({ ...c, queue: count ?? 0 }));
+      }
+      if (items.some((i) => i.badge === 'losses')) {
+        const { count } = await supabase.from('request_outcomes').select('id', { count: 'exact', head: true })
+          .eq('loss_open', true);
+        setCounts((c) => ({ ...c, losses: count ?? 0 }));
       }
       if (items.some((i) => i.badge === 'followups')) {
         const { count } = await supabase.from('request_outcomes').select('id', { count: 'exact', head: true })

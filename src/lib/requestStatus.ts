@@ -21,6 +21,30 @@ export interface StatusInput {
   went_through?: boolean;
 }
 
+/**
+ * Earlier deals stay under a request that is still open, so treasury can use
+ * them while quoting. They drop off once the case is finished.
+ * Success: a written rate, a matched payment, or the KAM “transaction went
+ * through” mark. Closed: a loss (including one treasury has not approved),
+ * a client decline, or a treasury decline.
+ */
+export function hideEarlierDeals(row: {
+  went_through?: boolean | null;
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+  outcome?: string | null;
+  loss_open?: boolean | null;
+  quote_status?: string | null;
+  quote_state?: string | null;
+  client_reply?: string | null;
+}): boolean {
+  if (row.went_through || row.rate_written_at || row.payment_confirmed_at) return true;
+  if (row.outcome === 'did_not_go_through' || row.loss_open) return true;
+  if (row.quote_status === 'declined' || row.quote_state === 'declined') return true;
+  if (row.client_reply === 'declined') return true;
+  return false;
+}
+
 export function classifyRequest(row: StatusInput): { code: LogCode; reason: string | null } {
   if (row.client_reply === 'approved') return { code: 'agreed', reason: null };
   if (row.client_reply === 'declined') return { code: 'client_declined', reason: row.client_decline_reason ?? null };

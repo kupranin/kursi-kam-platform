@@ -23,6 +23,7 @@ interface Deal {
   gel_amount: number | null;
   status: Status;
   loss_reason: string | null;
+  treasury_comment: string | null;
   first_response_minutes: number | null;
   rate_write_minutes: number | null;
   quoted_by_name: string | null;
@@ -216,6 +217,7 @@ export default function Analyst() {
         t('თანხა GEL', 'Amount GEL'),
         t('სტატუსი', 'Status'),
         t('მიზეზი', 'Reason'),
+        t('სახაზინოს კომენტარი', 'Treasury comment'),
       ];
       downloadCsv(`kursi-requests-${todayTbilisi()}.csv`, [
         headers,
@@ -235,6 +237,7 @@ export default function Analyst() {
           r.amount_gel,
           statusText(r.status),
           r.loss_reason ?? '',
+          r.treasury_comment ?? '',
         ]),
       ]);
     } catch (err) {
@@ -294,7 +297,7 @@ export default function Analyst() {
         {loaded && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: canEdit ? 1760 : 1520 }}>
+            <table className="table" style={{ minWidth: canEdit ? 1960 : 1720 }}>
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
@@ -312,6 +315,7 @@ export default function Analyst() {
                   <th className="num">{t('თანხა GEL', 'Amount GEL')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
+                  <th>{t('სახაზინოს კომენტარი', 'Treasury comment')}</th>
                   {canEdit && <th>{t('შესწორება', 'Edit')}</th>}
                 </tr>
               </thead>
@@ -359,6 +363,7 @@ export default function Analyst() {
                       </span>
                     </td>
                     <td>{r.loss_reason ?? ''}</td>
+                    <td>{r.treasury_comment ?? ''}</td>
                     {canEdit && (
                       <td className="nowrap">
                         {open ? (

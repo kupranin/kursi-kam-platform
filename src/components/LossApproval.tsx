@@ -6,33 +6,40 @@ import { useToast } from '../lib/toast';
 import type { RequestRow } from '../lib/types';
 
 function pendingLoss(row: RequestRow): boolean {
-  return row.loss_open === true && !row.went_through && !row.rate_written_at;
+  return row.loss_open === true
+    && !row.went_through
+    && !row.rate_written_at
+    && !row.payment_confirmed_at;
 }
 
-/** Treasury comment on a lost request, and the approval box for treasury or an admin. */
+/** Treasury explanation on a lost request, and the approval box for treasury or an admin. */
 export default function LossApproval({ row, onDone }: { row: RequestRow; onDone: () => void }) {
   const { realRole } = useViewAs();
   const { t } = useI18n();
   const toast = useToast();
   const [text, setText] = useState('');
-  const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const pending = pendingLoss(row);
-  const comment = (!row.went_through && !row.rate_written_at ? row.loss_approval_comment : '')?.trim() ?? '';
+  const comment = (!row.went_through && !row.rate_written_at && !row.payment_confirmed_at
+    ? row.loss_approval_comment
+    : '')?.trim() ?? '';
   if (!pending && !comment) return null;
   const canApprove = pending && (realRole === 'treasury' || realRole === 'admin');
-  const commentOk = text.trim().length >= 2;
 
   async function approve(e: FormEvent) {
     e.preventDefault();
-    setTried(true);
-    if (!commentOk) return;
+    const explanation = text.trim();
+    if (explanation.length > 500) return;
     setBusy(true);
     try {
-      await rpc('approve_request_loss', { p_request_id: row.id, p_comment: text.trim() });
-      toast(t('დანაკარგი დადასტურებულია.', 'Loss approved.'));
+      await rpc('approve_request_loss', {
+        p_request_id: row.id,
+        p_comment: explanation || null,
+      });
+      toast(explanation
+        ? t('დანაკარგი დადასტურებულია. კომენტარი შენახულია.', 'Loss approved. The comment is saved.')
+        : t('დანაკარგი დადასტურებულია.', 'Loss approved.'));
       setText('');
-      setTried(false);
       onDone();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -47,8 +54,8 @@ export default function LossApproval({ row, onDone }: { row: RequestRow; onDone:
           <span className="pill pill-alert">{t('არ გავიდა', 'Did not go through')}</span>
           {' '}
           <span className="muted">{t(
-            'სახაზინომ ჯერ არ დაადასტურა. სანამ კომენტარით არ დაადასტურებს, დანაკარგი საბოლოო არ არის.',
-            'Treasury has not approved it yet. Until they approve it with a comment, the loss is not final.',
+            'სახაზინომ ჯერ არ დაადასტურა. სანამ არ დაადასტურებს, დანაკარგი საბოლოო არ არის.',
+            'Treasury has not approved it yet. Until they approve it, the loss is not final.',
           )}</span>
         </p>
       )}
@@ -61,19 +68,21 @@ export default function LossApproval({ row, onDone }: { row: RequestRow; onDone:
       {canApprove && (
         <form onSubmit={approve} noValidate className="form-row" style={{ marginTop: 8 }}>
           <div className="field" style={{ flex: '1 1 280px' }}>
-            <label htmlFor={'loss-comment-' + row.id}>{t('კომენტარი', 'Comment')}</label>
+            <label htmlFor={'loss-comment-' + row.id}>
+              {t('სახაზინოს კომენტარი', 'Treasury comment')}{' '}
+              <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span>
+            </label>
             <textarea
               id={'loss-comment-' + row.id}
-              className={'input' + (tried && !commentOk ? ' invalid' : '')}
+              className="input"
               maxLength={500}
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
-            <span className={'hint' + (tried && !commentOk ? ' error' : '')}>
-              {tried && !commentOk
-                ? t('ჩაწერეთ კომენტარი', 'Enter a comment')
-                : t('კომენტარი სავალდებულოა.', 'A comment is required.')}
-            </span>
+            <span className="hint">{t(
+              'ჩაწერეთ, თუ ახსნა გჭირდებათ. ცარიელიც შეიძლება.',
+              'Write one when you need to explain. Empty is allowed.',
+            )}</span>
           </div>
           <div style={{ paddingTop: 27 }}>
             <button type="submit" className="btn btn-primary" disabled={busy}>

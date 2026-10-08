@@ -13,6 +13,7 @@ import Security from './pages/Security';
 import Requests from './pages/Requests';
 import FollowUps from './pages/FollowUps';
 import RateDesk from './pages/RateDesk';
+import LostRequests from './pages/LostRequests';
 import Team from './pages/Team';
 import Clients from './pages/Clients';
 import Analytics from './pages/Analytics';
@@ -57,6 +58,7 @@ export default function App() {
         {can('/requests') && <Route path="/requests" element={<Requests />} />}
         {can('/follow-ups') && <Route path="/follow-ups" element={<FollowUps />} />}
         {can('/rate-desk') && <Route path="/rate-desk" element={<RateDesk />} />}
+        {can('/lost-requests') && <Route path="/lost-requests" element={<LostRequests />} />}
         {can('/team') && <Route path="/team" element={<Team />} />}
         {can('/clients') && <Route path="/clients" element={<Clients />} />}
         {can('/analytics') && <Route path="/analytics" element={<Analytics />} />}

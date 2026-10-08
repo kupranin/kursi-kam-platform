@@ -7,7 +7,7 @@ import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
-import { treasuryReason } from '../lib/requestStatus';
+import { hideEarlierDeals, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
@@ -435,7 +435,7 @@ export default function Requests() {
             {canChange(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { setEditId(null); refresh(); }} />}
           </div>
         </div>
-        {idOk && <ClientHistory clientId={editClientId.trim()} excludeId={r.id} />}
+        {idOk && !hideEarlierDeals(r) && <ClientHistory clientId={editClientId.trim()} excludeId={r.id} />}
       </form>
     );
   }
