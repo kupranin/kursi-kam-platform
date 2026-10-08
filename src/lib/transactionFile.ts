@@ -1,7 +1,8 @@
 import * as XLSX from 'xlsx';
 
 export interface UploadRow {
-  tx_id: string;
+  /** Bank transaction id when the file has one. Empty when it does not. Never invented. */
+  tx_id: string | null;
   tx_date: string;
   client_id: string;
   client_name: string | null;
@@ -13,7 +14,13 @@ export interface UploadRow {
   total_income: number;
   spread_income: number | null;
   revaluation: number | null;
+  /** File column currency. */
+  sells_currency: string | null;
+  /** File column currency_to_send. */
+  gets_currency: string | null;
 }
+
+export type UploadMode = 'tx-id' | 'amount';
 
 const SKIP_OPS = new Set(['position-close-in-bank', 'fastoo', 'bitnet', 'unipay']);
 
@@ -26,14 +33,16 @@ const TALL_SHEET_ROWS = 100_000;
 const EMPTY_ROW_STREAK = 5_000;
 
 const TX_ID_HEADERS = ['transaction_id', 'transaction id', 'tx_id', 'tx id', 'id'];
-const DATE_HEADERS = ['created at', 'created_at', 'date', 'tx_date'];
-/** Used only after a real transaction id column has been found. sender + date is not an id. */
-const CREATED_DATE_HEADERS = ['created_date', 'created date'];
+const DATE_HEADERS = ['created at', 'created_at', 'date', 'tx_date', 'created_date', 'created date'];
+/** Lari figures. total_income is the fee, not the deal amount. */
+const AMOUNT_HEADERS = ['abs_gel', 'abs gel', 'cross_gel', 'cross gel'];
+const SELL_CCY_HEADERS = ['currency', 'sells_currency', 'sells currency'];
+const GET_CCY_HEADERS = ['currency_to_send', 'currency to send', 'gets_currency', 'gets currency'];
 
 export class TransactionFileError extends Error {
-  readonly code: 'missing-tx-id' | 'range-too-wide';
+  readonly code: 'no-amount' | 'range-too-wide';
 
-  constructor(code: 'missing-tx-id' | 'range-too-wide') {
+  constructor(code: 'no-amount' | 'range-too-wide') {
     super(code);
     this.name = 'TransactionFileError';
     this.code = code;
@@ -110,12 +119,23 @@ function normalizeId(raw: string): string {
   return /^\d{10}$/.test(v) ? '0' + v : v;
 }
 
-function hasTxIdHeader(headers: string[]): boolean {
+function hasHeader(headers: string[], names: readonly string[]): boolean {
   const keys = new Set(headers.map(headerKey));
-  return TX_ID_HEADERS.some((name) => keys.has(headerKey(name)));
+  return names.some((name) => keys.has(headerKey(name)));
 }
 
-function oneRow(headers: string[], values: unknown[], seen: Set<string>, dateNames: readonly string[]): UploadRow | null {
+function fileMode(headers: string[]): UploadMode {
+  if (hasHeader(headers, TX_ID_HEADERS)) return 'tx-id';
+  if (hasHeader(headers, AMOUNT_HEADERS)) return 'amount';
+  throw new TransactionFileError('no-amount');
+}
+
+function currencyCode(value: unknown): string | null {
+  const text = textId(value).toUpperCase();
+  return /^[A-Z]{3}$/.test(text) ? text : null;
+}
+
+function oneRow(headers: string[], values: unknown[], seen: Set<string> | null, mode: UploadMode): UploadRow | null {
   const keyed: Record<string, unknown> = {};
   for (let i = 0; i < headers.length; i++) {
     const key = headerKey(headers[i] ?? '');
@@ -125,33 +145,40 @@ function oneRow(headers: string[], values: unknown[], seen: Set<string>, dateNam
     keyed[key] = value;
   }
   const txId = textId(pick(keyed, TX_ID_HEADERS));
-  const txDate = toIsoDate(pick(keyed, dateNames));
+  const txDate = toIsoDate(pick(keyed, DATE_HEADERS));
   const clientId = normalizeId(textId(pick(keyed, ['sender id', 'sender_id', 'client_id', 'client id'])));
   const status = textId(pick(keyed, ['payment status', 'payment_status'])).toUpperCase();
   const operation = textId(pick(keyed, ['operation type', 'operation_type'])) || null;
-  if (!txId || !txDate || !clientId || !status || (operation && SKIP_OPS.has(operation.toLowerCase())) || seen.has(txId)) {
-    return null;
+  if (!txDate || !clientId || !status || (operation && SKIP_OPS.has(operation.toLowerCase()))) return null;
+  const sells = currencyCode(pick(keyed, SELL_CCY_HEADERS));
+  const gets = currencyCode(pick(keyed, GET_CCY_HEADERS));
+  const absGel = numberOrZero(pick(keyed, ['abs_gel', 'abs gel']));
+  const crossGel = numberOrZero(pick(keyed, ['cross_gel', 'cross gel']));
+  if (mode === 'tx-id') {
+    if (!txId || seen?.has(txId)) return null;
+    seen?.add(txId);
   }
-  seen.add(txId);
   const name = textId(pick(keyed, ['sender name', 'sender_name', 'client name', 'name']));
   return {
-    tx_id: txId,
+    tx_id: mode === 'tx-id' ? txId : null,
     tx_date: txDate,
     client_id: clientId,
     client_name: name && name.toLowerCase() !== 'null' ? name.slice(0, 200) : null,
     segment: textId(pick(keyed, ['client_type', 'client type', 'segment'])) || null,
     operation_type: operation,
     payment_status: status,
-    abs_gel: numberOrZero(pick(keyed, ['abs_gel'])),
-    cross_gel: numberOrZero(pick(keyed, ['cross_gel'])),
-    total_income: numberOrZero(pick(keyed, ['total_income'])),
+    abs_gel: absGel,
+    cross_gel: crossGel,
+    total_income: numberOrZero(pick(keyed, ['total_income', 'total income'])),
     spread_income: numberOrNull(pick(keyed, ['spread_income'])),
     revaluation: numberOrNull(pick(keyed, ['revaluation income/(loss)', 'revaluation', 'revaluation_income'])),
+    sells_currency: sells,
+    gets_currency: gets,
   };
 }
 
-export function rowsFromSheet(records: Record<string, unknown>[]): { rows: UploadRow[]; skipped: number } {
-  if (!records.length) return { rows: [], skipped: 0 };
+export function rowsFromSheet(records: Record<string, unknown>[]): { rows: UploadRow[]; skipped: number; mode: UploadMode } {
+  if (!records.length) return { rows: [], skipped: 0, mode: 'amount' };
   let sample: string[];
   try {
     sample = Object.keys(records[0]);
@@ -159,18 +186,17 @@ export function rowsFromSheet(records: Record<string, unknown>[]): { rows: Uploa
     if (err instanceof RangeError) throw new TransactionFileError('range-too-wide');
     throw err;
   }
-  if (!hasTxIdHeader(sample)) throw new TransactionFileError('missing-tx-id');
-  const dates = [...DATE_HEADERS, ...CREATED_DATE_HEADERS];
-  const seen = new Set<string>();
+  const mode = fileMode(sample);
+  const seen = mode === 'tx-id' ? new Set<string>() : null;
   const rows: UploadRow[] = [];
   let skipped = 0;
   for (const record of records) {
     const headers = Object.keys(record);
-    const row = oneRow(headers, headers.map((key) => record[key]), seen, dates);
+    const row = oneRow(headers, headers.map((key) => record[key]), seen, mode);
     if (!row) skipped += 1;
     else rows.push(row);
   }
-  return { rows, skipped };
+  return { rows, skipped, mode };
 }
 
 function headerTexts(values: unknown[]): string[] {
@@ -182,32 +208,31 @@ function headerTexts(values: unknown[]): string[] {
 
 async function consumeRows(
   source: AsyncIterable<unknown[]>,
-  onBatch: (rows: UploadRow[]) => Promise<void>,
-): Promise<{ skipped: number; sent: number }> {
+  onBatch: (rows: UploadRow[], mode: UploadMode) => Promise<void>,
+): Promise<{ skipped: number; sent: number; mode: UploadMode }> {
   const iter = source[Symbol.asyncIterator]();
   let skipped = 0;
   let sent = 0;
   try {
     const first = await iter.next();
-    if (first.done) throw new TransactionFileError('missing-tx-id');
+    if (first.done) throw new TransactionFileError('no-amount');
     const headers = headerTexts(first.value);
-    if (!hasTxIdHeader(headers)) throw new TransactionFileError('missing-tx-id');
-    const dates = [...DATE_HEADERS, ...CREATED_DATE_HEADERS];
-    const seen = new Set<string>();
+    const mode = fileMode(headers);
+    const seen = mode === 'tx-id' ? new Set<string>() : null;
     let batch: UploadRow[] = [];
     const flush = async () => {
       if (!batch.length) return;
       const rows = batch;
       batch = [];
       sent += rows.length;
-      await onBatch(rows);
+      await onBatch(rows, mode);
     };
     while (true) {
       const step = await iter.next();
       if (step.done) break;
       const values = step.value;
       if (values.every((value) => value == null || String(value).trim() === '')) continue;
-      const row = oneRow(headers, values, seen, dates);
+      const row = oneRow(headers, values, seen, mode);
       if (!row) {
         skipped += 1;
         continue;
@@ -216,7 +241,7 @@ async function consumeRows(
       if (batch.length >= BATCH_SIZE) await flush();
     }
     await flush();
-    return { skipped, sent };
+    return { skipped, sent, mode };
   } finally {
     await iter.return?.();
   }
@@ -461,8 +486,8 @@ async function isCsvFile(file: File): Promise<boolean> {
 
 export async function readTransactionFile(
   file: File,
-  onBatch: (rows: UploadRow[]) => Promise<void>,
-): Promise<{ skipped: number; sent: number }> {
+  onBatch: (rows: UploadRow[], mode: UploadMode) => Promise<void>,
+): Promise<{ skipped: number; sent: number; mode: UploadMode }> {
   const csv = await isCsvFile(file);
   return consumeRows(csv ? csvRows(file) : sheetRows(file), onBatch);
 }

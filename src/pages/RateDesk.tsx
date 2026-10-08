@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
@@ -41,6 +41,73 @@ function DeskBanks({ codes, label }: { codes: string[] | undefined; label: strin
 }
 const FAR_PCT = 3;
 
+function QuotedRateEditor({ requestId, rate, onChanged }: { requestId: number; rate: number | null; onChanged: () => void }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [text, setText] = useState(rate != null ? fmtRate(rate) : '');
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const parsed = parseRate(text);
+  const rateOk = parsed.ok && parsed.value != null;
+
+  useEffect(() => {
+    setText(rate != null ? fmtRate(rate) : '');
+    setTried(false);
+  }, [requestId, rate]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setTried(true);
+    if (!rateOk || parsed.value == null) return;
+    setBusy(true);
+    try {
+      await rpc('treasury_set_rate', { p_request_id: requestId, p_rate: parsed.value });
+      toast(t('კურსი შეიცვალა.', 'Rate updated.'));
+      onChanged();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+    setBusy(false);
+  }
+
+  async function clear() {
+    if (!window.confirm(t(
+      'წავშალოთ ეს კურსი? მოთხოვნა დარჩება. თუ კურსი გაწერილი იყო, გაწერის ნიშანიც მოიხსნება.',
+      'Remove this rate? The request stays. If the rate was written, that mark is cleared too.',
+    ))) return;
+    setBusy(true);
+    try {
+      await rpc('treasury_set_rate', { p_request_id: requestId, p_rate: null });
+      toast(t('კურსი მოიხსნა.', 'Rate removed.'));
+      onChanged();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+    setBusy(false);
+  }
+
+  return (
+    <form onSubmit={save} noValidate className="form-row" style={{ marginTop: 12 }}>
+      <div className="field" style={{ flex: '0 1 190px' }}>
+        <label htmlFor={'quoted-rate-' + requestId}>{t('სახაზინოს კურსი', 'Treasury rate')}</label>
+        <input
+          id={'quoted-rate-' + requestId}
+          className={'input' + (tried && !rateOk ? ' invalid' : '')}
+          inputMode="decimal"
+          autoComplete="off"
+          value={text}
+          onChange={(e) => { setText(e.target.value.replace(/,/g, '.')); setTried(false); }}
+        />
+        {tried && !rateOk && <span className="hint error">{t('ჩაწერეთ კურსი', 'Enter the rate')}</span>}
+      </div>
+      <div className="row" style={{ paddingTop: 27, gap: 12 }}>
+        <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('ინახება…', 'Saving…') : t('კურსის შენახვა', 'Save rate')}</button>
+        <button type="button" className="link danger" disabled={busy} onClick={clear}>{t('კურსის წაშლა', 'Remove rate')}</button>
+      </div>
+    </form>
+  );
+}
+
 interface CardState { rate: string; valid: number; declining: boolean; confirmFar: boolean; tried: boolean }
 
 interface OtherReason {
@@ -52,6 +119,9 @@ interface OtherReason {
   gets_currency: string | null;
   amount: number | null;
   gets_amount: number | null;
+  rate: number | null;
+  client_rate: number | null;
+  note: string | null;
   loss_reason_note: string;
   request_date: string;
 }
@@ -96,6 +166,7 @@ export default function RateDesk() {
   const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
   const [booked, setBooked] = useState<Record<number, true>>({});
   const [banks, setBanks] = useState<Record<number, string[]>>({});
+  const [clientIds, setClientIds] = useState<Record<number, string>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
@@ -128,7 +199,7 @@ export default function RateDesk() {
     }
     try {
       const { data, error } = await supabase.from('request_outcomes')
-        .select('id, client_name, client_id, kam_name, sells_currency, gets_currency, amount, gets_amount, loss_reason_note, request_date')
+        .select('id, client_name, client_id, kam_name, sells_currency, gets_currency, amount, gets_amount, rate, client_rate, note, loss_reason_note, request_date')
         .not('loss_reason_note', 'is', null)
         .gte('request_date', todayTbilisi(-7))
         .order('request_date', { ascending: false })
@@ -213,25 +284,29 @@ export default function RateDesk() {
       ...replies.map((r) => r.request_id),
       ...extraAgreed.map((r) => r.request_id),
       ...quotes.map((q) => q.request_id),
+      ...otherReasons.map((r) => r.id),
     ]));
-    if (!ids.length) { setBanks({}); return; }
+    if (!ids.length) { setBanks({}); setClientIds({}); return; }
     let live = true;
     (async () => {
-      const withSet = await supabase.from('requests').select('id, bank, banks').in('id', ids);
+      const withSet = await supabase.from('requests').select('id, client_id, bank, banks').in('id', ids);
       const res = withSet.error
-        ? await supabase.from('requests').select('id, bank').in('id', ids)
+        ? await supabase.from('requests').select('id, client_id, bank').in('id', ids)
         : withSet;
       if (!live || res.error || !res.data) return;
       const next: Record<number, string[]> = {};
-      for (const row of res.data as { id: number; bank: string | null; banks?: string[] | string | null }[]) {
+      const clients: Record<number, string> = {};
+      for (const row of res.data as { id: number; client_id?: string | null; bank: string | null; banks?: string[] | string | null }[]) {
+        if (row.client_id) clients[row.id] = row.client_id;
         const fromSet = bankList(row.banks);
         const picked = fromSet.length ? fromSet : bankList(row.bank);
         if (picked.length) next[row.id] = picked;
       }
       setBanks(next);
+      setClientIds(clients);
     })();
     return () => { live = false; };
-  }, [queue, replies, extraAgreed, quotes]);
+  }, [queue, replies, extraAgreed, quotes, otherReasons]);
 
   const blankCard = (valid: number): CardState => ({ rate: '', valid, declining: false, confirmFar: false, tried: false });
   const card = (id: number): CardState => cards[id] ?? blankCard(defaultValid);
@@ -427,7 +502,6 @@ export default function RateDesk() {
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
                     {r.note && <p className="note-box">კომენტარი სახაზინოსთვის: {r.note}</p>}
                     {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
-                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
 
                     {!c.declining && (
                       <>
@@ -485,6 +559,7 @@ export default function RateDesk() {
                         </div>
                       </div>
                     )}
+                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
                   </article>
                 );
               })}
@@ -517,11 +592,12 @@ export default function RateDesk() {
                         <div style={{ fontSize: 20, fontWeight: 600 }}>{sideAmount(r.gets_currency, r.gets_amount)}</div>
                       </div>
                     </div>
-                    <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? r.client_id}</div>
+                    <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? t('სახელი არ არის', 'No name')}</div>
+                    <div className="tiny muted">ID {r.client_id}</div>
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
-                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
-                    <p className="note-box">სახაზინოს კურსი: {fmtRate(r.rate)}. კლიენტს სურს {fmtRate(r.wanted_rate)}.</p>
+                    <p className="note-box">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
+                    {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                     <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
                     <div className="form-row" style={{ marginTop: 12 }}>
                       <div style={{ paddingTop: 27 }}>
@@ -576,8 +652,9 @@ export default function RateDesk() {
                           <button type="submit" className="btn btn-primary">შენახვა</button>
                           <button type="button" className="link" onClick={() => { setBetterDeclineId(null); setBetterDeclineTried(false); }}>უკან</button>
                         </div>
-                      </form>
+                        </form>
                     )}
+                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
                   </article>
                 );
               })}
@@ -586,14 +663,18 @@ export default function RateDesk() {
               <div key={r.request_id} className="list-row">
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
+                  <div className="tiny muted">ID {r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
-                  <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>კლიენტი იღებს {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  <div className="tiny muted">{r.better_decision === 'accepted' ? `სახაზინომ დაადასტურა ${fmtRate(r.given_rate)}.` : `გასწორებული კურსი: ${fmtRate(r.given_rate)}.`}</div>
+                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
+                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
+                  <div className="tiny muted">{r.better_decision === 'accepted' ? t('სახაზინომ დაადასტურა {rate}.', 'Treasury accepted {rate}.', { rate: fmtRate(r.given_rate) }) : t('გასწორებული კურსი: {rate}.', 'Corrected rate: {rate}.', { rate: fmtRate(r.given_rate) })}</div>
+                  {(r.rate != null || r.given_rate != null) && <QuotedRateEditor requestId={r.request_id} rate={r.rate ?? r.given_rate} onChanged={load} />}
                 </div>
+                <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
               </div>
             ))}
           </section>
@@ -608,14 +689,17 @@ export default function RateDesk() {
               <div key={r.request_id} className="list-row">
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
+                  <div className="tiny muted">ID {r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
-                  <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>კლიენტი იღებს {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
+                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                   <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
                   {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
+                  {(r.rate != null || booked[r.request_id]) && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
                 <div className="actions">
                   {booked[r.request_id]
@@ -628,6 +712,7 @@ export default function RateDesk() {
                 </div>
                 <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />
                 {r.approved_rate != null && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatHandoff(r.client_id, r.approved_rate)} />}
+                <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
               </div>
             ))}
           </section>
@@ -641,14 +726,19 @@ export default function RateDesk() {
               <div key={r.request_id} className="list-row">
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
+                  <div className="tiny muted">ID {r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
-                  <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>კლიენტი იღებს {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  <div className="tiny muted">მიზეზი: {r.client_decline_reason}</div>
+                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
+                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
+                  {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
+                  <div className="tiny muted">{t('მიზეზი', 'Reason')}: {r.client_decline_reason}</div>
+                  {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
+                <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
               </div>
             ))}
           </section>
@@ -659,38 +749,34 @@ export default function RateDesk() {
               <span className="small muted">კურსზე „გავიდა“ ჩნდება, როცა კურსი გაწერილია ან კლიენტის ტრანზაქცია მოდის</span>
             </div>
             {loaded && !quotes.length && <p className="empty">დღეს კურსი ჯერ არ გაცემულა.</p>}
-            {quotes.length > 0 && (
-              <div className="table-wrap">
-                <table className="table" style={{ minWidth: 720 }}>
-                  <thead><tr><th>კლიენტი</th><th>გარიგება</th><th className="num">კურსი</th><th>KAM</th><th>სტატუსი</th></tr></thead>
-                  <tbody>
-                    {quotes.map((q) => {
-                      const valid = q.quote_state === 'quoted' && new Date(q.valid_until) > new Date();
-                      return (
-                        <tr key={q.request_id}>
-                          <td className="strong">{q.client_name}</td>
-                          <td>
-                            <div>კლიენტი ყიდის {sideAmount(q.sells_currency, q.amount)}</div>
-                            <div>კლიენტი იღებს {sideAmount(q.gets_currency, q.gets_amount)}</div>
-                            <DeskBanks codes={banks[q.request_id]} label={t('ბანკი', 'Bank')} />
-                            {q.client_rate != null && <div className="tiny muted">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(q.client_rate)}</div>}
-                            {q.note && <div className="tiny muted">კომენტარი სახაზინოსთვის: {q.note}</div>}
-                            {q.loss_reason_note && <div className="tiny muted">სხვა მიზეზი: {q.loss_reason_note}</div>}
-                          </td>
-                          <td className="num strong">{fmtRate(q.rate)}</td>
-                          <td>{q.kam_name.split(' ')[0]}</td>
-                          <td>
-                            {q.went_through ? <span className="pill pill-ok">გავიდა</span>
-                              : valid ? <span className="pill pill-ok">მოქმედებს {fmtTime(q.valid_until)}-მდე</span>
-                              : <span className="pill pill-wait">ვადა გაუვიდა {fmtTime(q.valid_until)}-ზე</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {quotes.map((q) => {
+              const valid = q.quote_state === 'quoted' && new Date(q.valid_until) > new Date();
+              return (
+                <div key={q.request_id} className="list-row">
+                  <div className="who">
+                    <div className="name">{q.client_name}</div>
+                    {clientIds[q.request_id] && <div className="tiny muted">ID {clientIds[q.request_id]}</div>}
+                    <div className="tiny muted">{q.kam_name}</div>
+                    <DeskBanks codes={banks[q.request_id]} label={t('ბანკი', 'Bank')} />
+                  </div>
+                  <div className="what">
+                    <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(q.sells_currency, q.amount)}</div>
+                    <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(q.gets_currency, q.gets_amount)}</div>
+                    {q.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(q.client_rate)}</div>}
+                    {q.note && <div className="tiny muted">{t('კომენტარი სახაზინოსთვის', 'Comment for treasury')}: {q.note}</div>}
+                    {q.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {q.loss_reason_note}</div>}
+                    <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(q.rate)}</div>
+                    <QuotedRateEditor requestId={q.request_id} rate={q.rate} onChanged={load} />
+                  </div>
+                  <div>
+                    {q.went_through ? <span className="pill pill-ok">{t('გავიდა', 'Went through')}</span>
+                      : valid ? <span className="pill pill-ok">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(q.valid_until) })}</span>
+                      : <span className="pill pill-wait">{t('ვადა გაუვიდა {time}-ზე', 'Expired at {time}', { time: fmtTime(q.valid_until) })}</span>}
+                  </div>
+                  {clientIds[q.request_id] && <ClientHistory clientId={clientIds[q.request_id]} excludeId={q.request_id} />}
+                </div>
+              );
+            })}
           </section>
 
           <section className="card flush" aria-labelledby="other-reasons-title">
@@ -708,12 +794,18 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">ID {r.client_id}</div>
+                  <DeskBanks codes={banks[r.id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
-                  <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>კლიენტი იღებს {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  <div className="tiny muted">სხვა მიზეზი: {r.loss_reason_note}</div>
+                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
+                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                  {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
+                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
+                  {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
+                  <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>
+                  {r.rate != null && <QuotedRateEditor requestId={r.id} rate={r.rate} onChanged={load} />}
                 </div>
+                <ClientHistory clientId={r.client_id} excludeId={r.id} />
               </div>
             ))}
           </section>

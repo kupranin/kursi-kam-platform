@@ -81,11 +81,25 @@ function monthLabel(start: string): string {
   return new Date(start + 'T00:00:00Z').toLocaleDateString('ka-GE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
+interface ImportResult {
+  upserted: number;
+  skipped: number;
+  clients_added: number;
+  run_id: number | null;
+  matched: number;
+  ambiguous: number;
+}
+
+function uploadCount(value: number | string | null | undefined): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function uploadError(err: unknown, t: (ka: string, en: string) => string): string {
-  if (err instanceof TransactionFileError && err.code === 'missing-tx-id') {
+  if (err instanceof TransactionFileError && err.code === 'no-amount') {
     return t(
-      'ფაილს სჭირდება ტრანზაქციის ID-ის სვეტი (transaction id). ამ ფაილში ის არ არის, ამიტომ არ ჩაიტვირთა.',
-      'This file needs a transaction id column. It does not have one, so it was not loaded.',
+      'ამ ფაილს არც transaction id აქვს და არც ლარის თანხა (abs_gel ან cross_gel), ამიტომ არ ჩაიტვირთა.',
+      'This file has no transaction id and no lari amount (abs_gel or cross_gel), so it was not loaded.',
     );
   }
   if (err instanceof TransactionFileError && err.code === 'range-too-wide') {
@@ -96,11 +110,18 @@ function uploadError(err: unknown, t: (ka: string, en: string) => string): strin
   }
   if (err instanceof RangeError) {
     return t(
-      'ფაილი ზედმეტად დიდია და ვერ წაიკითხა. სჭირდება ტრანზაქციის ID-ის სვეტი, და ფურცლის დიაპაზონი XFD-მდე არ უნდა მიდიოდეს.',
-      'This file is too large to read. It needs a transaction id column, and the sheet range must not run out to column XFD.',
+      'ფაილი ზედმეტად დიდია და ვერ წაიკითხა. ფურცლის დიაპაზონი XFD-მდე არ უნდა მიდიოდეს.',
+      'This file is too large to read. The sheet range must not run out to column XFD.',
     );
   }
-  return err instanceof Error ? err.message : String(err);
+  const message = err instanceof Error ? err.message : String(err);
+  if (/could not find the function/i.test(message) && /import_transactions/i.test(message)) {
+    return t(
+      'ჯერ ჩასვით SQL ფაილი 17_amount_match, შემდეგ სცადეთ თავიდან.',
+      'Paste SQL file 17_amount_match first, then try again.',
+    );
+  }
+  return message;
 }
 
 export default function Analytics() {
@@ -154,30 +175,72 @@ export default function Analytics() {
       let skippedRows = 0;
       let clientsAdded = 0;
       let sentSoFar = 0;
-      const { skipped, sent } = await readTransactionFile(file, async (batch) => {
+      let runId: number | null = null;
+      const { skipped, sent, mode } = await readTransactionFile(file, async (batch, batchMode) => {
         sentSoFar += batch.length;
         setProgress(t('ინახება {n}…', 'Saving {n}…', { n: sentSoFar.toLocaleString('en-US') }));
-        const result = await rpc<{ upserted: number; skipped: number; clients_added: number }>('import_transactions', { p_rows: batch });
-        saved += result.upserted;
-        skippedRows += result.skipped;
-        clientsAdded += result.clients_added;
+        const result = await rpc<ImportResult>(
+          'import_transactions',
+          batchMode === 'amount'
+            ? { p_rows: batch, p_run: runId, p_finish: false }
+            : { p_rows: batch },
+        );
+        saved += uploadCount(result.upserted);
+        skippedRows += uploadCount(result.skipped);
+        clientsAdded += uploadCount(result.clients_added);
+        if (result.run_id != null) runId = uploadCount(result.run_id);
       });
       skippedRows += skipped;
+      let matched = 0;
+      let ambiguous = 0;
+      if (mode === 'amount' && sent) {
+        if (runId == null) {
+          throw new Error(t(
+            'ატვირთვა მოთხოვნას ვერ დაემთხვა. ჯერ ჩასვით SQL ფაილი 17_amount_match, შემდეგ სცადეთ თავიდან.',
+            'The upload could not match requests. Paste SQL file 17_amount_match first, then try again.',
+          ));
+        }
+        setProgress(t('მოთხოვნებს ემთხვევა…', 'Matching requests…'));
+        const done = await rpc<ImportResult>('import_transactions', { p_rows: [], p_run: runId, p_finish: true });
+        matched = uploadCount(done.matched);
+        ambiguous = uploadCount(done.ambiguous);
+      }
       if (!sent) {
         toast(t(
-          'ტრანზაქცია ვერ მოიძებნა. ფაილს სჭირდება transaction id, თარიღი, sender id, payment status, abs_gel და total_income.',
-          'No transactions found. The file needs a transaction id, a date, sender id, payment status, abs_gel and total_income.',
+          mode === 'amount'
+            ? 'ტრანზაქცია ვერ მოიძებნა. სტრიქონს სჭირდება თარიღი, sender id, payment status და ლარის თანხა (abs_gel ან cross_gel).'
+            : 'ტრანზაქცია ვერ მოიძებნა. სტრიქონს სჭირდება transaction id, თარიღი, sender id, payment status, abs_gel და total_income.',
+          mode === 'amount'
+            ? 'No transactions found. A row needs a date, sender id, payment status, and a lari amount (abs_gel or cross_gel).'
+            : 'No transactions found. A row needs a transaction id, a date, sender id, payment status, abs_gel and total_income.',
         ), 'error');
         return;
       }
       const savedText = saved.toLocaleString('en-US');
-      const clientText = clientsAdded
-        ? t(', {n} ახალი კლიენტი', ', {n} new clients', { n: clientsAdded.toLocaleString('en-US') })
-        : '';
-      const skipText = skippedRows
-        ? t('. გამოტოვებულია {n} სტრიქონი.', '. Skipped {n} rows.', { n: skippedRows.toLocaleString('en-US') })
-        : '.';
-      toast(t('შეინახა {n} ტრანზაქცია', 'Saved {n} transactions', { n: savedText }) + clientText + skipText);
+      const parts = [
+        t('შეინახა {n} ტრანზაქცია', 'Saved {n} transactions', { n: savedText })
+          + (clientsAdded
+            ? t(', {n} ახალი კლიენტი', ', {n} new clients', { n: clientsAdded.toLocaleString('en-US') })
+            : ''),
+      ];
+      if (mode === 'amount') {
+        parts.push(t(
+          'მოთხოვნას დაემთხვა {n}.',
+          'Matched {n} to a request.',
+          { n: matched.toLocaleString('en-US') },
+        ));
+        if (ambiguous) {
+          parts.push(t(
+            '{n} არ მიება, რადგან ეს თანხა ერთ მოთხოვნაზე ზუსტად არ ჯდება.',
+            '{n} were not attached, because that amount does not fit exactly one request.',
+            { n: ambiguous.toLocaleString('en-US') },
+          ));
+        }
+      }
+      if (skippedRows) {
+        parts.push(t('გამოტოვებულია {n} სტრიქონი.', 'Skipped {n} rows.', { n: skippedRows.toLocaleString('en-US') }));
+      }
+      toast(parts.join(' '));
       if (month === 'all') await load('all');
       else setMonth('all');
     } catch (err) {
@@ -245,8 +308,8 @@ export default function Analytics() {
           <h2 id="upload-title">ტრანზაქციების ატვირთვა</h2>
           <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
             {t(
-              'Excel ან CSV. აუცილებელია transaction id — მის გარეშე ფაილი არ ჩაიტვირთება. თარიღი: created at ან created date. ასევე sender id, payment status, abs_gel და total_income. იგივე ფაილის ხელახალი ატვირთვა ამ სტრიქონებს ანახლებს.',
-              'Excel or CSV. A transaction id column is required — without it, the file is not loaded. Date: created at or created date. Also sender id, payment status, abs_gel and total_income. Uploading the same file again updates those rows.',
+              'Excel ან CSV. თუ არის transaction id, ხელახალი ატვირთვა იმ სტრიქონს ანახლებს. თუ transaction id არ არის, სტრიქონი მოთხოვნას ემთხვევა თანხით: იგივე კლიენტი (sender id), იგივე დღე, იგივე ვალუტები (currency და currency to send) და ზუსტად იგივე ლარის თანხა (abs_gel, ან cross_gel თუ არც ერთი მხარე ლარი არ არის). თუ ეს თანხა ერთ მოთხოვნაზე ზუსტად არ ჯდება, სტრიქონი არ მიება. იგივე დღეების ხელახალი ატვირთვა იმ დღეებს ცვლის, რომ ორჯერ არ დაითვალოს. თარიღი: created at ან created date. ასევე payment status და total_income.',
+              'Excel or CSV. If the file has a transaction id, uploading it again updates that row. If there is no transaction id, a row is matched to a request by amount: the same client (sender id), the same day, the same currencies (currency and currency to send), and the exact same lari amount (abs_gel, or cross_gel when neither side is lari). If that amount does not fit exactly one request, the row is not attached. Uploading those days again replaces them, so they are not counted twice. Date: created at or created date. Also payment status and total_income.',
             )}
           </p>
           <label className={'btn btn-primary' + (uploading ? ' disabled' : '')}>

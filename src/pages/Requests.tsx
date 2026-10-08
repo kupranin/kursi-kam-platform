@@ -6,9 +6,9 @@ import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
-import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
+import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
 import { treasuryReason } from '../lib/requestStatus';
-import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow, type Rules } from '../lib/types';
+import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
@@ -83,7 +83,6 @@ export default function Requests() {
 
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [rules, setRules] = useState<Rules | null>(null);
 
   const [info, setInfo] = useState<ClientInfo | null>(null);
   const [clientForm, setClientForm] = useState(0);
@@ -110,6 +109,18 @@ export default function Requests() {
   const [replyReason, setReplyReason] = useState('');
   const [replyTried, setReplyTried] = useState(false);
   const [replyBusy, setReplyBusy] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editClientId, setEditClientId] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editSells, setEditSells] = useState('USD');
+  const [editGets, setEditGets] = useState('GEL');
+  const [editSellsAmt, setEditSellsAmt] = useState('');
+  const [editGetsAmt, setEditGetsAmt] = useState('');
+  const [editRate, setEditRate] = useState('');
+  const [editBanks, setEditBanks] = useState<string[]>([]);
+  const [editNote, setEditNote] = useState('');
+  const [editTried, setEditTried] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
   const [approvedRows, setApprovedRows] = useState<RequestRow[]>([]);
   const [approvedLoaded, setApprovedLoaded] = useState(false);
   const [approvedError, setApprovedError] = useState('');
@@ -185,8 +196,7 @@ export default function Requests() {
     load();
     loadHistory();
     loadApproved();
-    if (isKam) supabase.from('rules').select('*').single().then(({ data }) => setRules(data as Rules));
-  }, [load, loadHistory, loadApproved, isKam]);
+  }, [load, loadHistory, loadApproved]);
   useLive(['requests'], () => { load(); loadHistory(); loadApproved(); }, 20000);
 
   useEffect(() => {
@@ -288,12 +298,154 @@ export default function Requests() {
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
+  function canChange(r: RequestRow) {
+    if (role === 'admin') return true;
+    return role === 'kam' && !!profile && r.kam_id === profile.id;
+  }
+
+  function openEdit(r: RequestRow) {
+    setEditId(r.id);
+    setEditClientId(r.client_id);
+    setEditName(r.client_name ?? '');
+    setEditSells(r.sells_currency && /^[A-Z]{3}$/.test(r.sells_currency) ? r.sells_currency : 'USD');
+    setEditGets(r.gets_currency && /^[A-Z]{3}$/.test(r.gets_currency) ? r.gets_currency : 'GEL');
+    setEditSellsAmt(r.amount != null ? String(r.amount) : '');
+    setEditGetsAmt(r.gets_amount != null ? String(r.gets_amount) : '');
+    setEditRate(r.client_rate != null ? String(r.client_rate) : '');
+    setEditBanks(bankList(r.bank));
+    setEditNote(r.note ?? '');
+    setEditTried(false);
+  }
+
+  function currencyKept(code: string, original: string | null) {
+    if (code === original && /^[A-Z]{3}$/.test(code)) return true;
+    return (CURRENCIES as readonly string[]).includes(code);
+  }
+
+  async function saveEdit(e: FormEvent, r: RequestRow) {
+    e.preventDefault();
+    setEditTried(true);
+    const idOk = /^([0-9]{9}|[0-9]{11})$/.test(editClientId.trim());
+    const nameOk = editName.trim().length >= 2;
+    const sellAmt = readAmount(editSellsAmt);
+    const getAmt = readAmount(editGetsAmt);
+    const rateAmt = readRate(editRate);
+    const picked = bankList(editBanks);
+    const pairOk = editSells !== editGets && currencyKept(editSells, r.sells_currency) && currencyKept(editGets, r.gets_currency);
+    const hasSide = sellAmt.value != null || getAmt.value != null;
+    if (!idOk || !nameOk || !sellAmt.ok || !getAmt.ok || !rateAmt.ok || !pairOk || !hasSide || picked.length < 1) return;
+    setEditBusy(true);
+    try {
+      await rpc('edit_request', {
+        p_request_id: r.id,
+        p_client_id: editClientId.trim(),
+        p_client_name: editName.trim(),
+        p_sells_currency: editSells,
+        p_gets_currency: editGets,
+        p_amount: sellAmt.value,
+        p_gets_amount: getAmt.value,
+        p_client_rate: rateAmt.value,
+        p_note: editNote.trim() || null,
+        p_bank: BANKS.filter((code) => picked.includes(code)),
+      });
+      toast(t('მოთხოვნა შეიცვალა.', 'Request updated.'));
+      setEditId(null);
+      load();
+      loadHistory();
+      loadApproved();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+    setEditBusy(false);
+  }
+
+  function editForm(r: RequestRow) {
+    if (editId !== r.id) return null;
+    const idOk = /^([0-9]{9}|[0-9]{11})$/.test(editClientId.trim());
+    const nameOk = editName.trim().length >= 2;
+    const sellAmt = readAmount(editSellsAmt);
+    const getAmt = readAmount(editGetsAmt);
+    const rateAmt = readRate(editRate);
+    const picked = bankList(editBanks);
+    const pairOk = editSells !== editGets && currencyKept(editSells, r.sells_currency) && currencyKept(editGets, r.gets_currency);
+    const hasSide = sellAmt.value != null || getAmt.value != null;
+    const bothBlank = sellAmt.ok && getAmt.ok && !hasSide;
+    return (
+      <form onSubmit={(e) => saveEdit(e, r)} noValidate style={{ flex: '1 1 100%' }}>
+        <div className="form-row">
+          <div className="field" style={{ flex: '1 1 180px', minWidth: 160 }}>
+            <label htmlFor={'edit-id-' + r.id}>{t('კლიენტის ID', 'Client ID')}</label>
+            <input id={'edit-id-' + r.id} className={'input' + (editTried && !idOk ? ' invalid' : '')} inputMode="numeric" autoComplete="off" value={editClientId} onChange={(e) => setEditClientId(e.target.value)} />
+            {editTried && !idOk && <span className="hint error">{t('კომპანიას 9 ციფრი აქვს, ადამიანს 11', 'A company has 9 digits, a person 11')}</span>}
+          </div>
+          <div className="field" style={{ flex: '2 1 220px', minWidth: 180 }}>
+            <label htmlFor={'edit-name-' + r.id}>{t('კლიენტის სახელი', 'Client name')}</label>
+            <input id={'edit-name-' + r.id} className={'input' + (editTried && !nameOk ? ' invalid' : '')} autoComplete="off" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            {editTried && !nameOk && <span className="hint error">{t('ჩაწერეთ სახელი', 'Enter the name')}</span>}
+          </div>
+          <div className="field" style={{ flex: '1 1 280px', minWidth: 220 }}>
+            <span className="label" id={'edit-banks-' + r.id}>{t('ბანკი, სადაც კლიენტი აგზავნის', 'Bank the client is sending to')}</span>
+            <div className="seg" role="group" aria-labelledby={'edit-banks-' + r.id} aria-invalid={editTried && picked.length < 1}>
+              {BANKS.map((code) => (
+                <button key={code} type="button" aria-pressed={picked.includes(code)} onClick={() => setEditBanks((cur) => bankList(cur.includes(code) ? cur.filter((item) => item !== code) : [...cur, code]))}>
+                  {code}
+                </button>
+              ))}
+            </div>
+            {editTried && picked.length < 1 && <span className="hint error">{t('აირჩიეთ ერთი ბანკი მაინც', 'Choose at least one bank')}</span>}
+          </div>
+        </div>
+        <div className="form-row" style={{ marginTop: 16 }}>
+          <div className="deal-side">
+            <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={editSells} onChange={(c) => { setEditSells(c); if (editGets === c) setEditGets(c === 'GEL' ? 'USD' : 'GEL'); }} idSuffix={'edit-' + r.id} />
+            <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
+              <label htmlFor={'edit-sells-' + r.id}>{t('თანხა', 'Amount')}</label>
+              <input id={'edit-sells-' + r.id} className={'input' + (editTried && !sellAmt.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={editSellsAmt} onChange={(e) => setEditSellsAmt(e.target.value)} />
+            </div>
+          </div>
+          <div className="deal-side">
+            <CurrencyPicker label={t('კლიენტი იღებს', 'Client gets')} value={editGets} onChange={setEditGets} disabledValue={editSells} idSuffix={'edit-' + r.id} />
+            <div className="field" style={{ flex: '1 1 140px', minWidth: 130 }}>
+              <label htmlFor={'edit-gets-' + r.id}>{t('თანხა', 'Amount')}</label>
+              <input id={'edit-gets-' + r.id} className={'input' + (editTried && !getAmt.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={editGetsAmt} onChange={(e) => setEditGetsAmt(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <p className={'hint' + (editTried && (!pairOk || bothBlank) ? ' error' : '')} style={{ margin: '8px 0 0' }}>
+          {editTried && !pairOk
+            ? t('აირჩიეთ ორი განსხვავებული ვალუტა', 'Choose two different currencies')
+            : editTried && bothBlank
+              ? t('ჩაწერეთ თანხა ერთ მხარეს', 'Enter an amount on one side')
+              : t('შეავსეთ ერთი თანხა. მეორე დატოვეთ ცარიელი, თუ არ გაქვთ.', 'Fill in one amount. Leave the other blank if you do not have it.')}
+        </p>
+        <div className="form-row" style={{ marginTop: 16 }}>
+          <div className="field" style={{ flex: '1 1 200px', minWidth: 180 }}>
+            <label htmlFor={'edit-rate-' + r.id}>{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
+            <input id={'edit-rate-' + r.id} className={'input' + (editTried && !rateAmt.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
+          </div>
+          <div className="field" style={{ flex: '2 1 240px', minWidth: 200 }}>
+            <label htmlFor={'edit-note-' + r.id}>{t('კომენტარი სახაზინოსთვის', 'Comment for treasury')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
+            <input id={'edit-note-' + r.id} className="input" autoComplete="off" value={editNote} onChange={(e) => setEditNote(e.target.value)} />
+          </div>
+          <div className="row" style={{ paddingTop: 27, gap: 12 }}>
+            <button type="submit" className="btn btn-primary" disabled={editBusy}>{editBusy ? t('ინახება…', 'Saving…') : t('შენახვა', 'Save')}</button>
+            <button type="button" className="link" onClick={() => setEditId(null)}>{t('გაუქმება', 'Cancel')}</button>
+          </div>
+        </div>
+        {idOk && <ClientHistory clientId={editClientId.trim()} excludeId={r.id} />}
+      </form>
+    );
+  }
+
   async function remove(r: RequestRow) {
-    if (!window.confirm(t('წავშალოთ ეს მოთხოვნა? ეს მხოლოდ შეცდომის გასასწორებლად გამოიყენეთ.', 'Delete this request? Use this only to fix a mistake.'))) return;
+    if (!window.confirm(t('წავშალოთ ეს მოთხოვნა? კლიენტი დარჩება. ეს ქმედება უკან ვერ ბრუნდება.', 'Delete this request? The client stays. This cannot be undone.'))) return;
     try {
       await rpc('delete_request', { p_request_id: r.id });
+      if (editId === r.id) setEditId(null);
       toast(t('მოთხოვნა წაიშალა.', 'Request deleted.'));
       load();
+      loadHistory();
+      loadApproved();
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
@@ -346,7 +498,6 @@ export default function Requests() {
   const open = rows.filter((r) => !r.went_through && r.source !== 'import');
   const done = rows.filter((r) => r.went_through && r.request_date === today);
   const todayCount = rows.filter((r) => r.request_date === today).length;
-  const deleteMinutes = rules?.request_delete_minutes ?? 15;
 
   return (
     <>
@@ -390,7 +541,6 @@ export default function Requests() {
               </span>
             </div>
           </div>
-          {info?.valid && info.id && <ClientHistory clientId={info.id} />}
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
               <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />
@@ -430,6 +580,7 @@ export default function Requests() {
               <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? t('იგზავნება…', 'Sending…') : t('კურსის თხოვნა სახაზინოს', 'Ask treasury for a rate')}</button>
             </div>
           </div>
+          {info?.valid && info.id && <ClientHistory clientId={info.id} />}
         </form>
       </section>}
 
@@ -441,7 +592,6 @@ export default function Requests() {
         {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
         {open.map((r) => {
           const st = stateOf(r);
-          const fresh = st === 'asking' && r.source === 'app' && minutesSince(r.requested_at) < deleteMinutes;
           const answer = clientReplyNote(r, t);
           const chatText = r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = bookedLine(r);
@@ -451,6 +601,7 @@ export default function Requests() {
           const parsedReply = readRate(replyRate);
           const replyRateOk = parsedReply.ok && parsedReply.value != null;
           const replyReasonOk = replyReason.trim().length >= 2;
+          const own = canChange(r);
           const canAskAgain = (st === 'expired' || st === 'declined')
             && r.client_reply !== 'approved'
             && !(r.client_reply === 'better' && !r.better_decision);
@@ -493,8 +644,10 @@ export default function Requests() {
                   </>
                 )}
                 {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
-                {fresh && <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>}
+                {own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
+                {own && <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>}
               </div>
+              {editForm(r)}
               {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
               {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
               {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
@@ -538,6 +691,13 @@ export default function Requests() {
             <span className="who strong">{r.client_name ?? r.client_id}</span>
             <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}</span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
+            {canChange(r) && (
+              <div className="actions">
+                <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
+                <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>
+              </div>
+            )}
+            {editForm(r)}
             {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
             {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
           </div>
@@ -570,6 +730,13 @@ export default function Requests() {
               <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
               {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
             </div>
+            {canChange(r) && (
+              <div className="actions">
+                <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
+                <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>
+              </div>
+            )}
+            {editForm(r)}
           </div>
         ))}
       </section>}
@@ -642,6 +809,13 @@ export default function Requests() {
               <span className={'pill ' + st.cls} style={{ marginLeft: 'auto' }}>
                 {st.cls === 'pill-ok' && <IconCheck />}{st.label}
               </span>
+              {canChange(r) && (
+                <div className="actions">
+                  <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
+                  <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>
+                </div>
+              )}
+              {editForm(r)}
             </div>
           );
         })}

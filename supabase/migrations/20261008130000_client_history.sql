@@ -683,10 +683,10 @@ $$;
 revoke execute on function public.log_request(text, text, text, numeric, text, text, numeric, numeric, text[]) from public, anon;
 grant execute on function public.log_request(text, text, text, numeric, text, text, numeric, numeric, text[]) to authenticated;
 
--- Analyst list. Same success rule as request_outcomes above.
--- This does not replace private.request_gel. A paste of 14_analyst.sql
--- after this file would put the same rule back; paste this file again
--- only if an older analyst file is used.
+-- Analyst list. Same columns as 14_analyst.sql, including the stored lari
+-- figure. Create or replace cannot insert or rename a column, so drop
+-- the old list first.
+drop view if exists public.analyst_deals;
 create or replace view public.analyst_deals
 with (security_invoker = false, security_barrier = true)
 as
@@ -702,6 +702,7 @@ select
   d.gets_amount,
   d.rate,
   d.amount_gel,
+  d.gel_amount,
   d.status,
   case when d.status = 'lost' or d.rate_written then d.reason else null end as loss_reason,
   d.first_response_minutes,
@@ -719,9 +720,13 @@ from (
     r.gets_currency,
     r.gets_amount,
     coalesce(r.approved_rate, r.rate) as rate,
-    private.request_gel(
-      r.sells_currency, r.gets_currency, r.amount, r.gets_amount, coalesce(r.approved_rate, r.rate)
+    coalesce(
+      r.gel_amount,
+      private.request_gel(
+        r.sells_currency, r.gets_currency, r.amount, r.gets_amount, coalesce(r.approved_rate, r.rate)
+      )
     ) as amount_gel,
+    r.gel_amount,
     (r.rate_written_at is not null) as rate_written,
     case
       when r.rate_written_at is not null then 'success'
@@ -744,6 +749,7 @@ from (
   from public.requests r
   join public.clients c on c.client_id = r.client_id
   left join public.profiles p on p.id = r.kam_id
+  -- The view owner reads the name, so an analyst needs no grant on profiles.
   left join public.profiles qb on qb.id = r.quoted_by
   left join public.loss_reasons lr on lr.code = r.loss_reason
   cross join lateral (
@@ -775,7 +781,7 @@ from (
 where private.my_role() in ('analyst', 'admin');
 
 comment on view public.analyst_deals is
-  'Every request for an analyst or an admin. Read only. Dates, both amounts, the lari value, success or lost, the reason, the treasury person who quoted (empty until someone quotes), the client id in its own column, and the two treasury times in minutes. A written rate is success even when a loss reason is still shown.';
+  'Every request for an analyst or an admin. Dates, both amounts, the lari value, success or lost, the reason, the treasury person who quoted (empty until someone quotes), the client id in its own column, and the two treasury times in minutes. A written rate is success even when a loss reason is still shown. An admin corrects a row with admin_correct_request. An analyst cannot change a row.';
 
 revoke all on public.analyst_deals from public, anon;
 grant select on public.analyst_deals to authenticated;

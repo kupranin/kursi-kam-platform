@@ -175,6 +175,9 @@ to postgres, service_role, authenticated;
 -- The list. Runs as the owner so an analyst can read it without being
 -- given write access to requests. The last line hides it from every
 -- other role.
+-- Create or replace cannot insert or rename a column. Drop the old list
+-- first so a second paste still works when gel_amount is already there.
+drop view if exists public.analyst_deals;
 create or replace view public.analyst_deals
 with (security_invoker = false, security_barrier = true)
 as

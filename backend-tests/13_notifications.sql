@@ -39,10 +39,10 @@ update public.requests set asked_at = now() - interval '4 minutes' where id = :n
 select private.notify_timers(); select private.notify_timers();
 select count(*) as waiting_alerts, max(payload->'message'->>'en') as en from public.notification_events where request_id = :n2 and event_type = 'request.waiting_long';
 
-\echo '--- rate about to expire: one warning to the KAM'
+\echo '--- a rate about to expire does not send an SMS (count must be 0)'
 update public.requests set rate_valid_until = now() + interval '90 seconds' where id = :n1;
 select private.notify_timers(); select private.notify_timers();
-select count(*) as expiry_warnings, max(payload->'message'->>'en') as en from public.notification_events where request_id = :n1 and event_type = 'rate.expiring';
+select count(*) as expiry_warnings from public.notification_events where request_id = :n1 and event_type = 'rate.expiring';
 
 \echo '--- the client''s transaction arrives: the KAM hears it went through, once'
 insert into ch.client_transactions values ('n-tx-1', (now() at time zone 'UTC'), (now() at time zone 'Asia/Tbilisi')::date, '405123987', 'corporate', 'conversion', 'SUCCESS', 120000, 0, 300, 300, 0);

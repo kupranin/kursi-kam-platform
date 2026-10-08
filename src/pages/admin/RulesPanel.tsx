@@ -7,7 +7,7 @@ import type { Names } from './Admin';
 
 type Form = {
   cutoff: string; validity: string; windowDays: string; tierA: string; tierB: string; deleteMin: string;
-  mfa: boolean; alertSeconds: string; expiryWarning: string; appUrl: string;
+  mfa: boolean; alertSeconds: string; appUrl: string;
 };
 
 const toForm = (r: Rules): Form => ({
@@ -19,7 +19,6 @@ const toForm = (r: Rules): Form => ({
   deleteMin: String(r.request_delete_minutes),
   mfa: r.admin_requires_mfa,
   alertSeconds: String(r.treasury_alert_seconds),
-  expiryWarning: String(r.expiry_warning_minutes),
   appUrl: r.app_url ?? '',
 });
 
@@ -55,7 +54,6 @@ export default function RulesPanel({ names }: { names: Names }) {
       request_delete_minutes: int(f.deleteMin),
       admin_requires_mfa: f.mfa,
       treasury_alert_seconds: int(f.alertSeconds),
-      expiry_warning_minutes: int(f.expiryWarning),
       app_url: f.appUrl.trim() || null,
     };
     if (Object.values(update).some((v) => typeof v === 'number' && Number.isNaN(v))) { toast('რიცხვის ველებში მთელი რიცხვები ჩაწერეთ.', 'error'); return; }
@@ -138,7 +136,6 @@ export default function RulesPanel({ names }: { names: Names }) {
         {numField('tier-b', 'პრიორიტეტი B იწყება', form.tierB, 'tierB', 'GEL')}
         {numField('delete-min', 'KAM-ს შეუძლია მოთხოვნის წაშლა', form.deleteMin, 'deleteMin', 'წუთი')}
         {numField('alert', 'გააფრთხილე სახაზინო, როცა მოთხოვნა ელოდება', form.alertSeconds, 'alertSeconds', 'წამი')}
-        {numField('expiry', 'გააფრთხილე KAM კურსის ვადამდე', form.expiryWarning, 'expiryWarning', 'წუთი')}
         <div className="field">
           <label htmlFor="app-url">პლატფორმის მისამართი</label>
           <input id="app-url" className="input" placeholder="https://kam.kursi.ge" value={form.appUrl} onChange={(e) => set({ appUrl: e.target.value })} />
