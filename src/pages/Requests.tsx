@@ -8,13 +8,15 @@ import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
 import { treasuryReason } from '../lib/requestStatus';
-import type { RequestRow, Rules } from '../lib/types';
+import { CURRENCIES, type RequestRow, type Rules } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
+import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
+const BANKS = ['TBC', 'BOG', 'Liberty'] as const;
 
 async function attachWritten(rows: RequestRow[]): Promise<RequestRow[]> {
   const ids = rows.filter((r) => r.client_reply === 'approved' && r.approved_rate != null).map((r) => r.id);
@@ -27,7 +29,7 @@ async function attachWritten(rows: RequestRow[]): Promise<RequestRow[]> {
 
 function bookedLine(r: RequestRow): string | null {
   if (r.client_reply !== 'approved' || r.approved_rate == null || !r.rate_written_at) return null;
-  return rateBooked(r.approved_rate);
+  return rateBooked(r.client_id, r.approved_rate);
 }
 
 function readAmount(text: string): { ok: boolean; value: number | null } {
@@ -91,6 +93,7 @@ export default function Requests() {
   const [sellsAmount, setSellsAmount] = useState('');
   const [getsAmount, setGetsAmount] = useState('');
   const [clientRate, setClientRate] = useState('');
+  const [bank, setBank] = useState('');
   const [note, setNote] = useState('');
   const [name, setName] = useState('');
   const [tried, setTried] = useState(false);
@@ -195,12 +198,13 @@ export default function Requests() {
   const rateSide = readRate(clientRate);
   const hasAmount = (sellsSide.value != null) || (getsSide.value != null);
   const bothBlank = sellsSide.ok && getsSide.ok && !hasAmount;
-  const currenciesOk = Boolean(sells && gets && sells !== gets);
+  const currenciesOk = sells !== gets && (CURRENCIES as readonly string[]).includes(sells) && (CURRENCIES as readonly string[]).includes(gets);
   const nameOk = name.trim().length >= 2;
 
   function onInfo(next: ClientInfo | null) {
     setInfo(next);
-    if (next?.picked && next.lastSells && next.lastGets) {
+    const known = CURRENCIES as readonly string[];
+    if (next?.picked && next.lastSells && next.lastGets && known.includes(next.lastSells) && known.includes(next.lastGets)) {
       setSells(next.lastSells);
       setGets(next.lastGets);
     }
@@ -214,7 +218,7 @@ export default function Requests() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTried(true);
-    if (!info?.valid || !hasAmount || !sellsSide.ok || !getsSide.ok || !rateSide.ok || !currenciesOk || (needsName && !nameOk)) return;
+    if (!info?.valid || !bank || !hasAmount || !sellsSide.ok || !getsSide.ok || !rateSide.ok || !currenciesOk || (needsName && !nameOk)) return;
     setBusy(true);
     try {
       await rpc('log_request', {
@@ -226,9 +230,10 @@ export default function Requests() {
         p_client_rate: rateSide.value,
         p_note: note.trim() || null,
         p_client_name: needsName ? name.trim() : null,
+        p_bank: bank,
       });
       toast(t('გაეგზავნა სახაზინოს. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
-      setRaw(''); setInfo(null); setSellsAmount(''); setGetsAmount(''); setClientRate(''); setNote(''); setName(''); setTried(false);
+      setRaw(''); setInfo(null); setSellsAmount(''); setGetsAmount(''); setClientRate(''); setBank(''); setNote(''); setName(''); setTried(false);
       load();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -325,6 +330,23 @@ export default function Requests() {
             <div style={{ flex: '1 1 230px', minWidth: 210 }}>
               <ClientField value={raw} onChange={setRaw} onInfo={onInfo} tried={tried} />
             </div>
+            <div className="field" style={{ flex: '0 1 220px', minWidth: 180 }}>
+              <label htmlFor="client-bank">{t('ბანკი, სადაც კლიენტი აგზავნის', 'Bank the client is sending to')}</label>
+              <select
+                id="client-bank"
+                className={'select' + (tried && !bank ? ' invalid' : '')}
+                value={bank}
+                required
+                aria-invalid={tried && !bank}
+                onChange={(e) => setBank(e.target.value)}
+              >
+                <option value="">{t('აირჩიეთ', 'Choose')}</option>
+                {BANKS.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <span className={'hint' + (tried && !bank ? ' error' : '')}>
+                {tried && !bank ? t('აირჩიეთ ბანკი', 'Choose a bank') : 'TBC, BOG, Liberty'}
+              </span>
+            </div>
             {needsName && (
               <div className="field" style={{ flex: '1 1 220px' }}>
                 <label htmlFor="cname">{t('კლიენტის სახელი', 'Client name')}</label>
@@ -333,6 +355,7 @@ export default function Requests() {
               </div>
             )}
           </div>
+          {info?.valid && info.id && <ClientHistory clientId={info.id} kamId={profile!.id} />}
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
               <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />
@@ -405,6 +428,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
+                {r.bank && <div className="tiny">{t('ბანკი', 'Bank')}: {r.bank}</div>}
               </div>
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
@@ -436,6 +460,7 @@ export default function Requests() {
                 {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
                 {fresh && <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>}
               </div>
+              {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
               {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
               {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
               {offerText && <CopyLine label={t('ტექსტი კლიენტისთვის', 'Text for the client')} text={offerText} />}
@@ -478,6 +503,7 @@ export default function Requests() {
             <span className="who strong">{r.client_name ?? r.client_id}</span>
             <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}</span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
+            {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
             {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
           </div>
           );
@@ -565,6 +591,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
+                {r.bank && <div className="tiny">{t('ბანკი', 'Bank')}: {r.bank}</div>}
                 {seeAll && <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>}
               </div>
               <div className="what">
@@ -573,6 +600,7 @@ export default function Requests() {
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>}
                 {clientReplyNote(r, t) && <div className="tiny muted">{clientReplyNote(r, t)}</div>}
+                {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
                 {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
                 {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
               </div>

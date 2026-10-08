@@ -76,24 +76,102 @@ as $$
   select private.sms_ready() or private.whatsapp_ready()
 $$;
 
+-- Percent-encode one application/x-www-form-urlencoded field (UTF-8).
+create or replace function private.form_encode(p_value text)
+returns text
+language plpgsql immutable set search_path = ''
+as $$
+declare
+  v_bytes bytea := convert_to(coalesce(p_value, ''), 'UTF8');
+  v_out text := '';
+  i int;
+  b int;
+begin
+  for i in 0 .. octet_length(v_bytes) - 1 loop
+    b := get_byte(v_bytes, i);
+    if b between 48 and 57
+       or b between 65 and 90
+       or b between 97 and 122
+       or b in (45, 46, 95, 126) then
+      v_out := v_out || chr(b);
+    else
+      v_out := v_out || '%' || upper(lpad(to_hex(b), 2, '0'));
+    end if;
+  end loop;
+  return v_out;
+end;
+$$;
+
+-- A GoSMS error body becomes one sentence. Null when this is not a GoSMS error.
+create or replace function private.explain_sender_error(p_content text)
+returns text
+language plpgsql immutable set search_path = ''
+as $$
+declare
+  v_code int;
+  v_msg text;
+  v_plain text;
+begin
+  if p_content is null or p_content !~ '"errorCode"' then
+    return null;
+  end if;
+  v_code := substring(p_content from '"errorCode"\s*:\s*"?([0-9]+)')::int;
+  if v_code is null then
+    return null;
+  end if;
+  v_msg := substring(p_content from '"message"\s*:\s*"([^"]*)"');
+  v_plain := case v_code
+    when 100 then 'GoSMS rejected the key (error 100).'
+    when 101 then 'GoSMS has not approved this sender name (error 101).'
+    when 102 then 'GoSMS has no balance left (error 102).'
+    when 103 then 'GoSMS rejected the fields, or the text is too long (error 103).'
+    when 105 then 'GoSMS rejected the phone number (error 105).'
+    else 'GoSMS error ' || v_code::text || '.'
+  end;
+  if v_msg is not null and v_msg <> '' then
+    return v_plain || ' ' || v_msg;
+  end if;
+  return v_plain;
+end;
+$$;
+
 -- GoSMS. The number is 995... without the plus. Georgian text is limited to 402 characters.
 -- The sender name defaults to kursi.ge when Vault has no sms_sender yet.
+-- net.http_post only accepts a JSON body and refuses any other content type, so the
+-- form is written onto pg_net's queue instead. The body is api_key, from, to, text.
 create or replace function private.sms_send(p_phone text, p_body text)
 returns bigint
 language plpgsql volatile security definer set search_path = ''
 as $$
+declare
+  v_id bigint;
+  v_form text;
 begin
-  return net.http_post(
-    url := 'https://api.gosms.ge/api/sendsms',
-    body := jsonb_build_object(
-      'api_key', private.message_secret('sms_api_key'),
-      'from', coalesce(private.message_secret('sms_sender'), 'kursi.ge'),
-      'to', ltrim(p_phone, '+'),
-      'text', left(p_body, 402)
-    ),
-    headers := jsonb_build_object('Content-Type', 'application/x-www-form-urlencoded'),
-    timeout_milliseconds := 5000
-  );
+  v_form :=
+       'api_key=' || private.form_encode(private.message_secret('sms_api_key'))
+    || '&from='   || private.form_encode(coalesce(private.message_secret('sms_sender'), 'kursi.ge'))
+    || '&to='     || private.form_encode(ltrim(p_phone, '+'))
+    || '&text='   || private.form_encode(left(coalesce(p_body, ''), 402));
+
+  insert into net.http_request_queue (method, url, headers, body, timeout_milliseconds)
+  values (
+    'POST',
+    'https://api.gosms.ge/api/sendsms',
+    jsonb_build_object('Content-Type', 'application/x-www-form-urlencoded'),
+    convert_to(v_form, 'UTF8'),
+    5000
+  )
+  returning id into v_id;
+
+  begin
+    if to_regprocedure('net.wake()') is not null then
+      perform net.wake();
+    end if;
+  exception when others then
+    null;
+  end;
+
+  return v_id;
 end;
 $$;
 
@@ -270,7 +348,12 @@ begin
            set status = 'delivered', delivered_at = now(), last_error = null
          where dl.id = d.id;
       else
-        v_error := coalesce(nullif(r.error_msg, ''), left(coalesce(r.content, ''), 300), 'The sender answered with HTTP ' || coalesce(r.status_code::text, 'nothing'));
+        v_error := coalesce(
+          private.explain_sender_error(r.content),
+          nullif(r.error_msg, ''),
+          left(nullif(r.content, ''), 300),
+          'The sender answered with HTTP ' || coalesce(r.status_code::text, 'nothing')
+        );
         update public.notification_deliveries dl
            set status = 'failed', last_error = v_error
          where dl.id = d.id;

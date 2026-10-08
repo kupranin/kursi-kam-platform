@@ -6,7 +6,10 @@ import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince,
 import { useI18n } from '../lib/i18n';
 import { treasuryReason } from '../lib/requestStatus';
 import type { QueueRow, QuoteToday, ReferenceRate } from '../lib/types';
+import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
+import ClientHistory from '../components/ClientHistory';
+import CopyLine from '../components/CopyLine';
 import { IconClock } from '../components/Icons';
 
 const DECLINE_REASONS: { value: string; label: string }[] = [
@@ -74,6 +77,7 @@ export default function RateDesk() {
   const [cards, setCards] = useState<Record<number, CardState>>({});
   const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
   const [booked, setBooked] = useState<Record<number, true>>({});
+  const [banks, setBanks] = useState<Record<number, string>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
@@ -184,6 +188,26 @@ export default function RateDesk() {
     });
   }, [load]);
   useLive(['requests'], load, 15000);
+
+  useEffect(() => {
+    const ids = Array.from(new Set([
+      ...queue.map((r) => r.request_id),
+      ...replies.map((r) => r.request_id),
+      ...extraAgreed.map((r) => r.request_id),
+      ...quotes.map((q) => q.request_id),
+    ]));
+    if (!ids.length) { setBanks({}); return; }
+    let live = true;
+    supabase.from('requests').select('id, bank').in('id', ids).then(({ data, error }) => {
+      if (!live || error || !data) return;
+      const next: Record<number, string> = {};
+      for (const row of data as { id: number; bank: string | null }[]) {
+        if (row.bank) next[row.id] = row.bank;
+      }
+      setBanks(next);
+    });
+    return () => { live = false; };
+  }, [queue, replies, extraAgreed, quotes]);
 
   const blankCard = (valid: number): CardState => ({ rate: '', valid, declining: false, confirmFar: false, tried: false });
   const card = (id: number): CardState => cards[id] ?? blankCard(defaultValid);
@@ -372,12 +396,14 @@ export default function RateDesk() {
                           </div>
                         </div>
                         <div className="small muted" style={{ marginTop: 6 }}>{r.client_name ?? 'სახელი არ არის'}, ID {r.client_id}</div>
+                        {banks[r.request_id] && <div className="small" style={{ marginTop: 4 }}>{t('ბანკი', 'Bank')}: {banks[r.request_id]}</div>}
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
                     </div>
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
                     {r.note && <p className="note-box">კომენტარი სახაზინოსთვის: {r.note}</p>}
                     {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
+                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} showKam />
 
                     {!c.declining && (
                       <>
@@ -468,6 +494,8 @@ export default function RateDesk() {
                       </div>
                     </div>
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? r.client_id}</div>
+                    {banks[r.request_id] && <div className="small">{t('ბანკი', 'Bank')}: {banks[r.request_id]}</div>}
+                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} showKam />
                     <p className="note-box">სახაზინოს კურსი: {fmtRate(r.rate)}. კლიენტს სურს {fmtRate(r.wanted_rate)}.</p>
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
                     <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
@@ -556,6 +584,7 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
+                  {banks[r.request_id] && <div className="tiny">{t('ბანკი', 'Bank')}: {banks[r.request_id]}</div>}
                 </div>
                 <div className="what">
                   <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
@@ -572,6 +601,8 @@ export default function RateDesk() {
                       </button>
                     )}
                 </div>
+                <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />
+                {r.approved_rate != null && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatHandoff(r.client_id, r.approved_rate)} />}
               </div>
             ))}
           </section>

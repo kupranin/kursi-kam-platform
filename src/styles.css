@@ -273,6 +273,14 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .copy-line-text { margin: 4px 0 0; font-weight: 500; overflow-wrap: anywhere; }
 
 .pair-board { margin-top: 14px; padding: 10px 12px; background: var(--ground); border-radius: 12px; }
+.client-history { margin-top: 14px; }
+.client-history .table { font-size: 14px; }
+.client-history .table th,
+.client-history .table td { padding-top: 8px; padding-bottom: 8px; }
+.client-history .table th:first-child,
+.client-history .table td:first-child { padding-left: 8px; }
+.client-history .table th:last-child,
+.client-history .table td:last-child { padding-right: 8px; }
 .pair-table th, .pair-table td { padding-top: 8px; padding-bottom: 8px; }
 .pair-board .table th:first-child, .pair-board .table td:first-child { padding-left: 8px; }
 .pair-board .table th:last-child, .pair-board .table td:last-child { padding-right: 8px; }

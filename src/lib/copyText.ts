@@ -5,9 +5,9 @@ export function chatHandoff(clientId: string, rate: number): string {
   return `${clientId} ${fmtRate(rate)} გთხოვთ გაუწეროთ`;
 }
 
-/** Line a KAM sends after treasury has entered the agreed rate in the core system. Georgian, always. */
-export function rateBooked(rate: number): string {
-  return `კურსი - ${fmtRate(rate)} გაწერილია, შეგიძლიათ ჩარიცხოთ`;
+/** Line a KAM sends after treasury has entered the agreed rate in the core system. Georgian, always. The client ID is the first word, so it can be copied with the line. */
+export function rateBooked(clientId: string, rate: number): string {
+  return `${clientId} კურსი - ${fmtRate(rate)} გაწერილია, შეგიძლიათ ჩარიცხოთ`;
 }
 
 /**

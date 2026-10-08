@@ -44,6 +44,7 @@ export interface RequestRow {
   client_decline_reason?: string | null;
   client_replied_at?: string | null;
   rate_written_at?: string | null;
+  bank?: string | null;
 }
 
 export interface Rules {
@@ -171,7 +172,7 @@ export interface PortfolioRow {
   transactions: number;
 }
 
-export const CURRENCIES = ['GEL', 'USD', 'EUR', 'GBP'];
+export const CURRENCIES = ['GEL', 'USD', 'EUR', 'RUB', 'CNY'];
 
 export const ROLE_NAMES: Record<Role, string> = {
   admin: 'ადმინი',
