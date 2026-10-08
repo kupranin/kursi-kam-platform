@@ -10,6 +10,7 @@ const CHOICES: { id: Role; ka: string; en: string }[] = [
   { id: 'treasury', ka: 'სახაზინო', en: 'Treasury' },
   { id: 'kam', ka: 'KAM', en: 'KAM' },
   { id: 'manager', ka: 'მენეჯერი', en: 'Manager' },
+  { id: 'analyst', ka: 'ანალიტიკოსი', en: 'Analyst' },
 ];
 
 export default function ViewSwitch({ onPage = false }: { onPage?: boolean }) {

@@ -115,6 +115,19 @@ export function monthOptions(count = 6): { value: string; label: string }[] {
   return out;
 }
 
+/** A duration in minutes, written so a person can read it. */
+export function fmtMinutes(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return '';
+  const m = Math.round(Number(n));
+  const en = getLang() === 'en';
+  if (m < 1) return en ? 'under 1 min' : '1 წუთზე ნაკლები';
+  if (m < 60) return en ? `${m} min` : `${m} წუთი`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  if (rem === 0) return en ? `${h} h` : `${h} სთ`;
+  return en ? `${h} h ${rem} min` : `${h} სთ ${rem} წთ`;
+}
+
 export function downloadCsv(filename: string, rows: (string | number | null)[][]) {
   const csv = rows
     .map((r) => r.map((v) => {

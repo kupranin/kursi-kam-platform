@@ -21,6 +21,7 @@ import MarketRates from './pages/MarketRates';
 import Chat from './pages/Chat';
 import RequestLog from './pages/RequestLog';
 import Admin from './pages/admin/Admin';
+import Analyst from './pages/Analyst';
 
 export default function App() {
   const { loading, session, profile, needsSecondFactor, recovering, signOut } = useAuth();
@@ -59,6 +60,7 @@ export default function App() {
         {can('/team') && <Route path="/team" element={<Team />} />}
         {can('/clients') && <Route path="/clients" element={<Clients />} />}
         {can('/analytics') && <Route path="/analytics" element={<Analytics />} />}
+        {can('/analysis') && <Route path="/analysis" element={<Analyst />} />}
         {can('/kpis') && <Route path="/kpis" element={<Kpis />} />}
         {can('/rates') && <Route path="/rates" element={<MarketRates />} />}
         {can('/log') && <Route path="/log" element={<RequestLog />} />}

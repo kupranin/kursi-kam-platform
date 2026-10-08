@@ -30,13 +30,16 @@ const ROLE_TEXT: Record<Role, string> = {
   treasury: 'სახაზინო კურსს იძლევა და ყველა მოთხოვნას ხედავს.',
   manager: 'მენეჯერი ყველაფერს ხედავს და არაფერს ცვლის.',
   admin: 'ადმინი ასევე მართავს ხალხს, წესებს და შეტყობინებებს.',
+  analyst: 'ანალიტიკოსი ხედავს ყველა მოთხოვნას, ლარში გადაყვანილ თანხას და სახაზინოს დროს. არაფერს ცვლის.',
 };
 const MESSAGE_GROUP: Record<Role, string> = {
   kam: 'KAM-ები',
   treasury: 'სახაზინო',
   admin: 'ადმინები',
   manager: 'მენეჯერები',
+  analyst: 'ანალიტიკოსები',
 };
+const ASSIGNABLE: Role[] = ['kam', 'treasury', 'manager', 'analyst', 'admin'];
 
 interface InviteReady {
   name: string;
@@ -264,7 +267,7 @@ export default function People() {
               {tried && !emailOk && <span className="hint error">შეიყვანეთ სამუშაო ელფოსტა</span>}</div>
             <div className="field" style={{ flex: '0 1 200px' }}><label htmlFor="inv-role">როლი</label>
               <select id="inv-role" className="select" value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value as Role })}>
-                {(['kam', 'treasury', 'manager', 'admin'] as Role[]).map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
+                {ASSIGNABLE.map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
               </select></div>
           </div>
           <div className="form-row" style={{ marginTop: 14 }}>
@@ -327,7 +330,7 @@ export default function People() {
                           const role = e.target.value as Role;
                           if (window.confirm(`${p.full_name} გახდეს ${ROLE_NAMES[role]}?`)) act({ action: 'set_role', profile_id: p.id, role }, `${p.full_name} ახლა ${ROLE_NAMES[role]}ა.`);
                         }}>
-                        {(['kam', 'treasury', 'manager', 'admin'] as Role[]).map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
+                        {ASSIGNABLE.map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
                       </select>
                     </td>
                     <td><span className={'pill ' + st.cls}>{st.text}</span></td>

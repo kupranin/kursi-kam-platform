@@ -29,6 +29,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       if (role === 'manager') return t('მენეჯერი', 'Manager');
       if (role === 'treasury') return t('სახაზინო', 'Treasury');
       if (role === 'kam') return 'KAM';
+      if (role === 'analyst') return t('ანალიტიკოსი', 'Analyst');
       return String(role);
     };
     return { lang, setLang, t, roleName };

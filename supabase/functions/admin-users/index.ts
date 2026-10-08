@@ -42,7 +42,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? APP_URL)
   .map((s) => s.trim())
   .filter(Boolean);
 
-const ROLES = ["admin", "manager", "treasury", "kam"] as const;
+const ROLES = ["admin", "manager", "treasury", "kam", "analyst"] as const;
 type Role = (typeof ROLES)[number];
 
 type Profile = {
@@ -202,6 +202,9 @@ async function queueInviteMessage(
   channels: string[],
   inviteLink: string,
 ): Promise<{ message_status: string | null; message_channels: string[] }> {
+  // Analysts do not receive desk messages. The invite stays a link to copy.
+  if (role === "analyst") return { message_status: null, message_channels: [] };
+
   const messageChannels = channels.filter((c) => c === "sms" || c === "whatsapp");
   if (!messageChannels.length || !phone) return { message_status: null, message_channels: [] };
 

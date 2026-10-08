@@ -5,6 +5,7 @@ export const HOME: Record<Role, string> = {
   treasury: '/rate-desk',
   admin: '/team',
   manager: '/team',
+  analyst: '/analysis',
 };
 
 export const PAGES: Record<Role, string[]> = {
@@ -12,6 +13,7 @@ export const PAGES: Record<Role, string[]> = {
   treasury: ['/rate-desk', '/rates', '/log', '/chat'],
   admin: ['/team', '/requests', '/rate-desk', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat', '/admin'],
   manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
+  analyst: ['/analysis', '/analytics'],
 };
 
 export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' }[]> = {
@@ -53,5 +55,9 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
     { to: '/chat', ka: 'ჩატი', en: 'Chat' },
+  ],
+  analyst: [
+    { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },
+    { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },
   ],
 };

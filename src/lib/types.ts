@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'manager' | 'treasury' | 'kam';
+export type Role = 'admin' | 'manager' | 'treasury' | 'kam' | 'analyst';
 
 export interface Profile {
   id: string;
@@ -178,6 +178,7 @@ export const ROLE_NAMES: Record<Role, string> = {
   manager: 'მენეჯერი',
   treasury: 'სახაზინო',
   kam: 'KAM',
+  analyst: 'ანალიტიკოსი',
 };
 
 export interface StaffPerson {

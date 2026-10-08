@@ -3,7 +3,7 @@ import { rpc } from '../lib/supabase';
 import { useViewAs } from '../lib/viewAs';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
-import { fmtShort, fmtWhole } from '../lib/format';
+import { fmtMinutes, fmtShort, fmtWhole, monthOptions } from '../lib/format';
 import { readTransactionFile, type UploadRow } from '../lib/transactionFile';
 
 interface MonthRow {
@@ -34,6 +34,38 @@ interface Kpis {
   top_clients: ClientRow[];
 }
 
+interface DeskTimes {
+  requests: number;
+  answered: number;
+  waiting_answer: number;
+  first_response_minutes: number | null;
+  agreed: number;
+  written: number;
+  waiting_write: number;
+  write_minutes: number | null;
+}
+
+const EMPTY_TIMES: DeskTimes = {
+  requests: 0, answered: 0, waiting_answer: 0, first_response_minutes: null,
+  agreed: 0, written: 0, waiting_write: 0, write_minutes: null,
+};
+
+function asTimes(raw: DeskTimes | null): DeskTimes {
+  if (!raw) return EMPTY_TIMES;
+  const n = (v: number | string | null) => (v == null || v === '' ? null : Number(v));
+  const c = (v: number | string | null) => Number(v ?? 0);
+  return {
+    requests: c(raw.requests),
+    answered: c(raw.answered),
+    waiting_answer: c(raw.waiting_answer),
+    first_response_minutes: n(raw.first_response_minutes),
+    agreed: c(raw.agreed),
+    written: c(raw.written),
+    waiting_write: c(raw.waiting_write),
+    write_minutes: n(raw.write_minutes),
+  };
+}
+
 const EMPTY: Kpis = {
   transactions: 0, clients: 0, turnover: 0, turnover_not_successful: 0, income: 0, successful: 0,
   by_month: [], top_clients: [],
@@ -54,9 +86,12 @@ export default function Analytics() {
   const { t } = useI18n();
   const toast = useToast();
   const isAdmin = role === 'admin';
+  const seeTransactions = role === 'admin' || role === 'manager';
   const [month, setMonth] = useState('all');
   const [months, setMonths] = useState<MonthRow[]>([]);
   const [kpis, setKpis] = useState<Kpis>(EMPTY);
+  const [times, setTimes] = useState<DeskTimes>(EMPTY_TIMES);
+  const [timesError, setTimesError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -65,17 +100,26 @@ export default function Analytics() {
   const load = useCallback(async (which: string) => {
     setLoading(true);
     setError('');
+    setTimesError('');
+    const args = which === 'all' ? {} : { p_from: which, p_to: monthEnd(which) };
     try {
-      const args = which === 'all' ? {} : { p_from: which, p_to: monthEnd(which) };
-      const data = await rpc<Kpis>('analytics_kpis', args);
-      setKpis(data ?? EMPTY);
-      if (which === 'all') setMonths(data?.by_month ?? []);
+      const data = await rpc<DeskTimes>('analytics_response_times', args);
+      setTimes(asTimes(data));
     } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
+      setTimes(EMPTY_TIMES);
+      setTimesError((err as Error).message);
     }
-  }, []);
+    if (seeTransactions) {
+      try {
+        const data = await rpc<Kpis>('analytics_kpis', args);
+        setKpis(data ?? EMPTY);
+        if (which === 'all') setMonths(data?.by_month ?? []);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    }
+    setLoading(false);
+  }, [seeTransactions]);
 
   useEffect(() => { load(month); }, [load, month]);
 
@@ -124,18 +168,47 @@ export default function Analytics() {
       <div className="page-head">
         <div>
           <h1>{t('ანალიტიკა', 'Analytics')}</h1>
-          <p>ბრუნვა და შემოსავალი, ტრანზაქციების ფაილიდან</p>
+          <p>{seeTransactions
+            ? 'ბრუნვა და შემოსავალი, ტრანზაქციების ფაილიდან. ქვემოთ სახაზინოს დროცაა.'
+            : t('სახაზინოს პასუხისა და კურსის გაწერის დრო.', 'How long treasury takes to answer, and to write the rate.')}</p>
         </div>
         <div className="row">
           <label className="sr-only" htmlFor="analytics-month">პერიოდი</label>
           <select id="analytics-month" className="select" style={{ width: 'auto' }} value={month} onChange={(e) => setMonth(e.target.value)}>
-            <option value="all">მთელი პერიოდი</option>
-            {[...months].reverse().map((m) => <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>)}
+            <option value="all">{t('მთელი პერიოდი', 'Whole period')}</option>
+            {seeTransactions
+              ? [...months].reverse().map((m) => <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>)
+              : monthOptions(18).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </div>
       </div>
 
-      {isAdmin && (
+      <section className="card" aria-labelledby="times-title">
+        <h2 id="times-title">{t('სახაზინოს დრო', 'Treasury time')}</h2>
+        <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
+          {t(
+            'პირველი პასუხი: KAM-ის მოთხოვნიდან სახაზინოს პირველ პასუხამდე. კურსის გაწერა: კლიენტის დათანხმებიდან იმ მომენტამდე, როცა სახაზინო კურსს გაწერილად მონიშნავს. თუ ჯერ არ არის გაწერილი, ეს დრო ცარიელია. ძველი ფაილის სტრიქონები აქ არ შედის.',
+            'First response: from the KAM placing the request until treasury’s first answer. Rate writing: from the client agreeing until treasury marks the rate as written. If it is not written yet, that time stays empty. Rows from the old file are not included.',
+          )}
+        </p>
+        {timesError && <p className="alert-box" role="alert">{timesError}</p>}
+        {!timesError && (
+          <div className="stats">
+            <div className="stat">
+              <div className="label">{t('პირველი პასუხი', 'First response')}</div>
+              <div className="value">{times.answered ? fmtMinutes(times.first_response_minutes) : '—'}</div>
+              <div className="small muted">{t('საშუალო. პასუხი აქვს', 'Average. Answered')} {fmtWhole(times.answered)} / {fmtWhole(times.requests)}. {t('ელოდება', 'Waiting')} {fmtWhole(times.waiting_answer)}.</div>
+            </div>
+            <div className="stat">
+              <div className="label">{t('კურსის გაწერა', 'Rate writing')}</div>
+              <div className="value">{times.written ? fmtMinutes(times.write_minutes) : '—'}</div>
+              <div className="small muted">{t('საშუალო. გაწერილია', 'Average. Written')} {fmtWhole(times.written)} / {fmtWhole(times.agreed)}. {t('ელოდება გაწერას', 'Waiting to be written')} {fmtWhole(times.waiting_write)}.</div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {seeTransactions && isAdmin && (
         <section className="card" aria-labelledby="upload-title">
           <h2 id="upload-title">ტრანზაქციების ატვირთვა</h2>
           <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
@@ -154,9 +227,9 @@ export default function Analytics() {
         </section>
       )}
 
-      {error && <p className="alert-box" role="alert">{error}</p>}
+      {seeTransactions && error && <p className="alert-box" role="alert">{error}</p>}
 
-      <div className="stats big">
+      {seeTransactions && <div className="stats big">
         <div className="stat"><div className="label">ტრანზაქციები</div><div className="value">{fmtWhole(kpis.transactions)}</div></div>
         <div className="stat"><div className="label">კლიენტები</div><div className="value">{fmtWhole(kpis.clients)}</div></div>
         <div className="stat"><div className="label">ბრუნვა</div><div className="value">GEL {fmtShort(turnover)}</div></div>
@@ -167,9 +240,9 @@ export default function Analytics() {
           <div className="small muted">GEL {fmtShort(failed)}</div>
         </div>
         <div className="stat"><div className="label">შემოსავალი GEL 1 მლნ-ზე</div><div className="value">{perMillion == null ? '—' : fmtWhole(perMillion)}</div></div>
-      </div>
+      </div>}
 
-      <section className="card flush" aria-labelledby="months-title">
+      {seeTransactions && <section className="card flush" aria-labelledby="months-title">
         <div className="card-head">
           <h2 id="months-title">{label}</h2>
         </div>
@@ -199,9 +272,9 @@ export default function Analytics() {
             </table>
           </div>
         )}
-      </section>
+      </section>}
 
-      <section className="card flush" aria-labelledby="top-title">
+      {seeTransactions && <section className="card flush" aria-labelledby="top-title">
         <div className="card-head">
           <h2 id="top-title">უდიდესი კლიენტები</h2>
           <p className="small muted">{label}</p>
@@ -229,7 +302,7 @@ export default function Analytics() {
             </table>
           </div>
         )}
-      </section>
+      </section>}
     </>
   );
 }

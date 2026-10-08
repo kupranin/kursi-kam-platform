@@ -3,7 +3,7 @@ import { useAuth } from './auth';
 import type { Role } from './types';
 
 const KEY = 'kursi-view-as';
-const VIEWS: Role[] = ['admin', 'treasury', 'kam', 'manager'];
+const VIEWS: Role[] = ['admin', 'treasury', 'kam', 'manager', 'analyst'];
 
 interface ViewAs {
   /** Screens and actions follow this role. For an admin it can differ from the database role. */
