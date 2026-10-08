@@ -4,7 +4,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { fmtMinutes, fmtShort, fmtWhole, monthOptions } from '../lib/format';
-import { readTransactionFile, type UploadRow } from '../lib/transactionFile';
+import { readTransactionFile, TransactionFileError } from '../lib/transactionFile';
 
 interface MonthRow {
   month: string;
@@ -81,6 +81,28 @@ function monthLabel(start: string): string {
   return new Date(start + 'T00:00:00Z').toLocaleDateString('ka-GE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
+function uploadError(err: unknown, t: (ka: string, en: string) => string): string {
+  if (err instanceof TransactionFileError && err.code === 'missing-tx-id') {
+    return t(
+      'ფაილს სჭირდება ტრანზაქციის ID-ის სვეტი (transaction id). ამ ფაილში ის არ არის, ამიტომ არ ჩაიტვირთა.',
+      'This file needs a transaction id column. It does not have one, so it was not loaded.',
+    );
+  }
+  if (err instanceof TransactionFileError && err.code === 'range-too-wide') {
+    return t(
+      'ფურცლის დიაპაზონი ძალიან დიდია (სვეტები XFD-მდე მიდის). შეინახეთ მხოლოდ რეალური სვეტები და სცადეთ თავიდან.',
+      'The sheet’s used range is too large (columns run out to XFD). Save only the real columns and try again.',
+    );
+  }
+  if (err instanceof RangeError) {
+    return t(
+      'ფაილი ზედმეტად დიდია და ვერ წაიკითხა. სჭირდება ტრანზაქციის ID-ის სვეტი, და ფურცლის დიაპაზონი XFD-მდე არ უნდა მიდიოდეს.',
+      'This file is too large to read. It needs a transaction id column, and the sheet range must not run out to column XFD.',
+    );
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 export default function Analytics() {
   const { role } = useViewAs();
   const { t } = useI18n();
@@ -126,30 +148,40 @@ export default function Analytics() {
   async function onFile(file: File | undefined) {
     if (!file) return;
     setUploading(true);
-    setProgress('ფაილი იკითხება…');
+    setProgress(t('ფაილი იკითხება…', 'Reading the file…'));
     try {
-      const { rows, skipped } = await readTransactionFile(file);
-      if (!rows.length) {
-        toast('ტრანზაქცია ვერ მოიძებნა. ფაილს სჭირდება transaction id, თარიღი, sender id, payment status, abs_gel და total_income.', 'error');
-        return;
-      }
       let saved = 0;
-      let skippedRows = skipped;
+      let skippedRows = 0;
       let clientsAdded = 0;
-      const size = 500;
-      for (let i = 0; i < rows.length; i += size) {
-        const batch: UploadRow[] = rows.slice(i, i + size);
-        setProgress(`ინახება ${Math.min(i + size, rows.length).toLocaleString('en-US')} / ${rows.length.toLocaleString('en-US')}…`);
+      let sentSoFar = 0;
+      const { skipped, sent } = await readTransactionFile(file, async (batch) => {
+        sentSoFar += batch.length;
+        setProgress(t('ინახება {n}…', 'Saving {n}…', { n: sentSoFar.toLocaleString('en-US') }));
         const result = await rpc<{ upserted: number; skipped: number; clients_added: number }>('import_transactions', { p_rows: batch });
         saved += result.upserted;
         skippedRows += result.skipped;
         clientsAdded += result.clients_added;
+      });
+      skippedRows += skipped;
+      if (!sent) {
+        toast(t(
+          'ტრანზაქცია ვერ მოიძებნა. ფაილს სჭირდება transaction id, თარიღი, sender id, payment status, abs_gel და total_income.',
+          'No transactions found. The file needs a transaction id, a date, sender id, payment status, abs_gel and total_income.',
+        ), 'error');
+        return;
       }
-      toast(`შეინახა ${saved.toLocaleString('en-US')} ტრანზაქცია` + (clientsAdded ? `, ${clientsAdded.toLocaleString('en-US')} ახალი კლიენტი` : '') + (skippedRows ? `. გამოტოვებულია ${skippedRows.toLocaleString('en-US')} სტრიქონი.` : '.'));
+      const savedText = saved.toLocaleString('en-US');
+      const clientText = clientsAdded
+        ? t(', {n} ახალი კლიენტი', ', {n} new clients', { n: clientsAdded.toLocaleString('en-US') })
+        : '';
+      const skipText = skippedRows
+        ? t('. გამოტოვებულია {n} სტრიქონი.', '. Skipped {n} rows.', { n: skippedRows.toLocaleString('en-US') })
+        : '.';
+      toast(t('შეინახა {n} ტრანზაქცია', 'Saved {n} transactions', { n: savedText }) + clientText + skipText);
       if (month === 'all') await load('all');
       else setMonth('all');
     } catch (err) {
-      toast((err as Error).message, 'error');
+      toast(uploadError(err, t), 'error');
     } finally {
       setUploading(false);
       setProgress('');
@@ -212,7 +244,10 @@ export default function Analytics() {
         <section className="card" aria-labelledby="upload-title">
           <h2 id="upload-title">ტრანზაქციების ატვირთვა</h2>
           <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
-            Excel ან CSV, ბიზნეს ტრანზაქციების ექსპორტის სვეტებით: transaction id, created at, sender id, payment status, abs_gel და total_income. იგივე ფაილის ხელახალი ატვირთვა ამ სტრიქონებს ანახლებს.
+            {t(
+              'Excel ან CSV. აუცილებელია transaction id — მის გარეშე ფაილი არ ჩაიტვირთება. თარიღი: created at ან created date. ასევე sender id, payment status, abs_gel და total_income. იგივე ფაილის ხელახალი ატვირთვა ამ სტრიქონებს ანახლებს.',
+              'Excel or CSV. A transaction id column is required — without it, the file is not loaded. Date: created at or created date. Also sender id, payment status, abs_gel and total_income. Uploading the same file again updates those rows.',
+            )}
           </p>
           <label className={'btn btn-primary' + (uploading ? ' disabled' : '')}>
             {uploading ? progress || 'იტვირთება…' : 'ფაილის არჩევა'}

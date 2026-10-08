@@ -119,6 +119,7 @@ textarea.input { padding: 10px 12px; min-height: 80px; }
 .input.invalid, .select.invalid { border-color: var(--error); }
 .input.attention { border-color: var(--lavender); }
 .input.from-file:read-only { background: var(--ground); }
+.input.cell { width: 9.5rem; min-height: 36px; padding: 0 8px; font-size: 14px; text-align: right; }
 .hint { font-size: 13px; color: var(--muted); }
 .hint.error { color: var(--error); }
 .hint.ok { color: var(--ok); }
@@ -136,6 +137,7 @@ textarea.input { padding: 10px 12px; min-height: 80px; }
 .seg button { min-width: 58px; height: 48px; padding: 0 10px; border-radius: var(--radius); border: 1.5px solid #C9B5DA; background: #fff; color: var(--aubergine-deep); font-weight: 500; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--aubergine); border-color: var(--aubergine); color: #fff; }
 .seg button:disabled { background: var(--ground); color: #9C8FA2; border-color: #EDE5F2; cursor: not-allowed; }
+.seg.static button { pointer-events: none; cursor: default; }
 .seg.dark button[aria-pressed="true"] { background: var(--aubergine-deep); border-color: var(--aubergine-deep); }
 
 /* chips */
@@ -275,7 +277,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 
 .pair-board { margin-top: 14px; padding: 10px 12px; background: var(--ground); border-radius: 12px; }
 .client-history { margin-top: 14px; }
+.client-history .table-wrap { max-height: min(480px, 60vh); overflow: auto; }
 .client-history .table { font-size: 14px; }
+.client-history .table th { position: sticky; top: 0; background: #fff; z-index: 1; }
 .client-history .table th,
 .client-history .table td { padding-top: 8px; padding-bottom: 8px; }
 .client-history .table th:first-child,

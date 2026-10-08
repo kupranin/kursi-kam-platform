@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
-import { fmtDay, fmtRate, fmtTime, sideAmount } from '../lib/format';
+import { fmtDay, fmtRate, fmtTime, fmtWhole, sideAmount } from '../lib/format';
 import { dealPair, latestQuotesForPair, type RateSnapshot } from '../lib/rateGrid';
 import { IconCheck } from './Icons';
 
@@ -14,38 +14,22 @@ interface HistRow {
   amount: number | null;
   gets_amount: number | null;
   rate: number | null;
-  approved_rate: number | null;
-  client_reply: string | null;
   outcome: string | null;
-  went_through: boolean | null;
   kam_name: string | null;
+  bank: string | null;
+  total_count: number | null;
 }
 
 interface Props {
   clientId: string;
-  /** Leave this request out and show the five before it. */
+  /** Leave this open desk request out of the six-month list. */
   excludeId?: number;
-  /** Set on the KAM form so an admin preview still shows only that KAM. */
-  kamId?: string;
-  /** Treasury sees deals from every KAM, so the name is on the row. */
-  showKam?: boolean;
 }
-
-const COLS = 'id, request_date, requested_at, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, client_reply, outcome, went_through, kam_name';
 
 function num(value: number | string | null | undefined): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function givenRate(row: HistRow): number | null {
-  if (row.client_reply === 'approved') {
-    const approved = num(row.approved_rate);
-    if (approved != null && approved > 0) return approved;
-  }
-  const quoted = num(row.rate);
-  return quoted != null && quoted > 0 ? quoted : null;
 }
 
 function fmtDelta(given: number, standard: number): string {
@@ -100,7 +84,7 @@ function standardSide(sells: string, gets: string, snaps: RateSnapshot[]): { sid
   return { side, rate };
 }
 
-export default function ClientHistory({ clientId, excludeId, kamId, showKam }: Props) {
+export default function ClientHistory({ clientId, excludeId }: Props) {
   const { t } = useI18n();
   const [rows, setRows] = useState<HistRow[]>([]);
   const [snaps, setSnaps] = useState<RateSnapshot[]>([]);
@@ -115,20 +99,10 @@ export default function ClientHistory({ clientId, excludeId, kamId, showKam }: P
     setFailed(false);
     (async () => {
       try {
-        let before: string | null = null;
-        if (excludeId != null) {
-          const { data } = await supabase.from('request_outcomes').select('requested_at').eq('id', excludeId).maybeSingle();
-          before = (data as { requested_at?: string } | null)?.requested_at ?? null;
-        }
-        if (my !== seq.current) return;
-        let q = supabase.from('request_outcomes').select(COLS).eq('client_id', clientId);
-        if (kamId) q = q.eq('kam_id', kamId);
-        if (before) q = q.lte('requested_at', before).neq('id', excludeId!);
-        else if (excludeId != null) q = q.neq('id', excludeId);
-        const { data, error } = await q
-          .order('requested_at', { ascending: false })
-          .order('id', { ascending: false })
-          .limit(5);
+        const { data, error } = await supabase.rpc('client_request_history', {
+          p_client_id: clientId,
+          p_exclude_id: excludeId ?? null,
+        });
         if (my !== seq.current) return;
         if (error) {
           setRows([]);
@@ -137,7 +111,14 @@ export default function ClientHistory({ clientId, excludeId, kamId, showKam }: P
           setLoaded(true);
           return;
         }
-        const list = (data ?? []) as HistRow[];
+        const list = ((data ?? []) as HistRow[]).map((row) => ({
+          ...row,
+          id: Number(row.id),
+          amount: num(row.amount),
+          gets_amount: num(row.gets_amount),
+          rate: num(row.rate),
+          total_count: num(row.total_count),
+        }));
         const shots = await loadKursi(list);
         if (my !== seq.current) return;
         setRows(list);
@@ -152,22 +133,24 @@ export default function ClientHistory({ clientId, excludeId, kamId, showKam }: P
         setLoaded(true);
       }
     })();
-  }, [clientId, excludeId, kamId]);
+  }, [clientId, excludeId]);
 
-  const title = showKam
-    ? t('ბოლო მოთხოვნები ამ კლიენტთან', 'Recent requests for this client')
-    : t('თქვენი ბოლო მოთხოვნები ამ კლიენტთან', 'Your recent requests with this client');
+  const total = rows.length ? (rows[0].total_count ?? rows.length) : 0;
+  const countLine = rows.length < total
+    ? t('ბოლო 6 თვე · ყველა KAM · ნაჩვენებია {shown} {total}-დან', 'Last 6 months · every KAM · showing {shown} of {total}', { shown: fmtWhole(rows.length), total: fmtWhole(total) })
+    : t('ბოლო 6 თვე · ყველა KAM · {count} მოთხოვნა', 'Last 6 months · every KAM · {count} requests', { count: fmtWhole(total) });
 
   return (
     <section className="client-history" aria-labelledby={titleId}>
-      <div className="small strong" id={titleId}>{title}</div>
+      <div className="small strong" id={titleId}>{t('ამ კლიენტის მოთხოვნები ბოლო 6 თვეში', 'This client\'s requests in the last 6 months')}</div>
       {!loaded && <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('იტვირთება…', 'Loading…')}</p>}
       {loaded && failed && <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('ისტორია ჯერ არ იტვირთება.', 'History is not loading yet.')}</p>}
       {loaded && !failed && !rows.length && (
-        <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('ამ კლიენტთან წინა მოთხოვნა არ არის.', 'No earlier request for this client.')}</p>
+        <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('ბოლო 6 თვეში ამ კლიენტთან მოთხოვნა არ არის.', 'No request for this client in the last 6 months.')}</p>
       )}
       {loaded && !failed && rows.length > 0 && (
         <>
+          <p className="tiny muted" style={{ margin: '2px 0 0' }}>{countLine}</p>
           <p className="tiny muted" style={{ margin: '2px 0 6px' }}>
             {t('სტანდარტი Kursi-ის ბოლო შენახული ყიდვა ან გაყიდვაა. შენახული კურსის გარეშე შედარება ცარიელია.', 'Standard is the latest saved Kursi buy or sell. With no saved rate, the comparison stays blank.')}
           </p>
@@ -176,20 +159,22 @@ export default function ClientHistory({ clientId, excludeId, kamId, showKam }: P
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
+                  <th>KAM</th>
                   <th>{t('ყიდის', 'Sells')}</th>
                   <th>{t('იღებს', 'Gets')}</th>
                   <th className="num">{t('კურსი', 'Rate')}</th>
                   <th className="num">{t('სტანდარტი', 'Standard')}</th>
+                  <th>{t('ბანკი', 'Bank')}</th>
                   <th>{t('შედეგი', 'Outcome')}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const rate = givenRate(row);
+                  const rate = num(row.rate);
                   const sells = row.sells_currency ?? '';
                   const gets = row.gets_currency ?? '';
                   const standard = rate != null && sells && gets ? standardSide(sells, gets, snaps) : null;
-                  const went = row.went_through || row.outcome === 'went_through';
+                  const went = row.outcome === 'went_through';
                   const missed = row.outcome === 'did_not_go_through';
                   const pill = went
                     ? { label: t('გავიდა', 'Went through'), cls: 'pill-ok' }
@@ -202,18 +187,11 @@ export default function ClientHistory({ clientId, excludeId, kamId, showKam }: P
                       <td>
                         <div className="strong">{fmtDay(row.request_date)}</div>
                         <div className="tiny muted">{fmtTime(row.requested_at)}</div>
-                        {showKam && row.kam_name && <div className="tiny muted">{row.kam_name}</div>}
                       </td>
+                      <td>{row.kam_name ?? t('KAM არ არის', 'No KAM')}</td>
                       <td>{sideAmount(row.sells_currency, num(row.amount))}</td>
                       <td>{sideAmount(row.gets_currency, num(row.gets_amount))}</td>
-                      <td className="num">
-                        {rate != null && (
-                          <>
-                            <div className="strong">{fmtRate(rate)}</div>
-                            {row.client_reply === 'approved' && <div className="tiny muted">{t('დამტკიცებული', 'Approved')}</div>}
-                          </>
-                        )}
-                      </td>
+                      <td className="num">{rate != null && <div className="strong">{fmtRate(rate)}</div>}</td>
                       <td className="num">
                         {standard && rate != null && (
                           <>
@@ -222,6 +200,7 @@ export default function ClientHistory({ clientId, excludeId, kamId, showKam }: P
                           </>
                         )}
                       </td>
+                      <td>{row.bank ?? ''}</td>
                       <td><span className={'pill ' + pill.cls}>{pill.cls === 'pill-ok' && <IconCheck />}{pill.label}</span></td>
                     </tr>
                   );

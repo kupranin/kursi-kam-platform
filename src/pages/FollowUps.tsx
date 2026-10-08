@@ -111,7 +111,7 @@ export default function FollowUps() {
         <div className="card-head">
           <div>
             <h2 id="ask-title" style={{ fontSize: 22 }}>{t('რატომ არ გავიდა ეს მოთხოვნები?', 'Why did these requests not go through?')}</h2>
-            <p className="small" style={{ color: 'var(--ink-2)' }}>ბოლო 7 დღის მოთხოვნები, შესაბამისი ტრანზაქციის გარეშე.{canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}</p>
+            <p className="small" style={{ color: 'var(--ink-2)' }}>ბოლო 7 დღის მოთხოვნები, რომლებიც არ გავიდა. გაწერილი კურსი ამ სიაში არ რჩება.{canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}</p>
           </div>
           {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'ყველას პასუხი გაეცა. გმადლობთ.' : left + ' დარჩა'}</span>}
         </div>
@@ -160,7 +160,7 @@ export default function FollowUps() {
       <div className="page-head" style={{ marginTop: 8 }}>
         <div style={{ maxWidth: 640 }}>
           <h2 style={{ fontSize: 22 }}>{t('დასაბრუნებელი კლიენტები', 'Clients to win back')}</h2>
-          <p className="small" style={{ fontSize: 15 }}>კურსი ითხოვეს, შემდეგ გაჩერდნენ, წარმატებული ტრანზაქციის გარეშე. დაიწყეთ პრიორიტეტი A-დან.</p>
+          <p className="small" style={{ fontSize: 15 }}>კურსი ითხოვეს, შემდეგ გაჩერდნენ, გაწერილი კურსის და წარმატებული ტრანზაქციის გარეშე. დაიწყეთ პრიორიტეტი A-დან.</p>
         </div>
         {book.length > 0 && (
           <div style={{ minWidth: 240 }}>
@@ -212,7 +212,7 @@ export default function FollowUps() {
           </div>
         )}
       </section>
-      <p className="small muted" style={{ margin: 0 }}>პრიორიტეტი A ნიშნავს ყველაზე დიდ წარსულ ბრუნვას ან მოთხოვნის ზომას, C ყველაზე პატარას. კლიენტი ამ სიას თავისით ტოვებს, როცა წარმატებული ტრანზაქცია მოდის.</p>
+      <p className="small muted" style={{ margin: 0 }}>პრიორიტეტი A ნიშნავს ყველაზე დიდ წარსულ ბრუნვას ან მოთხოვნის ზომას, C ყველაზე პატარას. კლიენტი ამ სიას თავისით ტოვებს, როცა კურსი გაწერილია ან წარმატებული ტრანზაქცია მოდის.</p>
     </>
   );
 }

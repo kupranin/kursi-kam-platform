@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { rpc, supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
-import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, monthOptions, todayTbilisi } from '../lib/format';
+import { useViewAs } from '../lib/viewAs';
+import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, monthOptions, parseRate, todayTbilisi } from '../lib/format';
 
 type Status = 'success' | 'lost' | 'open';
 type StatusFilter = 'all' | Status;
@@ -19,6 +20,7 @@ interface Deal {
   gets_amount: number | null;
   rate: number | null;
   amount_gel: number | null;
+  gel_amount: number | null;
   status: Status;
   loss_reason: string | null;
   first_response_minutes: number | null;
@@ -40,6 +42,18 @@ function num(value: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function draftText(value: number | null): string {
+  return value == null ? '' : String(value);
+}
+
+interface Draft {
+  sell: string;
+  gets: string;
+  rate: string;
+  gel: string;
+  gelTouched: boolean;
+}
+
 function asDeal(row: Deal): Deal {
   return {
     ...row,
@@ -47,6 +61,7 @@ function asDeal(row: Deal): Deal {
     gets_amount: num(row.gets_amount),
     rate: num(row.rate),
     amount_gel: num(row.amount_gel),
+    gel_amount: num(row.gel_amount),
     first_response_minutes: num(row.first_response_minutes),
     rate_write_minutes: num(row.rate_write_minutes),
   };
@@ -55,6 +70,8 @@ function asDeal(row: Deal): Deal {
 export default function Analyst() {
   const { t } = useI18n();
   const toast = useToast();
+  const { role, realRole } = useViewAs();
+  const canEdit = realRole === 'admin' && role === 'admin';
   const [status, setStatus] = useState<StatusFilter>('all');
   const [month, setMonth] = useState('all');
   const [rows, setRows] = useState<Deal[]>([]);
@@ -62,6 +79,11 @@ export default function Analyst() {
   const [more, setMore] = useState(false);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Draft>({ sell: '', gets: '', rate: '', gel: '', gelTouched: false });
+  const [tried, setTried] = useState(false);
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const months = monthOptions(18);
 
   const from = month === 'all' ? null : month;
@@ -109,12 +131,54 @@ export default function Analyst() {
       setLoaded(true);
     })();
     return () => { gone = true; };
-  }, [status, from, to]);
+  }, [status, from, to, reloadKey]);
 
   function statusText(value: Status): string {
     if (value === 'success') return t('წარმატებული', 'Success');
     if (value === 'lost') return t('დაკარგული', 'Lost');
     return t('ღია', 'Open');
+  }
+
+  function startEdit(r: Deal) {
+    setTried(false);
+    setEditing(r.id);
+    setDraft({
+      sell: draftText(r.sell_amount),
+      gets: draftText(r.gets_amount),
+      rate: r.rate != null ? fmtRate(r.rate) : '',
+      gel: draftText(r.amount_gel),
+      gelTouched: false,
+    });
+  }
+
+  async function saveRow(r: Deal) {
+    const sell = parseRate(draft.sell);
+    const gets = parseRate(draft.gets);
+    const rate = parseRate(draft.rate);
+    const gel = parseRate(draft.gel);
+    if (!sell.ok || !gets.ok || !rate.ok || !gel.ok) {
+      setTried(true);
+      toast(t('ჩაწერეთ დადებითი რიცხვი, ან დატოვეთ ცარიელი.', 'Enter a positive number, or leave the field empty.'), 'error');
+      return;
+    }
+    const gelAmount = draft.gelTouched ? gel.value : (r.gel_amount != null ? r.gel_amount : null);
+    setSavingId(r.id);
+    try {
+      await rpc('admin_correct_request', {
+        p_request_id: r.id,
+        p_sell_amount: sell.value,
+        p_gets_amount: gets.value,
+        p_rate: rate.value,
+        p_gel_amount: gelAmount,
+      });
+      setEditing(null);
+      setReloadKey((n) => n + 1);
+      toast(t('შენახულია.', 'Saved.'));
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setSavingId(null);
+    }
   }
 
   async function download() {
@@ -170,7 +234,7 @@ export default function Analyst() {
           r.quoted_by_name ?? '',
           r.amount_gel,
           statusText(r.status),
-          r.status === 'lost' ? r.loss_reason : '',
+          r.loss_reason ?? '',
         ]),
       ]);
     } catch (err) {
@@ -217,9 +281,10 @@ export default function Analyst() {
 
       <p className="small" style={{ color: 'var(--ink-2)', marginTop: 8 }}>
         {t(
-          'ლარი ითვლება, როცა ერთი მხარე GEL-ია. კურსი არის ლარი ერთ უცხოურ ერთეულზე. ჩამოტვირთვა იღებს ამ ფილტრის ყველა სტრიქონს.',
-          'Lari is calculated when one side is GEL. The rate is lari per 1 foreign unit. Download includes every row in this filter.',
+          'GEL თანხა, როცა შევსებულია, ლარის ციფრია. რუბლზე 1-ზე ნაკლები კურსი ლარია ერთ რუბლზე. რუბლის კურსი 1 ან მეტი ლარი არ არის, ამიტომ ლარი ცარიელი რჩება. ჩამოტვირთვა იღებს ამ ფილტრის ყველა სტრიქონს.',
+          'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. Download includes every row in this filter.',
         )}
+        {canEdit && <> {t('ადმინს შეუძლია კურსის და თანხების გასწორება.', 'An admin can correct the rate and the amounts.')}</>}
       </p>
 
       {error && <p className="alert-box" role="alert">{error}</p>}
@@ -229,7 +294,7 @@ export default function Analyst() {
         {loaded && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: 1520 }}>
+            <table className="table" style={{ minWidth: canEdit ? 1760 : 1520 }}>
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
@@ -247,10 +312,17 @@ export default function Analyst() {
                   <th className="num">{t('თანხა GEL', 'Amount GEL')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
+                  {canEdit && <th>{t('შესწორება', 'Edit')}</th>}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const open = canEdit && editing === r.id;
+                  const sellP = open ? parseRate(draft.sell) : null;
+                  const getsP = open ? parseRate(draft.gets) : null;
+                  const rateP = open ? parseRate(draft.rate) : null;
+                  const gelP = open ? parseRate(draft.gel) : null;
+                  return (
                   <tr key={r.id}>
                     <td className="nowrap">{r.request_date}</td>
                     <td className="num">{fmtMinutes(r.first_response_minutes)}</td>
@@ -259,20 +331,51 @@ export default function Analyst() {
                     <td className="strong">{r.client_name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</td>
                     <td className="nowrap">{r.client_id}</td>
                     <td>{r.sells_currency}</td>
-                    <td className="num">{fmtAmount(r.sell_amount)}</td>
+                    <td className="num">
+                      {open ? (
+                        <input className={'input cell' + (tried && sellP && !sellP.ok ? ' invalid' : '')} inputMode="decimal" aria-label={t('მოთხოვნილი თანხა', 'Amount asked')} value={draft.sell} onChange={(e) => setDraft({ ...draft, sell: e.target.value })} />
+                      ) : fmtAmount(r.sell_amount)}
+                    </td>
                     <td>{r.gets_currency}</td>
-                    <td className="num">{fmtAmount(r.gets_amount)}</td>
-                    <td className="num">{r.rate != null ? fmtRate(r.rate) : ''}</td>
+                    <td className="num">
+                      {open ? (
+                        <input className={'input cell' + (tried && getsP && !getsP.ok ? ' invalid' : '')} inputMode="decimal" aria-label={t('მისაღები თანხა', 'Amount to receive')} value={draft.gets} onChange={(e) => setDraft({ ...draft, gets: e.target.value })} />
+                      ) : fmtAmount(r.gets_amount)}
+                    </td>
+                    <td className="num">
+                      {open ? (
+                        <input className={'input cell' + (tried && rateP && !rateP.ok ? ' invalid' : '')} inputMode="decimal" aria-label={t('კურსი', 'Rate')} value={draft.rate} onChange={(e) => setDraft({ ...draft, rate: e.target.value })} />
+                      ) : (r.rate != null ? fmtRate(r.rate) : '')}
+                    </td>
                     <td>{r.quoted_by_name ?? ''}</td>
-                    <td className="num">{fmtAmount(r.amount_gel)}</td>
+                    <td className="num">
+                      {open ? (
+                        <input className={'input cell' + (tried && gelP && !gelP.ok ? ' invalid' : '')} inputMode="decimal" aria-label={t('თანხა GEL', 'Amount GEL')} value={draft.gel} onChange={(e) => setDraft({ ...draft, gel: e.target.value, gelTouched: true })} />
+                      ) : fmtAmount(r.amount_gel)}
+                    </td>
                     <td>
                       <span className={'pill ' + (r.status === 'success' ? 'pill-ok' : r.status === 'lost' ? 'pill-alert' : 'pill-wait')}>
                         {statusText(r.status)}
                       </span>
                     </td>
-                    <td>{r.status === 'lost' ? r.loss_reason : ''}</td>
+                    <td>{r.loss_reason ?? ''}</td>
+                    {canEdit && (
+                      <td className="nowrap">
+                        {open ? (
+                          <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                            <button type="button" className="btn btn-primary" disabled={savingId === r.id} onClick={() => saveRow(r)}>
+                              {savingId === r.id ? t('ინახება…', 'Saving…') : t('შენახვა', 'Save')}
+                            </button>
+                            <button type="button" className="btn" disabled={savingId === r.id} onClick={() => setEditing(null)}>{t('გაუქმება', 'Cancel')}</button>
+                          </div>
+                        ) : (
+                          <button type="button" className="btn" onClick={() => startEdit(r)}>{t('შესწორება', 'Edit')}</button>
+                        )}
+                      </td>
+                    )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -246,6 +246,8 @@ export default function Requests() {
     if (!info?.ready || !info.name || chosenBanks.length < 1 || !hasAmount || !sellsSide.ok || !getsSide.ok || !rateSide.ok || !currenciesOk) return;
     setBusy(true);
     try {
+      // Fresh array in TBC, BOG, Liberty order. Only BOG is ['BOG'], never the string "BOG".
+      const pBank = BANKS.filter((code) => chosenBanks.includes(code));
       await rpc('log_request', {
         p_client_id: info.id,
         p_sells_currency: sells,
@@ -255,7 +257,7 @@ export default function Requests() {
         p_client_rate: rateSide.value,
         p_note: note.trim() || null,
         p_client_name: info.nameFromFile ? null : info.name,
-        p_bank: chosenBanks,
+        p_bank: pBank,
       });
       toast(t('გაეგზავნა სახაზინოს. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
       setInfo(null);
@@ -367,29 +369,28 @@ export default function Requests() {
             <ClientField key={clientForm} tried={tried} onInfo={onInfo} />
             <div className="field" style={{ flex: '1 1 280px', minWidth: 220 }}>
               <span className="label" id="client-banks-label">{t('ბანკი, სადაც კლიენტი აგზავნის', 'Bank the client is sending to')}</span>
-              <div className="row" role="group" aria-labelledby="client-banks-label" aria-invalid={tried && chosenBanks.length < 1}>
+              <div className="seg" role="group" aria-labelledby="client-banks-label" aria-invalid={tried && chosenBanks.length < 1}>
                 {BANKS.map((code) => (
-                  <label key={code} className="checkbox" htmlFor={'client-bank-' + code}>
-                    <input
-                      id={'client-bank-' + code}
-                      type="checkbox"
-                      checked={chosenBanks.includes(code)}
-                      onChange={() => toggleBank(code)}
-                    />
+                  <button
+                    key={code}
+                    type="button"
+                    aria-pressed={chosenBanks.includes(code)}
+                    onClick={() => toggleBank(code)}
+                  >
                     {code}
-                  </label>
+                  </button>
                 ))}
               </div>
               <span className={'hint' + (tried && chosenBanks.length < 1 ? ' error' : '')}>
                 {tried && chosenBanks.length < 1
                   ? t('აირჩიეთ ერთი ბანკი მაინც', 'Choose at least one bank')
                   : banksFromClient
-                    ? t('შენახული ბანკები ჩანს. ამ გარიგებისთვის შეგიძლიათ შეცვალოთ. სამივე ერთადაც შეიძლება.', 'Saved banks are checked. You can change them for this deal. All three together is allowed.')
-                    : t('მონიშნეთ TBC, BOG, Liberty — ერთი, ორი ან სამივე.', 'Check TBC, BOG, Liberty — one, two, or all three.')}
+                    ? t('შენახული ბანკები ჩანს. ამ გარიგებისთვის შეგიძლიათ შეცვალოთ. სამივე ერთადაც შეიძლება.', 'Saved banks are on. You can change them for this deal. All three together is allowed.')
+                    : t('აირჩიეთ TBC, BOG, Liberty — ერთი, ორი ან სამივე.', 'Choose TBC, BOG, Liberty — one, two, or all three.')}
               </span>
             </div>
           </div>
-          {info?.valid && info.id && <ClientHistory clientId={info.id} kamId={profile!.id} />}
+          {info?.valid && info.id && <ClientHistory clientId={info.id} />}
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
               <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />
@@ -435,7 +436,7 @@ export default function Requests() {
       {isKam && <section className="card flush" aria-labelledby="open-title">
         <div className="card-head">
           <h2 id="open-title" style={{ fontSize: 22 }}>{t('ღია მოთხოვნები', 'Open requests')}</h2>
-          <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. მოთხოვნა თავისით იხურება, როცა კლიენტის ტრანზაქცია მოდის.', 'Treasury’s rate appears here. The request closes itself when the client’s transaction arrives.')}</span>
+          <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. მოთხოვნა თავისით იხურება, როცა კურსი გაწერილია ან კლიენტის ტრანზაქცია მოდის.', 'Treasury’s rate appears here. The request closes itself when the rate is written, or when the client’s transaction arrives.')}</span>
         </div>
         {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
         {open.map((r) => {

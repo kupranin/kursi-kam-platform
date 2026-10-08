@@ -5,7 +5,7 @@ import { useLive, useTick } from '../lib/useLive';
 import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { treasuryReason } from '../lib/requestStatus';
-import { formatBanks, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
+import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import ClientHistory from '../components/ClientHistory';
@@ -20,6 +20,24 @@ const DECLINE_REASONS: { value: string; label: string }[] = [
 
 function declineLabel(reason: string, lang: 'ka' | 'en'): string {
   return treasuryReason(reason, lang) || DECLINE_REASONS.find((r) => r.value === reason)?.label || reason;
+}
+
+/** Same TBC / BOG / Liberty buttons as the request form. Pressed ones are the deal. */
+function DeskBanks({ codes, label }: { codes: string[] | undefined; label: string }) {
+  const picked = bankList(codes);
+  if (!picked.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div className="tiny muted" style={{ marginBottom: 6 }}>{label}</div>
+      <div className="seg static" role="group" aria-label={label}>
+        {picked.map((code) => (
+          <button key={code} type="button" aria-pressed="true" tabIndex={-1}>
+            {code}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 const FAR_PCT = 3;
 
@@ -77,7 +95,7 @@ export default function RateDesk() {
   const [cards, setCards] = useState<Record<number, CardState>>({});
   const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
   const [booked, setBooked] = useState<Record<number, true>>({});
-  const [banks, setBanks] = useState<Record<number, string>>({});
+  const [banks, setBanks] = useState<Record<number, string[]>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
@@ -204,10 +222,11 @@ export default function RateDesk() {
         ? await supabase.from('requests').select('id, bank').in('id', ids)
         : withSet;
       if (!live || res.error || !res.data) return;
-      const next: Record<number, string> = {};
+      const next: Record<number, string[]> = {};
       for (const row of res.data as { id: number; bank: string | null; banks?: string[] | string | null }[]) {
-        const label = formatBanks(row.banks) || formatBanks(row.bank);
-        if (label) next[row.id] = label;
+        const fromSet = bankList(row.banks);
+        const picked = fromSet.length ? fromSet : bankList(row.bank);
+        if (picked.length) next[row.id] = picked;
       }
       setBanks(next);
     })();
@@ -401,14 +420,14 @@ export default function RateDesk() {
                           </div>
                         </div>
                         <div className="small muted" style={{ marginTop: 6 }}>{r.client_name ?? 'სახელი არ არის'}, ID {r.client_id}</div>
-                        {banks[r.request_id] && <div className="small" style={{ marginTop: 4 }}>{t('ბანკი', 'Bank')}: {banks[r.request_id]}</div>}
+                        <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
                     </div>
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
                     {r.note && <p className="note-box">კომენტარი სახაზინოსთვის: {r.note}</p>}
                     {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
-                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} showKam />
+                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
 
                     {!c.declining && (
                       <>
@@ -499,8 +518,8 @@ export default function RateDesk() {
                       </div>
                     </div>
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? r.client_id}</div>
-                    {banks[r.request_id] && <div className="small">{t('ბანკი', 'Bank')}: {banks[r.request_id]}</div>}
-                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} showKam />
+                    <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
+                    <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
                     <p className="note-box">სახაზინოს კურსი: {fmtRate(r.rate)}. კლიენტს სურს {fmtRate(r.wanted_rate)}.</p>
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
                     <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
@@ -568,6 +587,7 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
+                  <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
                   <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
@@ -589,7 +609,7 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
-                  {banks[r.request_id] && <div className="tiny">{t('ბანკი', 'Bank')}: {banks[r.request_id]}</div>}
+                  <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
                   <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
@@ -622,6 +642,7 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
+                  <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
                 <div className="what">
                   <div>კლიენტი ყიდის {sideAmount(r.sells_currency, r.amount)}</div>
@@ -635,7 +656,7 @@ export default function RateDesk() {
           <section className="card flush" aria-labelledby="quotes-title">
             <div className="card-head">
               <h2 id="quotes-title">დღევანდელი კურსები</h2>
-              <span className="small muted">კურსზე „გავიდა“ ჩნდება, როცა კლიენტის ტრანზაქცია მოდის</span>
+              <span className="small muted">კურსზე „გავიდა“ ჩნდება, როცა კურსი გაწერილია ან კლიენტის ტრანზაქცია მოდის</span>
             </div>
             {loaded && !quotes.length && <p className="empty">დღეს კურსი ჯერ არ გაცემულა.</p>}
             {quotes.length > 0 && (
@@ -651,6 +672,7 @@ export default function RateDesk() {
                           <td>
                             <div>კლიენტი ყიდის {sideAmount(q.sells_currency, q.amount)}</div>
                             <div>კლიენტი იღებს {sideAmount(q.gets_currency, q.gets_amount)}</div>
+                            <DeskBanks codes={banks[q.request_id]} label={t('ბანკი', 'Bank')} />
                             {q.client_rate != null && <div className="tiny muted">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(q.client_rate)}</div>}
                             {q.note && <div className="tiny muted">კომენტარი სახაზინოსთვის: {q.note}</div>}
                             {q.loss_reason_note && <div className="tiny muted">სხვა მიზეზი: {q.loss_reason_note}</div>}
