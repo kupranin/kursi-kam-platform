@@ -18,6 +18,8 @@ export interface UploadRow {
   sells_currency: string | null;
   /** File column currency_to_send. */
   gets_currency: string | null;
+  /** Clock time HH:MM:SS from Create time. Null when the file has only a date. */
+  tx_clock: string | null;
 }
 
 export type UploadMode = 'tx-id' | 'amount';
@@ -27,13 +29,15 @@ const SKIP_OPS = new Set(['position-close-in-bank', 'fastoo', 'bitnet', 'unipay'
 /** Server import_transactions rejects lists longer than this. */
 const BATCH_SIZE = 1000;
 
-/** Columns we will actually read. Excel's last column is XFD (16384). */
-const MAX_SHEET_COLUMNS = 64;
+/** Columns we will actually read. The business export has about 80. Excel's last column is XFD (16384). */
+const MAX_SHEET_COLUMNS = 96;
 const TALL_SHEET_ROWS = 100_000;
 const EMPTY_ROW_STREAK = 5_000;
 
 const TX_ID_HEADERS = ['transaction_id', 'transaction id', 'tx_id', 'tx id', 'id'];
 const DATE_HEADERS = ['created at', 'created_at', 'date', 'tx_date', 'created_date', 'created date'];
+/** Clock time of the payment. Not a bucket (below 5, working hour) and not Updated time. */
+const TIME_HEADERS = ['create time', 'created time', 'created_time', 'tx_time', 'time'];
 /** Lari figures. total_income is the fee, not the deal amount. */
 const AMOUNT_HEADERS = ['abs_gel', 'abs gel', 'cross_gel', 'cross gel'];
 const SELL_CCY_HEADERS = ['currency', 'sells_currency', 'sells currency'];
@@ -80,13 +84,28 @@ function numberOrZero(value: unknown): number {
   return numberOrNull(value) ?? 0;
 }
 
+function dateParts(value: Date): { y: number; m: number; d: number } {
+  let y = value.getFullYear();
+  let m = value.getMonth();
+  let d = value.getDate();
+  const secs = value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds();
+  // A date-only Excel cell can land a few seconds before local midnight.
+  if (secs >= 86400 - 120) {
+    const next = new Date(y, m, d + 1);
+    y = next.getFullYear();
+    m = next.getMonth();
+    d = next.getDate();
+  }
+  return { y, m, d };
+}
+
 /** Calendar date as YYYY-MM-DD. The business export uses month/day/year. */
 export function toIsoDate(value: unknown): string | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, '0');
-    const d = String(value.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const parts = dateParts(value);
+    const m = String(parts.m + 1).padStart(2, '0');
+    const d = String(parts.d).padStart(2, '0');
+    return `${parts.y}-${m}-${d}`;
   }
   if (typeof value === 'number' && value > 20000 && value < 80000) {
     const parsed = XLSX.SSF.parse_date_code(value);
@@ -111,6 +130,52 @@ export function toIsoDate(value: unknown): string | null {
   }
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function clockText(hours: number, minutes: number, seconds: number): string | null {
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+/** Excel time of day: a fraction of 24 hours, or the fraction on a date serial. */
+function clockFromFraction(value: number): string | null {
+  if (value >= 1 && value === Math.floor(value)) return null;
+  const day = value >= 1 ? value - Math.floor(value) : value;
+  if (day < 0 || day >= 1) return null;
+  const total = Math.round(day * 86400) % 86400;
+  return clockText(Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60);
+}
+
+/** Clock as HH:MM:SS. A pure calendar date has no clock and returns null. */
+export function toClock(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const hours = value.getHours();
+    const minutes = value.getMinutes();
+    const seconds = value.getSeconds();
+    const secs = hours * 3600 + minutes * 60 + seconds;
+    // A time-only Excel cell lands around 1899. A real date at midnight,
+    // or a few seconds before it, is a date with no clock.
+    if (value.getFullYear() >= 1901 && (secs === 0 || secs >= 86400 - 120)) return null;
+    return clockText(hours, minutes, seconds);
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if ((value > 20000 && value < 80000) || (value >= 0 && value < 1)) return clockFromFraction(value);
+    return null;
+  }
+  const text = String(value).trim();
+  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(text)) return toClock(Number(text));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const hm = text.match(/(?:^|[T ])(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!hm) return null;
+  const hours = Number(hm[1]);
+  const minutes = Number(hm[2]);
+  const seconds = Number(hm[3] ?? 0);
+  if (hours === 0 && minutes === 0 && seconds === 0 && /^\d{4}-\d{2}-\d{2}[T ]00:00(?::00)?/.test(text)) return null;
+  return clockText(hours, minutes, seconds);
 }
 
 /** 9-digit company id stays. 11-digit person id stays. 10 digits get a leading 0. */
@@ -145,7 +210,9 @@ function oneRow(headers: string[], values: unknown[], seen: Set<string> | null, 
     keyed[key] = value;
   }
   const txId = textId(pick(keyed, TX_ID_HEADERS));
-  const txDate = toIsoDate(pick(keyed, DATE_HEADERS));
+  const rawDate = pick(keyed, DATE_HEADERS);
+  const txDate = toIsoDate(rawDate);
+  const txClock = toClock(pick(keyed, TIME_HEADERS)) ?? toClock(rawDate);
   const clientId = normalizeId(textId(pick(keyed, ['sender id', 'sender_id', 'client_id', 'client id'])));
   const status = textId(pick(keyed, ['payment status', 'payment_status'])).toUpperCase();
   const operation = textId(pick(keyed, ['operation type', 'operation_type'])) || null;
@@ -174,6 +241,7 @@ function oneRow(headers: string[], values: unknown[], seen: Set<string> | null, 
     revaluation: numberOrNull(pick(keyed, ['revaluation income/(loss)', 'revaluation', 'revaluation_income'])),
     sells_currency: sells,
     gets_currency: gets,
+    tx_clock: txClock,
   };
 }
 

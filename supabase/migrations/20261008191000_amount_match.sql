@@ -529,6 +529,12 @@ end;
 $$;
 
 -- Parsed upload rows. No id is invented: tx_id stays empty when the file had none.
+-- The upload function calls this one, so remove that first. PostgreSQL
+-- cannot replace this function in place when the result columns change.
+drop function if exists public.import_transactions(jsonb);
+drop function if exists public.import_transactions(jsonb, bigint, boolean);
+drop function if exists private.clean_import_rows(jsonb);
+
 create or replace function private.clean_import_rows(p_rows jsonb)
 returns table (
   tx_id text,

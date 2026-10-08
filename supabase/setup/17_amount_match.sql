@@ -3,6 +3,8 @@
 -- If you paste 3_analytics.sql or 16_client_history.sql again, paste this
 -- file once more. Otherwise a file with no transaction id is rejected,
 -- and a same-day payment would mark every request that day as done.
+-- The clock-time rule is in 20_clickhouse_business.sql. Paste that file
+-- after this one. If you paste this file again, paste 20 again.
 --
 -- Some exports have no transaction id. Those rows are stored with tx_id
 -- empty. Nothing here invents an id. A row is attached to a request only
@@ -529,6 +531,12 @@ end;
 $$;
 
 -- Parsed upload rows. No id is invented: tx_id stays empty when the file had none.
+-- The upload function calls this one, so remove that first. PostgreSQL
+-- cannot replace this function in place when the result columns change.
+drop function if exists public.import_transactions(jsonb);
+drop function if exists public.import_transactions(jsonb, bigint, boolean);
+drop function if exists private.clean_import_rows(jsonb);
+
 create or replace function private.clean_import_rows(p_rows jsonb)
 returns table (
   tx_id text,
