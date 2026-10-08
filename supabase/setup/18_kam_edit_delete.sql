@@ -2,6 +2,8 @@
 -- Paste it after 16_client_history.sql. Do not re-run 1_platform.sql.
 -- If you paste an older file that recreates requests_admin_update or
 -- requests_admin_delete, paste this file once more afterwards.
+-- If you already pasted 21_delete_and_loss_approval.sql, paste that file
+-- once more after this one. This file does not delete existing requests.
 --
 -- A KAM can edit and delete only a request they logged (kam_id).
 -- An admin (private.is_admin(), the real role) can edit and delete any request.
@@ -317,9 +319,30 @@ $$;
 revoke all on function private.inbox_on_request() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------
--- Edit the fields a KAM fills in. Same argument names as log_request,
--- plus p_request_id. Does not change the treasury rate.
+-- Edit the fields a KAM fills in. PostgREST matches these argument
+-- names exactly: p_amount, p_bank, p_client_id, p_client_name,
+-- p_client_rate, p_gets_amount, p_gets_currency, p_note, p_request_id,
+-- p_sells_currency. p_bank is text[] (TBC, BOG, Liberty).
+-- A KAM may edit only their own request. An admin may edit any request.
+-- Anyone else may not. Quoted rate, who quoted, and rate written stay.
+-- Drop every older overload first so a different signature cannot linger.
 -- ---------------------------------------------------------------------
+do $drop_edit_request$
+declare
+  r record;
+begin
+  for r in
+    select n.nspname, p.proname, pg_get_function_identity_arguments(p.oid) as args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'edit_request'
+  loop
+    execute format('drop function if exists %I.%I(%s)', r.nspname, r.proname, r.args);
+  end loop;
+end
+$drop_edit_request$;
+
 create or replace function public.edit_request(
   p_request_id     bigint,
   p_client_id      text,
@@ -348,13 +371,16 @@ declare
   v_saved    text[];
   v_new      boolean;
 begin
-  if v_me is null or not private.can_write() then
+  if v_me is null then
     raise exception 'Your account cannot change requests' using errcode = '42501';
   end if;
 
   select * into v_req from public.requests r where r.id = p_request_id for update;
   if not found then
     raise exception 'Request not found' using errcode = 'P0002';
+  end if;
+  if private.my_role() is distinct from 'kam' and not private.is_admin() then
+    raise exception 'Your account cannot change requests' using errcode = '42501';
   end if;
   if v_req.kam_id is distinct from v_me and not private.is_admin() then
     raise exception 'This request belongs to another KAM' using errcode = '42501';
@@ -440,6 +466,8 @@ begin
     on conflict (client_id) do update set done_at = null, queued_at = now();
   end if;
 
+  -- KAM fields only. Leave the quoted rate (rate, quoted_by, quoted_at),
+  -- rate written (rate_written_at, rate_written_by), and quote status.
   update public.requests r
      set client_id = v_id,
          sells_currency = v_sells,

@@ -87,6 +87,7 @@ function describe(a: AuditRow, names: Names): string {
         return `მიზეზი მიეთითა მოთხოვნაზე #${a.row_key}: ${LOSS_KA[n.loss_reason] ?? n.loss_reason}${n.loss_reason_note ? ` (${n.loss_reason_note})` : ''}`;
       }
       if (o.quote_status !== n.quote_status && n.quote_status === 'asking') return `ხელახლა იკითხა მოთხოვნაზე #${a.row_key}`;
+      if (!o.payment_confirmed_at && n.payment_confirmed_at) return `ტრანზაქცია გავიდა, მოთხოვნა #${a.row_key}`;
       return `შეიცვალა მოთხოვნა #${a.row_key}`;
     case 'quotes':
       return n.action === 'quoted' ? `კურსი ${fmtRate(n.rate)} გასცა მოთხოვნაზე #${n.request_id}` : `დააბრუნა მოთხოვნა #${n.request_id}: ${DECLINE_KA[n.reason] ?? n.reason}`;

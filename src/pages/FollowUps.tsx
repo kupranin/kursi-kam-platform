@@ -5,13 +5,19 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
-import type { LossReason, RequestRow, WinbackRow } from '../lib/types';
+import type { LossReason, RequestRow, Role, WinbackRow } from '../lib/types';
 import { IconCheck } from '../components/Icons';
 import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
 import LossApproval from '../components/LossApproval';
 
 function isOther(reason: LossReason): boolean {
   return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
+}
+
+/** Real database role. View-as does not count. A KAM only for their own request. */
+function canConfirmPayment(realRole: Role, profileId: string | undefined, kamId: string | null | undefined): boolean {
+  if (realRole === 'admin') return true;
+  return realRole === 'kam' && !!profileId && !!kamId && kamId === profileId;
 }
 
 const STEPS: { value: string; label: string }[] = [
@@ -37,6 +43,7 @@ export default function FollowUps() {
   const [winback, setWinback] = useState<WinbackRow[]>([]);
   const [filter, setFilter] = useState<'All' | 'A' | 'B' | 'C'>('All');
   const [loaded, setLoaded] = useState(false);
+  const [confirming, setConfirming] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     let q = supabase.from('request_outcomes').select('*')
@@ -72,6 +79,23 @@ export default function FollowUps() {
         return next;
       });
     } catch (err) { toast((err as Error).message, 'error'); }
+  }
+
+  async function confirmWent(row: RequestRow) {
+    if (!window.confirm(t(
+      'ტრანზაქცია გავიდა? მოთხოვნა წარმატებულად ჩაითვლება და ამ სიიდან წავა. საბანკო ჩანაწერი არ სჭირდება.',
+      'Did this transaction go through? The request counts as successful and leaves this list. A bank record is not required.',
+    ))) return;
+    setConfirming(row.id);
+    try {
+      await rpc('confirm_request_payment', { p_request_id: row.id });
+      setAsks((list) => list.filter((item) => item.id !== row.id));
+      toast(t('ტრანზაქცია გავიდა. მოთხოვნა ამ სიიდან წავიდა.', 'The transaction went through. The request left this list.'));
+      await load();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+    setConfirming(null);
   }
 
   async function setStep(w: WinbackRow, step: string) {
@@ -113,7 +137,11 @@ export default function FollowUps() {
         <div className="card-head">
           <div>
             <h2 id="ask-title" style={{ fontSize: 22 }}>{t('რატომ არ გავიდა ეს მოთხოვნები?', 'Why did these requests not go through?')}</h2>
-            <p className="small" style={{ color: 'var(--ink-2)' }}>ბოლო 7 დღის მოთხოვნები, რომლებიც არ გავიდა. გაწერილი კურსი ამ სიაში არ რჩება.{canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}</p>
+            <p className="small" style={{ color: 'var(--ink-2)' }}>
+              ბოლო 7 დღის მოთხოვნები, რომლებიც არ გავიდა. გაწერილი კურსი ამ სიაში არ რჩება.
+              {canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}
+              {(realRole === 'kam' || realRole === 'admin') ? ' ' + t('თუ ტრანზაქცია მაინც გავიდა, დააჭირეთ „ტრანზაქცია გავიდა“.', 'If the transaction did go through, press “The transaction went through”.') : ''}
+            </p>
           </div>
           {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'ყველას პასუხი გაეცა. გმადლობთ.' : left + ' დარჩა'}</span>}
         </div>
@@ -134,9 +162,19 @@ export default function FollowUps() {
                   <span className="ok-text strong row" style={{ gap: 8 }}><IconCheck />შენახულია: {savedLabel(a.id)}</span>
                   <button type="button" className="link" onClick={() => answer(a, null)}>გაუქმება</button>
                 </div>
-              ) : canAct ? (
+              ) : (
                 <div className="chips">
-                  {reasons.map((r) => isOther(r) ? (
+                  {canConfirmPayment(realRole, profile?.id, a.kam_id) && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={confirming === a.id}
+                      onClick={() => confirmWent(a)}
+                    >
+                      {confirming === a.id ? t('ინახება…', 'Saving…') : t('ტრანზაქცია გავიდა', 'The transaction went through')}
+                    </button>
+                  )}
+                  {canAct ? reasons.map((r) => isOther(r) ? (
                     <span key={r.code} className="other-reason">
                       <button type="button" className="chip" onClick={() => answer(a, r.code)}>{reasonText(r)}</button>
                       <input
@@ -150,10 +188,8 @@ export default function FollowUps() {
                     </span>
                   ) : (
                     <button key={r.code} type="button" className="chip" onClick={() => answer(a, r.code)}>{reasonText(r)}</button>
-                  ))}
+                  )) : <span className="pill pill-wait">KAM-ს ელოდება</span>}
                 </div>
-              ) : (
-                <span className="pill pill-wait">KAM-ს ელოდება</span>
               )}
               {canDeleteRequest(realRole, profile?.id, a.kam_id) && (
                 <DeleteRequestButton requestId={a.id} onDeleted={load} />
@@ -218,7 +254,10 @@ export default function FollowUps() {
           </div>
         )}
       </section>
-      <p className="small muted" style={{ margin: 0 }}>პრიორიტეტი A ნიშნავს ყველაზე დიდ წარსულ ბრუნვას ან მოთხოვნის ზომას, C ყველაზე პატარას. კლიენტი ამ სიას თავისით ტოვებს, როცა კურსი გაწერილია ან წარმატებული ტრანზაქცია მოდის.</p>
+      <p className="small muted" style={{ margin: 0 }}>{t(
+        'პრიორიტეტი A ნიშნავს ყველაზე დიდ წარსულ ბრუნვას ან მოთხოვნის ზომას, C ყველაზე პატარას. კლიენტი ამ სიას თავისით ტოვებს, როცა კურსი გაწერილია, ტრანზაქცია გავიდა, ან წარმატებული ტრანზაქცია მოდის.',
+        'Priority A is the largest past turnover or request size, and C the smallest. A client leaves this list when a rate is written, the transaction is marked as gone through, or a successful transaction arrives.',
+      )}</p>
     </>
   );
 }

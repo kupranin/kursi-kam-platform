@@ -132,8 +132,8 @@ create trigger requests_guard_loss_approval
 -- One definition of "this app request is on the lost path".
 -- A written rate, a successful payment, or an agreement-file win is not a loss.
 -- A better rate still waiting on treasury is not a loss yet.
--- Create or replace keeps the return type. Do not drop this while the
--- views below call it.
+-- The approve function uses this. The request list computes the same
+-- rule itself, so a signed-in person does not need to call it.
 create or replace function private.request_loss_state(p_id bigint)
 returns table (
   loss_candidate boolean,
@@ -195,106 +195,164 @@ create or replace view public.request_outcomes
 with (security_invoker = true)
 as
 select
-  r.id,
-  r.kam_id,
-  p.full_name as kam_name,
-  r.client_id,
-  c.name as client_name,
-  c.kind as client_kind,
-  r.requested_at,
-  r.request_date,
-  r.sells_currency,
-  r.gets_currency,
-  r.amount,
-  r.rate,
-  r.note,
-  r.loss_reason,
-  r.loss_reason_at,
-  r.source,
-  (w.rate_written or w.tx_hit or w.file_won) as went_through,
+  b.id,
+  b.kam_id,
+  b.kam_name,
+  b.client_id,
+  b.client_name,
+  b.client_kind,
+  b.requested_at,
+  b.request_date,
+  b.sells_currency,
+  b.gets_currency,
+  b.amount,
+  b.rate,
+  b.note,
+  b.loss_reason,
+  b.loss_reason_at,
+  b.source,
+  (b.rate_written or b.tx_hit or b.file_won) as went_through,
   case
-    when w.rate_written or w.tx_hit or w.file_won then 'went_through'
-    when r.client_reply = 'better' and r.better_decision is null then 'waiting'
-    when ls.loss_candidate and r.loss_approved_at is null then 'waiting'
-    when ls.loss_candidate then 'did_not_go_through'
-    when w.file_lost then 'did_not_go_through'
-    when w.file_open then 'waiting'
-    when r.request_date >= coalesce(private.freshness_date(), r.request_date) then 'waiting'
+    when b.rate_written or b.tx_hit or b.file_won then 'went_through'
+    when b.client_reply = 'better' and b.better_decision is null then 'waiting'
+    when b.loss_candidate and b.loss_approved_at is null then 'waiting'
+    when b.loss_candidate then 'did_not_go_through'
+    when b.file_lost then 'did_not_go_through'
+    when b.file_open then 'waiting'
+    when b.request_date >= coalesce(private.freshness_date(), b.request_date) then 'waiting'
     else 'did_not_go_through'
   end as outcome,
-  r.asked_at,
-  r.quote_status,
-  r.rate_valid_until,
-  r.quoted_at,
-  r.decline_reason,
+  b.asked_at,
+  b.quote_status,
+  b.rate_valid_until,
+  b.quoted_at,
+  b.decline_reason,
   case
-    when r.quote_status = 'quoted' and r.rate_valid_until is not null and r.rate_valid_until < now() then 'expired'
-    else r.quote_status
+    when b.quote_status = 'quoted' and b.rate_valid_until is not null and b.rate_valid_until < now() then 'expired'
+    else b.quote_status
   end as quote_state,
-  r.gets_amount,
-  r.client_rate,
-  r.loss_reason_note,
-  r.client_reply,
-  r.approved_rate,
-  r.wanted_rate,
-  r.better_decision,
-  r.given_rate,
-  r.client_decline_reason,
-  r.client_replied_at,
-  r.better_decided_at,
-  case
-    when r.banks is not null and cardinality(r.banks) > 0 then (
-      select string_agg(x, ', ' order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x))
-      from (
-        select distinct btrim(u.x) as x
-        from unnest(r.banks) as u(x)
-      ) s
-      where x in ('TBC', 'BOG', 'Liberty')
-    )
-    else r.bank
-  end as bank,
-  r.rate_written_at,
-  r.loss_approved_at,
-  r.loss_approved_by,
-  r.loss_approval_comment,
-  ls.approver_name as loss_approver_name,
-  coalesce(ls.loss_open, false) as loss_open
-from public.requests r
-join public.clients c on c.client_id = r.client_id
-left join public.profiles p on p.id = r.kam_id
-left join lateral private.request_loss_state(r.id) ls on true
-cross join lateral (
+  b.gets_amount,
+  b.client_rate,
+  b.loss_reason_note,
+  b.client_reply,
+  b.approved_rate,
+  b.wanted_rate,
+  b.better_decision,
+  b.given_rate,
+  b.client_decline_reason,
+  b.client_replied_at,
+  b.better_decided_at,
+  b.bank,
+  b.rate_written_at,
+  b.loss_approved_at,
+  b.loss_approved_by,
+  b.loss_approval_comment,
+  b.loss_approver_name,
+  (b.loss_candidate and b.loss_approved_at is null) as loss_open
+from (
   select
-    (r.rate_written_at is not null) as rate_written,
-    exists (
-      select 1
-      from public.transactions t
-      where t.payment_status = 'SUCCESS'
-        and (
-          (
-            t.tx_id is not null
-            and t.client_id = r.client_id
-            and t.tx_date = r.request_date
-            and (r.source = 'import' or t.tx_time >= r.requested_at - interval '1 minute')
+    r.id,
+    r.kam_id,
+    p.full_name as kam_name,
+    r.client_id,
+    c.name as client_name,
+    c.kind as client_kind,
+    r.requested_at,
+    r.request_date,
+    r.sells_currency,
+    r.gets_currency,
+    r.amount,
+    r.rate,
+    r.note,
+    r.loss_reason,
+    r.loss_reason_at,
+    r.source,
+    r.asked_at,
+    r.quote_status,
+    r.rate_valid_until,
+    r.quoted_at,
+    r.decline_reason,
+    r.gets_amount,
+    r.client_rate,
+    r.loss_reason_note,
+    r.client_reply,
+    r.approved_rate,
+    r.wanted_rate,
+    r.better_decision,
+    r.given_rate,
+    r.client_decline_reason,
+    r.client_replied_at,
+    r.better_decided_at,
+    case
+      when r.banks is not null and cardinality(r.banks) > 0 then (
+        select string_agg(x, ', ' order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x))
+        from (
+          select distinct btrim(u.x) as x
+          from unnest(r.banks) as u(x)
+        ) s
+        where x in ('TBC', 'BOG', 'Liberty')
+      )
+      else r.bank
+    end as bank,
+    r.rate_written_at,
+    r.loss_approved_at,
+    r.loss_approved_by,
+    r.loss_approval_comment,
+    ap.full_name as loss_approver_name,
+    w.rate_written,
+    w.tx_hit,
+    w.file_won,
+    w.file_lost,
+    w.file_open,
+    (
+      r.source = 'app'
+      and not w.rate_written
+      and not w.tx_hit
+      and not w.file_won
+      and not (r.client_reply = 'better' and r.better_decision is null)
+      and (
+        r.client_reply = 'declined'
+        or r.quote_status = 'declined'
+        or r.request_date < coalesce(private.freshness_date(), r.request_date)
+      )
+    ) as loss_candidate
+  from public.requests r
+  join public.clients c on c.client_id = r.client_id
+  left join public.profiles p on p.id = r.kam_id
+  left join public.profiles ap on ap.id = r.loss_approved_by
+  cross join lateral (
+    select
+      (r.rate_written_at is not null) as rate_written,
+      exists (
+        select 1
+        from public.transactions t
+        where t.payment_status = 'SUCCESS'
+          and (
+            (
+              t.tx_id is not null
+              and t.client_id = r.client_id
+              and t.tx_date = r.request_date
+              and (r.source = 'import' or t.tx_time >= r.requested_at - interval '1 minute')
+            )
+            or t.matched_request_id = r.id
           )
-          or t.matched_request_id = r.id
-        )
-    ) as tx_hit,
-    (r.import_key like 'agreement:%' and r.legacy_status = 'შესრულდა') as file_won,
-    (r.import_key like 'agreement:%' and r.legacy_status in (
-        'არ შესრულდა',
-        'ბანკმა გააჩერა ტრანზაქცია',
-        'აღარ დასჭირდა და გააუქმა',
-        'უარი თქვა, მცირედი განსხვავების გამო ბანკში ურჩევნოდა კონვერტაცია'
-    )) as file_lost,
-    (r.import_key like 'agreement:%' and (
-        r.legacy_status is null
-        or r.legacy_status in (
-        'შესრულდა ნაწილობრივ',
-        'შეთანხმებულია და გაწერეთ კურსი'
-        )
-    )) as file_open
-) w;
+      ) as tx_hit,
+      (r.import_key like 'agreement:%' and r.legacy_status = 'შესრულდა') as file_won,
+      (r.import_key like 'agreement:%' and r.legacy_status in (
+          'არ შესრულდა',
+          'ბანკმა გააჩერა ტრანზაქცია',
+          'აღარ დასჭირდა და გააუქმა',
+          'უარი თქვა, მცირედი განსხვავების გამო ბანკში ურჩევნოდა კონვერტაცია'
+      )) as file_lost,
+      (r.import_key like 'agreement:%' and (
+          r.legacy_status is null
+          or r.legacy_status in (
+          'შესრულდა ნაწილობრივ',
+          'შეთანხმებულია და გაწერეთ კურსი'
+          )
+      )) as file_open
+  ) w
+) b;
 
 revoke all on public.request_outcomes from anon;
 grant select on public.request_outcomes to authenticated;
@@ -347,8 +405,8 @@ from (
       when r.rate_written_at is not null then 'success'
       when w.tx_hit or w.file_won then 'success'
       when r.client_reply = 'better' and r.better_decision is null then 'open'
-      when ls.loss_candidate and r.loss_approved_at is null then 'open'
-      when ls.loss_candidate then 'lost'
+      when c.loss_candidate and r.loss_approved_at is null then 'open'
+      when c.loss_candidate then 'lost'
       when w.file_lost then 'lost'
       when w.file_open then 'open'
       when r.request_date >= coalesce(private.freshness_date(), r.request_date) then 'open'
@@ -370,7 +428,6 @@ from (
   left join public.profiles p on p.id = r.kam_id
   left join public.profiles qb on qb.id = r.quoted_by
   left join public.loss_reasons lr on lr.code = r.loss_reason
-  left join lateral private.request_loss_state(r.id) ls on true
   cross join lateral (
     select
       exists (
@@ -402,6 +459,20 @@ from (
           )
       )) as file_open
   ) w
+  cross join lateral (
+    select (
+      r.source = 'app'
+      and r.rate_written_at is null
+      and not w.tx_hit
+      and not w.file_won
+      and not (r.client_reply = 'better' and r.better_decision is null)
+      and (
+        r.client_reply = 'declined'
+        or r.quote_status = 'declined'
+        or r.request_date < coalesce(private.freshness_date(), r.request_date)
+      )
+    ) as loss_candidate
+  ) c
 ) d
 where private.my_role() in ('analyst', 'admin');
 

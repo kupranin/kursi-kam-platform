@@ -271,7 +271,7 @@ export default function Analytics() {
   const turnover = Number(kpis.turnover);
   const failed = Number(kpis.turnover_not_successful);
   const income = Number(kpis.income);
-  const failedShare = turnover > 0 ? Math.round((failed / turnover) * 100) : 0;
+  const failedShare = turnover + failed > 0 ? Math.round((failed / (turnover + failed)) * 100) : 0;
   const perMillion = turnover > 0 ? Math.round((income / turnover) * 1_000_000) : null;
   const label = month === 'all' ? 'ყველა ატვირთული ტრანზაქცია' : monthLabel(month);
 

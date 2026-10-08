@@ -49,6 +49,9 @@ export interface RequestRow {
   loss_approved_by?: string | null;
   loss_approval_comment?: string | null;
   loss_approver_name?: string | null;
+  /** Set when a KAM or an admin said the payment went through, with no bank row. */
+  payment_confirmed_at?: string | null;
+  payment_confirmed_by?: string | null;
   /** App loss that treasury has not approved yet. The loss is not final. */
   loss_open?: boolean | null;
 }
