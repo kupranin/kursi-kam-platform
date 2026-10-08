@@ -13,6 +13,8 @@ import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
+import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import LossApproval from '../components/LossApproval';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
@@ -51,8 +53,9 @@ function nextMonth(isoDate: string): string {
   return `${y}-${String(m + 1).padStart(2, '0')}-01`;
 }
 
-function historyStatus(r: RequestRow, went: string, missed: string, open: string): { label: string; cls: string } {
-  if (r.went_through || r.outcome === 'went_through') return { label: went, cls: 'pill-ok' };
+function historyStatus(r: RequestRow, went: string, missed: string, pending: string, open: string): { label: string; cls: string } {
+  if (r.went_through || r.outcome === 'went_through' || r.rate_written_at) return { label: went, cls: 'pill-ok' };
+  if (r.loss_open) return { label: pending, cls: 'pill-alert' };
   if (r.outcome === 'did_not_go_through') return { label: missed, cls: 'pill-alert' };
   return { label: open, cls: 'pill-wait' };
 }
@@ -74,7 +77,7 @@ function clientReplyNote(r: RequestRow, t: (ka: string, en: string, vars?: Recor
 
 export default function Requests() {
   const { profile } = useAuth();
-  const { role } = useViewAs();
+  const { role, realRole } = useViewAs();
   const { t, lang } = useI18n();
   const toast = useToast();
   useTick(15000);
@@ -299,8 +302,7 @@ export default function Requests() {
   }
 
   function canChange(r: RequestRow) {
-    if (role === 'admin') return true;
-    return role === 'kam' && !!profile && r.kam_id === profile.id;
+    return canDeleteRequest(realRole, profile?.id, r.kam_id);
   }
 
   function openEdit(r: RequestRow) {
@@ -430,6 +432,7 @@ export default function Requests() {
           <div className="row" style={{ paddingTop: 27, gap: 12 }}>
             <button type="submit" className="btn btn-primary" disabled={editBusy}>{editBusy ? t('ინახება…', 'Saving…') : t('შენახვა', 'Save')}</button>
             <button type="button" className="link" onClick={() => setEditId(null)}>{t('გაუქმება', 'Cancel')}</button>
+            {canChange(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { setEditId(null); refresh(); }} />}
           </div>
         </div>
         {idOk && <ClientHistory clientId={editClientId.trim()} excludeId={r.id} />}
@@ -437,16 +440,10 @@ export default function Requests() {
     );
   }
 
-  async function remove(r: RequestRow) {
-    if (!window.confirm(t('წავშალოთ ეს მოთხოვნა? კლიენტი დარჩება. ეს ქმედება უკან ვერ ბრუნდება.', 'Delete this request? The client stays. This cannot be undone.'))) return;
-    try {
-      await rpc('delete_request', { p_request_id: r.id });
-      if (editId === r.id) setEditId(null);
-      toast(t('მოთხოვნა წაიშალა.', 'Request deleted.'));
-      load();
-      loadHistory();
-      loadApproved();
-    } catch (err) { toast((err as Error).message, 'error'); }
+  function refresh() {
+    load();
+    loadHistory();
+    loadApproved();
   }
 
   function openReply(id: number, kind: 'approved' | 'better' | 'declined') {
@@ -645,9 +642,10 @@ export default function Requests() {
                 )}
                 {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
                 {own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
-                {own && <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>}
+                {own && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
               {editForm(r)}
+              <LossApproval row={r} onDone={refresh} />
               {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
               {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
               {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
@@ -694,10 +692,11 @@ export default function Requests() {
             {canChange(r) && (
               <div className="actions">
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>
+                <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
               </div>
             )}
             {editForm(r)}
+            <LossApproval row={r} onDone={refresh} />
             {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
             {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
           </div>
@@ -733,10 +732,11 @@ export default function Requests() {
             {canChange(r) && (
               <div className="actions">
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>
+                <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
               </div>
             )}
             {editForm(r)}
+            <LossApproval row={r} onDone={refresh} />
           </div>
         ))}
       </section>}
@@ -781,7 +781,7 @@ export default function Requests() {
           </p>
         )}
         {histLoaded && history.map((r) => {
-          const st = historyStatus(r, t('გავიდა', 'Went through'), t('არ გავიდა', 'Did not go through'), t('ჯერ ღიაა', 'Still open'));
+          const st = historyStatus(r, t('გავიდა', 'Went through'), t('არ გავიდა', 'Did not go through'), t('არ გავიდა, სახაზინოს ელოდება', 'Did not go through, waiting on treasury'), t('ჯერ ღიაა', 'Still open'));
           const chatText = isKam && r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = isKam ? bookedLine(r) : null;
           return (
@@ -812,10 +812,11 @@ export default function Requests() {
               {canChange(r) && (
                 <div className="actions">
                   <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                  <button type="button" className="link danger" onClick={() => remove(r)}>{t('წაშლა', 'Delete')}</button>
+                  <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
                 </div>
               )}
               {editForm(r)}
+              <LossApproval row={r} onDone={refresh} />
             </div>
           );
         })}

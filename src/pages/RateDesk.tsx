@@ -4,8 +4,11 @@ import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { fmtAmount, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { treasuryReason } from '../lib/requestStatus';
-import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
+import { bankList, type QueueRow, type QuoteToday, type ReferenceRate, type RequestRow } from '../lib/types';
+import DeleteRequestButton from '../components/DeleteRequestButton';
+import LossApproval from '../components/LossApproval';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import ClientHistory from '../components/ClientHistory';
@@ -149,10 +152,13 @@ interface ClientReply {
 export default function RateDesk() {
   const toast = useToast();
   const { t, lang } = useI18n();
+  const { realRole } = useViewAs();
   useTick(10000);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
   const [otherReasons, setOtherReasons] = useState<OtherReason[]>([]);
+  const [losses, setLosses] = useState<RequestRow[]>([]);
+  const [lossCount, setLossCount] = useState(0);
   const [replies, setReplies] = useState<ClientReply[]>([]);
   const [repliesNote, setRepliesNote] = useState('');
   const [fixRate, setFixRate] = useState<Record<number, string>>({});
@@ -208,6 +214,24 @@ export default function RateDesk() {
       else setOtherReasons(((data ?? []) as OtherReason[]).filter((row) => row.loss_reason_note.trim()));
     } catch {
       setOtherReasons([]);
+    }
+    try {
+      const { data, error, count } = await supabase
+        .from('request_outcomes')
+        .select('*', { count: 'exact' })
+        .eq('loss_open', true)
+        .order('request_date', { ascending: false })
+        .limit(40);
+      if (error) {
+        setLosses([]);
+        setLossCount(0);
+      } else {
+        setLosses((data ?? []) as RequestRow[]);
+        setLossCount(count ?? 0);
+      }
+    } catch {
+      setLosses([]);
+      setLossCount(0);
     }
     try {
       const list = await rpc<ClientReply[]>('treasury_client_replies');
@@ -435,6 +459,9 @@ export default function RateDesk() {
     ...extraAgreed.filter((r) => !replies.some((x) => x.request_id === r.request_id)),
   ];
   const declinedReplies = replies.filter((r) => r.client_reply === 'declined');
+  const adminDelete = (id: number) => realRole === 'admin'
+    ? <DeleteRequestButton requestId={id} onDeleted={load} />
+    : null;
 
   return (
     <>
@@ -453,6 +480,35 @@ export default function RateDesk() {
 
       <div className="cols">
         <div className="col-main">
+          {losses.length > 0 && (
+            <section aria-labelledby="loss-title" style={{ marginBottom: 28 }}>
+              <div className="row-between" style={{ marginBottom: 12 }}>
+                <h2 id="loss-title" style={{ fontSize: 22 }}>{t('დაკარგული მოთხოვნები', 'Lost requests')}</h2>
+                <span className="small muted">{t(
+                  'სანამ კომენტარით არ დაადასტურებთ, დანაკარგი საბოლოო არ არის. გაწერილი კურსი აქ არ მოხვდება.',
+                  'Until you approve with a comment, the loss is not final. A written rate does not appear here.',
+                )}{lossCount > losses.length ? ' ' + t('ნაჩვენებია {shown} {total}-დან.', 'Showing {shown} of {total}.', { shown: losses.length, total: lossCount }) : ''}</span>
+              </div>
+              <div className="stack-sm">
+                {losses.map((r) => (
+                  <article key={r.id} className="req-card">
+                    <div className="row-between" style={{ gap: 12 }}>
+                      <div>
+                        <div className="name">{r.client_name ?? r.client_id}</div>
+                        <div className="tiny muted">ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
+                        <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
+                        <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                        {r.client_reply === 'declined' && r.client_decline_reason && <p className="note-box">{t('კლიენტმა უარი თქვა', 'Client declined')}: {r.client_decline_reason}</p>}
+                        {r.quote_status === 'declined' && r.decline_reason && <p className="note-box">{t('სახაზინომ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>}
+                      </div>
+                      {adminDelete(r.id)}
+                    </div>
+                    <LossApproval row={r} onDone={load} />
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
           <section aria-labelledby="queue-title">
             <div className="row-between" style={{ marginBottom: 12 }}>
               <h2 id="queue-title" style={{ fontSize: 22 }}>{t('კურსს ელოდება', 'Waiting for a rate')}</h2>
@@ -476,11 +532,14 @@ export default function RateDesk() {
                 ].filter(Boolean) as { label: string; value: number }[];
                 return (
                   <article key={r.request_id} className={'req-card' + (isNew ? ' new' : late ? ' late' : '')}>
-                    <div className="row small" style={{ gap: '8px 14px', marginBottom: 10 }}>
-                      <span className={'pill ' + (late ? 'pill-alert' : 'pill-wait')}><IconClock />{minutesSince(r.asked_at) < 1 ? 'ახლახან' : 'ელოდება ' + minutesSince(r.asked_at) + ' წთ'}</span>
-                      <span style={{ color: 'var(--ink-2)' }}>{r.kam_name}-ისგან</span>
-                      {isNew && <span className="pill pill-gold">ახალი</span>}
-                      {r.is_new_client && <span className="pill pill-dark">ახალი კლიენტი</span>}
+                    <div className="row-between" style={{ gap: 12, marginBottom: 10 }}>
+                      <div className="row small" style={{ gap: '8px 14px' }}>
+                        <span className={'pill ' + (late ? 'pill-alert' : 'pill-wait')}><IconClock />{minutesSince(r.asked_at) < 1 ? 'ახლახან' : 'ელოდება ' + minutesSince(r.asked_at) + ' წთ'}</span>
+                        <span style={{ color: 'var(--ink-2)' }}>{r.kam_name}-ისგან</span>
+                        {isNew && <span className="pill pill-gold">ახალი</span>}
+                        {r.is_new_client && <span className="pill pill-dark">ახალი კლიენტი</span>}
+                      </div>
+                      {adminDelete(r.request_id)}
                     </div>
                     <div className="row-between">
                       <div>
@@ -579,8 +638,9 @@ export default function RateDesk() {
                 const rateOk = raw.trim() !== '' && Number(raw.trim().replace(',', '.')) > 0;
                 return (
                   <article key={r.request_id} className="req-card">
-                    <div className="row small" style={{ gap: '8px 14px', marginBottom: 10 }}>
-                      <span style={{ color: 'var(--ink-2)' }}>{r.kam_name}</span>
+                    <div className="row-between" style={{ gap: 12, marginBottom: 10 }}>
+                      <span className="small" style={{ color: 'var(--ink-2)' }}>{r.kam_name}</span>
+                      {adminDelete(r.request_id)}
                     </div>
                     <div className="deal-facts">
                       <div>
@@ -674,6 +734,7 @@ export default function RateDesk() {
                   <div className="tiny muted">{r.better_decision === 'accepted' ? t('სახაზინომ დაადასტურა {rate}.', 'Treasury accepted {rate}.', { rate: fmtRate(r.given_rate) }) : t('გასწორებული კურსი: {rate}.', 'Corrected rate: {rate}.', { rate: fmtRate(r.given_rate) })}</div>
                   {(r.rate != null || r.given_rate != null) && <QuotedRateEditor requestId={r.request_id} rate={r.rate ?? r.given_rate} onChanged={load} />}
                 </div>
+                {adminDelete(r.request_id)}
                 <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
               </div>
             ))}
@@ -709,6 +770,7 @@ export default function RateDesk() {
                         {writingId === r.request_id ? t('ინახება…', 'Saving…') : t('კურსი გაწერილია', 'Rate is written')}
                       </button>
                     )}
+                  {adminDelete(r.request_id)}
                 </div>
                 <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />
                 {r.approved_rate != null && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatHandoff(r.client_id, r.approved_rate)} />}
@@ -738,6 +800,7 @@ export default function RateDesk() {
                   <div className="tiny muted">{t('მიზეზი', 'Reason')}: {r.client_decline_reason}</div>
                   {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
+                {adminDelete(r.request_id)}
                 <ClientHistory clientId={r.client_id} excludeId={r.request_id} />
               </div>
             ))}
@@ -768,10 +831,11 @@ export default function RateDesk() {
                     <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(q.rate)}</div>
                     <QuotedRateEditor requestId={q.request_id} rate={q.rate} onChanged={load} />
                   </div>
-                  <div>
+                  <div className="actions">
                     {q.went_through ? <span className="pill pill-ok">{t('გავიდა', 'Went through')}</span>
                       : valid ? <span className="pill pill-ok">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(q.valid_until) })}</span>
                       : <span className="pill pill-wait">{t('ვადა გაუვიდა {time}-ზე', 'Expired at {time}', { time: fmtTime(q.valid_until) })}</span>}
+                    {adminDelete(q.request_id)}
                   </div>
                   {clientIds[q.request_id] && <ClientHistory clientId={clientIds[q.request_id]} excludeId={q.request_id} />}
                 </div>
@@ -805,6 +869,7 @@ export default function RateDesk() {
                   <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>
                   {r.rate != null && <QuotedRateEditor requestId={r.id} rate={r.rate} onChanged={load} />}
                 </div>
+                {adminDelete(r.id)}
                 <ClientHistory clientId={r.client_id} excludeId={r.id} />
               </div>
             ))}

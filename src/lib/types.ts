@@ -45,6 +45,12 @@ export interface RequestRow {
   client_replied_at?: string | null;
   rate_written_at?: string | null;
   bank?: string | null;
+  loss_approved_at?: string | null;
+  loss_approved_by?: string | null;
+  loss_approval_comment?: string | null;
+  loss_approver_name?: string | null;
+  /** App loss that treasury has not approved yet. The loss is not final. */
+  loss_open?: boolean | null;
 }
 
 export interface Rules {

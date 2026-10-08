@@ -7,6 +7,8 @@ import { useToast } from '../lib/toast';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
 import type { LossReason, RequestRow, WinbackRow } from '../lib/types';
 import { IconCheck } from '../components/Icons';
+import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import LossApproval from '../components/LossApproval';
 
 function isOther(reason: LossReason): boolean {
   return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
@@ -22,7 +24,7 @@ const STEPS: { value: string; label: string }[] = [
 
 export default function FollowUps() {
   const { profile } = useAuth();
-  const { role } = useViewAs();
+  const { role, realRole } = useViewAs();
   const { t, lang } = useI18n();
   const toast = useToast();
   const canAct = role === 'kam' || role === 'admin';
@@ -125,6 +127,7 @@ export default function FollowUps() {
                   {fmtDay(a.request_date)}: {describeDeal(a.sells_currency, a.amount, a.gets_currency, a.gets_amount)}{a.rate ? ' კურსით ' + fmtRate(a.rate) : ''}
                   {showOwner && a.kam_name ? ', ' + a.kam_name : ''}
                 </div>
+                <LossApproval row={a} onDone={load} />
               </div>
               {answered[a.id] ? (
                 <div className="row">
@@ -151,6 +154,9 @@ export default function FollowUps() {
                 </div>
               ) : (
                 <span className="pill pill-wait">KAM-ს ელოდება</span>
+              )}
+              {canDeleteRequest(realRole, profile?.id, a.kam_id) && (
+                <DeleteRequestButton requestId={a.id} onDeleted={load} />
               )}
             </div>
           ))}

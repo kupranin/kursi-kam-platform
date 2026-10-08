@@ -7,12 +7,14 @@ import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtRate, sideAmount } from '../lib/format';
 import { classifyRequest, treasuryReason, type LogCode } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
+import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
 
 export default function RequestLog() {
   const { profile } = useAuth();
-  const { role } = useViewAs();
+  const { role, realRole } = useViewAs();
   const { t, lang } = useI18n();
   const mine = role === 'kam';
+  const showDelete = realRole === 'admin' || realRole === 'kam';
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -92,6 +94,7 @@ export default function RequestLog() {
                   <th>{t('თანხები', 'Amounts')}</th>
                   <th className="num">{t('კურსი', 'Rate')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
+                  {showDelete && <th>{t('წაშლა', 'Delete')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -118,6 +121,10 @@ export default function RequestLog() {
                         <div>{label(status.code)}</div>
                         {reason && <div className="tiny muted">{reason}</div>}
                       </td>
+                      {showDelete && canDeleteRequest(realRole, profile?.id, row.kam_id) && (
+                        <td><DeleteRequestButton requestId={row.id} onDeleted={load} /></td>
+                      )}
+                      {showDelete && !canDeleteRequest(realRole, profile?.id, row.kam_id) && <td />}
                     </tr>
                   );
                 })}
