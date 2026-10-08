@@ -98,8 +98,8 @@ function uploadCount(value: number | string | null | undefined): number {
 function uploadError(err: unknown, t: (ka: string, en: string) => string): string {
   if (err instanceof TransactionFileError && err.code === 'no-amount') {
     return t(
-      'ამ ფაილს არც transaction id აქვს და არც ლარის თანხა (abs_gel ან cross_gel), ამიტომ არ ჩაიტვირთა.',
-      'This file has no transaction id and no lari amount (abs_gel or cross_gel), so it was not loaded.',
+      'ამ ფაილში ლარის თანხა ვერ მოიძებნა (abs_gel ან cross_gel), ამიტომ არ ჩაიტვირთა.',
+      'This file has no lari amount (abs_gel or cross_gel), so it was not loaded.',
     );
   }
   if (err instanceof TransactionFileError && err.code === 'range-too-wide') {
@@ -176,7 +176,7 @@ export default function Analytics() {
       let clientsAdded = 0;
       let sentSoFar = 0;
       let runId: number | null = null;
-      const { skipped, sent, mode } = await readTransactionFile(file, async (batch, batchMode) => {
+      const { skipped, sent, mode, missing } = await readTransactionFile(file, async (batch, batchMode) => {
         sentSoFar += batch.length;
         setProgress(t('ინახება {n}…', 'Saving {n}…', { n: sentSoFar.toLocaleString('en-US') }));
         const result = await rpc<ImportResult>(
@@ -206,14 +206,31 @@ export default function Analytics() {
         ambiguous = uploadCount(done.ambiguous);
       }
       if (!sent) {
-        toast(t(
-          mode === 'amount'
-            ? 'ტრანზაქცია ვერ მოიძებნა. სტრიქონს სჭირდება თარიღი, sender id, payment status და ლარის თანხა (abs_gel ან cross_gel).'
-            : 'ტრანზაქცია ვერ მოიძებნა. სტრიქონს სჭირდება transaction id, თარიღი, sender id, payment status, abs_gel და total_income.',
-          mode === 'amount'
-            ? 'No transactions found. A row needs a date, sender id, payment status, and a lari amount (abs_gel or cross_gel).'
-            : 'No transactions found. A row needs a transaction id, a date, sender id, payment status, abs_gel and total_income.',
-        ), 'error');
+        const gaps: string[] = [];
+        const gapsEn: string[] = [];
+        if (missing.date) {
+          gaps.push('თარიღი (created date ან created at)');
+          gapsEn.push('a date (created date or created at)');
+        }
+        if (missing.client) {
+          gaps.push('sender id');
+          gapsEn.push('sender id');
+        }
+        if (missing.amount) {
+          gaps.push('ლარის თანხა (abs_gel ან cross_gel)');
+          gapsEn.push('a lari amount (abs_gel or cross_gel)');
+        }
+        if (missing.status) {
+          gaps.push('payment status');
+          gapsEn.push('payment status');
+        }
+        toast(gaps.length
+          ? t(
+            'ტრანზაქცია ვერ მოიძებნა. ფაილში აკლია: {what}.',
+            'No transactions found. The file is missing: {what}.',
+            { what: t(gaps.join(', '), gapsEn.join(', ')) },
+          )
+          : t('ტრანზაქცია ვერ მოიძებნა.', 'No transactions found.'), 'error');
         return;
       }
       const savedText = saved.toLocaleString('en-US');
@@ -308,8 +325,8 @@ export default function Analytics() {
           <h2 id="upload-title">ტრანზაქციების ატვირთვა</h2>
           <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
             {t(
-              'Excel ან CSV. თუ არის transaction id, ხელახალი ატვირთვა იმ სტრიქონს ანახლებს. თუ transaction id არ არის, სტრიქონი მოთხოვნას ემთხვევა: იგივე კლიენტი (sender id), იგივე დღე, იგივე ვალუტები (currency და currency to send) და ზუსტად იგივე ლარის თანხა (abs_gel, ან cross_gel თუ არც ერთი მხარე ლარი არ არის). თუ ფაილში არის Create time, მოთხოვნის დროც უნდა ემთხვეოდეს იმავე წუთს (თბილისის დრო). წამები არ ითვლება. თუ დრო არ არის, საკმარისია იგივე დღე. თუ ეს ერთ მოთხოვნაზე ზუსტად არ ჯდება, სტრიქონი არ მიება. იგივე დღეების ხელახალი ატვირთვა იმ დღეებს ცვლის, რომ ორჯერ არ დაითვალოს. თარიღი: created at ან created date. დრო: create time. ასევე payment status და total_income.',
-              'Excel or CSV. If the file has a transaction id, uploading it again updates that row. If there is no transaction id, a row matches a request when the client (sender id), the day, the currencies (currency and currency to send), and the lari amount (abs_gel, or cross_gel when neither side is lari) are the same. If the file has a Create time, the request must be the same minute, in Tbilisi. Seconds are not required. If there is no time, the day is enough. If that does not fit exactly one request, the row is not attached. Uploading those days again replaces them, so they are not counted twice. Date: created at or created date. Time: create time. Also payment status and total_income.',
+              'Excel ან CSV. სტრიქონი მოთხოვნას ემთხვევა: იგივე კლიენტი (sender id), იგივე დღე, იგივე ვალუტები (currency და currency to send) და ზუსტად იგივე ლარის თანხა (abs_gel, ან cross_gel თუ არც ერთი მხარე ლარი არ არის). თუ ფაილში არის Create time, მოთხოვნის დროც უნდა ემთხვეოდეს იმავე წუთს (თბილისის დრო). წამები არ ითვლება. თუ დრო არ არის, საკმარისია იგივე დღე. თუ ეს ერთ მოთხოვნაზე ზუსტად არ ჯდება, სტრიქონი არ მიება. იგივე დღეების ხელახალი ატვირთვა იმ დღეებს ცვლის, რომ ორჯერ არ დაითვალოს. თარიღი: created at ან created date. დრო: create time. ასევე payment status. total_income საკომისიოა და აუცილებელი არ არის.',
+              'Excel or CSV. A row matches a request when the client (sender id), the day, the currencies (currency and currency to send), and the lari amount (abs_gel, or cross_gel when neither side is lari) are the same. If the file has a Create time, the request must be the same minute, in Tbilisi. Seconds are not required. If there is no time, the day is enough. If that does not fit exactly one request, the row is not attached. Uploading those days again replaces them, so they are not counted twice. Date: created at or created date. Time: create time. Also payment status. total_income is the fee and is not required.',
             )}
           </p>
           <label className={'btn btn-primary' + (uploading ? ' disabled' : '')}>

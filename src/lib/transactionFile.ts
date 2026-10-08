@@ -270,8 +270,9 @@ function oneRow(
   };
 }
 
-export function rowsFromSheet(records: Record<string, unknown>[]): { rows: UploadRow[]; skipped: number; mode: UploadMode } {
-  if (!records.length) return { rows: [], skipped: 0, mode: 'amount' };
+export function rowsFromSheet(records: Record<string, unknown>[]): { rows: UploadRow[]; skipped: number; mode: UploadMode; missing: UploadMissing } {
+  const missing = emptyMissing();
+  if (!records.length) return { rows: [], skipped: 0, mode: 'amount', missing };
   let sample: string[];
   try {
     sample = Object.keys(records[0]);
@@ -285,11 +286,11 @@ export function rowsFromSheet(records: Record<string, unknown>[]): { rows: Uploa
   let skipped = 0;
   for (const record of records) {
     const headers = Object.keys(record);
-    const row = oneRow(headers, headers.map((key) => record[key]), seen, mode);
+    const row = oneRow(headers, headers.map((key) => record[key]), seen, mode, missing);
     if (!row) skipped += 1;
     else rows.push(row);
   }
-  return { rows, skipped, mode };
+  return { rows, skipped, mode, missing };
 }
 
 function headerTexts(values: unknown[]): string[] {
@@ -302,10 +303,11 @@ function headerTexts(values: unknown[]): string[] {
 async function consumeRows(
   source: AsyncIterable<unknown[]>,
   onBatch: (rows: UploadRow[], mode: UploadMode) => Promise<void>,
-): Promise<{ skipped: number; sent: number; mode: UploadMode }> {
+): Promise<{ skipped: number; sent: number; mode: UploadMode; missing: UploadMissing }> {
   const iter = source[Symbol.asyncIterator]();
   let skipped = 0;
   let sent = 0;
+  const missing = emptyMissing();
   try {
     const first = await iter.next();
     if (first.done) throw new TransactionFileError('no-amount');
@@ -325,7 +327,7 @@ async function consumeRows(
       if (step.done) break;
       const values = step.value;
       if (values.every((value) => value == null || String(value).trim() === '')) continue;
-      const row = oneRow(headers, values, seen, mode);
+      const row = oneRow(headers, values, seen, mode, missing);
       if (!row) {
         skipped += 1;
         continue;
@@ -334,7 +336,7 @@ async function consumeRows(
       if (batch.length >= BATCH_SIZE) await flush();
     }
     await flush();
-    return { skipped, sent, mode };
+    return { skipped, sent, mode, missing };
   } finally {
     await iter.return?.();
   }
@@ -580,7 +582,7 @@ async function isCsvFile(file: File): Promise<boolean> {
 export async function readTransactionFile(
   file: File,
   onBatch: (rows: UploadRow[], mode: UploadMode) => Promise<void>,
-): Promise<{ skipped: number; sent: number; mode: UploadMode }> {
+): Promise<{ skipped: number; sent: number; mode: UploadMode; missing: UploadMissing }> {
   const csv = await isCsvFile(file);
   return consumeRows(csv ? csvRows(file) : sheetRows(file), onBatch);
 }
