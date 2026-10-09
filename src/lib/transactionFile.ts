@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { xlsxRows, XlsxReadError } from './xlsxRows';
 
 export interface UploadRow {
   /** Bank transaction id when the file has one. Empty when it does not. Never invented. */
@@ -52,9 +53,9 @@ const SELL_CCY_HEADERS = ['currency', 'sells_currency', 'sells currency'];
 const GET_CCY_HEADERS = ['currency_to_send', 'currency to send', 'gets_currency', 'gets currency'];
 
 export class TransactionFileError extends Error {
-  readonly code: 'no-amount' | 'range-too-wide';
+  readonly code: 'no-amount' | 'range-too-wide' | 'unreadable';
 
-  constructor(code: 'no-amount' | 'range-too-wide') {
+  constructor(code: 'no-amount' | 'range-too-wide' | 'unreadable') {
     super(code);
     this.name = 'TransactionFileError';
     this.code = code;
@@ -510,7 +511,22 @@ function cellGetter(sheet: XLSX.WorkSheet): (r: number, c: number) => unknown {
   };
 }
 
+function isOleFile(head: Uint8Array): boolean {
+  return head[0] === 0xd0 && head[1] === 0xcf;
+}
+
 async function* sheetRows(file: File): AsyncGenerator<unknown[]> {
+  const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  if (!isOleFile(head)) {
+    try {
+      yield* xlsxRows(file);
+    } catch (err) {
+      if (err instanceof XlsxReadError) throw new TransactionFileError(err.code === 'range-too-wide' ? 'range-too-wide' : 'unreadable');
+      if (err instanceof RangeError) throw new TransactionFileError('range-too-wide');
+      throw err;
+    }
+    return;
+  }
   let book: XLSX.WorkBook;
   try {
     book = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, dense: true });

@@ -5,6 +5,7 @@ import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { downloadCsv, fmtDateTime, fmtRate, todayTbilisi } from '../lib/format';
 import { IconDownload } from '../components/Icons';
+import RateCompareCharts from '../components/RateCompareCharts';
 import { loadMarketRateData } from '../lib/marketBoard';
 import {
   historySheet,
@@ -109,6 +110,7 @@ export default function MarketRates() {
       {!loaded && <p className="empty">{t('იტვირთება…', 'Loading…')}</p>}
       {loaded && !board.rows.length && <p className="empty">{t('კურსი ჯერ არ არის შენახული. ადმინს ან სახაზინოს შეუძლია განახლება.', 'No rate is saved yet. An admin or treasury can refresh.')}</p>}
       {board.rows.length > 0 && <CurrentBoardTable board={board} />}
+      {board.rows.length > 0 && <RateCompareCharts board={board} />}
     </>
   );
 }

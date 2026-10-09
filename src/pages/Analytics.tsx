@@ -88,6 +88,8 @@ interface ImportResult {
   run_id: number | null;
   matched: number;
   ambiguous: number;
+  pending?: boolean;
+  days_left?: number;
 }
 
 function uploadCount(value: number | string | null | undefined): number {
@@ -100,6 +102,12 @@ function uploadError(err: unknown, t: (ka: string, en: string) => string): strin
     return t(
       'ამ ფაილში ლარის თანხა ვერ მოიძებნა (abs_gel ან cross_gel), ამიტომ არ ჩაიტვირთა.',
       'This file has no lari amount (abs_gel or cross_gel), so it was not loaded.',
+    );
+  }
+  if (err instanceof TransactionFileError && err.code === 'unreadable') {
+    return t(
+      'ეს Excel ფაილი ვერ წაიკითხა. შეინახეთ CSV-ად და სცადეთ თავიდან.',
+      'This Excel file could not be read. Save it as CSV and try again.',
     );
   }
   if (err instanceof TransactionFileError && err.code === 'range-too-wide') {
@@ -115,10 +123,10 @@ function uploadError(err: unknown, t: (ka: string, en: string) => string): strin
     );
   }
   const message = err instanceof Error ? err.message : String(err);
-  if (/could not find the function/i.test(message) && /import_transactions/i.test(message)) {
+  if (/could not find the function/i.test(message) && /finish_transaction_upload|import_transactions/i.test(message)) {
     return t(
-      'ჯერ ჩასვით SQL ფაილი 17_amount_match, შემდეგ სცადეთ თავიდან.',
-      'Paste SQL file 17_amount_match first, then try again.',
+      'ჯერ ჩასვით SQL ფაილი 25_analytics_speed, შემდეგ სცადეთ თავიდან.',
+      'Paste SQL file 25_analytics_speed first, then try again.',
     );
   }
   return message;
@@ -170,8 +178,8 @@ export default function Analytics() {
     if (!file) return;
     setUploading(true);
     setProgress(t('ფაილი იკითხება…', 'Reading the file…'));
+    let saved = 0;
     try {
-      let saved = 0;
       let skippedRows = 0;
       let clientsAdded = 0;
       let sentSoFar = 0;
@@ -196,14 +204,31 @@ export default function Analytics() {
       if (mode === 'amount' && sent) {
         if (runId == null) {
           throw new Error(t(
-            'ატვირთვა მოთხოვნას ვერ დაემთხვა. ჯერ ჩასვით SQL ფაილი 17_amount_match, შემდეგ სცადეთ თავიდან.',
-            'The upload could not match requests. Paste SQL file 17_amount_match first, then try again.',
+            'ატვირთვა მოთხოვნას ვერ დაემთხვა. ჯერ ჩასვით SQL ფაილი 25_analytics_speed, შემდეგ სცადეთ თავიდან.',
+            'The upload could not match requests. Paste SQL file 25_analytics_speed first, then try again.',
           ));
         }
-        setProgress(t('მოთხოვნებს ემთხვევა…', 'Matching requests…'));
-        const done = await rpc<ImportResult>('import_transactions', { p_rows: [], p_run: runId, p_finish: true });
-        matched = uploadCount(done.matched);
-        ambiguous = uploadCount(done.ambiguous);
+        let pending = true;
+        let daysLeft: number | null = null;
+        let guard = 0;
+        while (pending && guard < 4000) {
+          guard += 1;
+          setProgress(daysLeft == null
+            ? t('მოთხოვნებს ემთხვევა…', 'Matching requests…')
+            : t('მოთხოვნებს ემთხვევა… დარჩა {n} დღე', 'Matching requests… {n} days left', { n: daysLeft }));
+          const done = await rpc<ImportResult>('finish_transaction_upload', { p_run: runId });
+          matched += uploadCount(done.matched);
+          ambiguous += uploadCount(done.ambiguous);
+          const nextLeft = uploadCount(done.days_left);
+          if (done.pending && daysLeft != null && nextLeft >= daysLeft) {
+            throw new Error(t(
+              'მოთხოვნების დამთხვევა გაჩერდა. ჩასვით SQL ფაილი 25_analytics_speed და სცადეთ თავიდან.',
+              'Matching requests stopped. Paste SQL file 25_analytics_speed and try again.',
+            ));
+          }
+          pending = Boolean(done.pending);
+          daysLeft = nextLeft;
+        }
       }
       if (!sent) {
         const gaps: string[] = [];
@@ -261,7 +286,10 @@ export default function Analytics() {
       if (month === 'all') await load('all');
       else setMonth('all');
     } catch (err) {
-      toast(uploadError(err, t), 'error');
+      const savedNote = saved
+        ? t(' მანამდე შეინახა {n}.', ' {n} were saved before that.', { n: saved.toLocaleString('en-US') })
+        : '';
+      toast(uploadError(err, t) + savedNote, 'error');
     } finally {
       setUploading(false);
       setProgress('');
