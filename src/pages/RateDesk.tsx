@@ -7,9 +7,8 @@ import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
-import { treasuryReason } from '../lib/requestStatus';
+import { dealLeftOpen, hideEarlierDeals, treasuryReason } from '../lib/requestStatus';
 import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
-import { hideEarlierDeals } from '../lib/requestStatus';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
@@ -115,22 +114,6 @@ function QuotedRateEditor({ requestId, rate, onChanged }: { requestId: number; r
 
 interface CardState { rate: string; valid: number; declining: boolean; confirmFar: boolean; tried: boolean }
 
-interface OtherReason {
-  id: number;
-  client_name: string | null;
-  client_id: string;
-  kam_name: string | null;
-  sells_currency: string | null;
-  gets_currency: string | null;
-  amount: number | null;
-  gets_amount: number | null;
-  rate: number | null;
-  client_rate: number | null;
-  note: string | null;
-  loss_reason_note: string;
-  request_date: string;
-}
-
 interface ClientReply {
   request_id: number;
   kam_name: string;
@@ -152,6 +135,30 @@ interface ClientReply {
 }
 
 const EMPTY_MARKET_BOARD: CurrentBoard = { pairs: [], rows: [], updatedAt: null };
+
+/** Written, paid, or lost rows. A failed lookup leaves the list as it was. */
+async function closedIds(ids: number[]): Promise<Set<number>> {
+  const closed = new Set<number>();
+  if (!ids.length) return closed;
+  const full = await supabase.from('request_outcomes')
+    .select('id, rate_written_at, payment_confirmed_at, went_through, loss_open, outcome')
+    .in('id', ids);
+  const marks = full.error
+    ? await supabase.from('requests').select('id, rate_written_at').in('id', ids)
+    : full;
+  if (marks.error || !marks.data) return closed;
+  for (const row of marks.data as {
+    id: number;
+    rate_written_at?: string | null;
+    payment_confirmed_at?: string | null;
+    went_through?: boolean | null;
+    loss_open?: boolean | null;
+    outcome?: string | null;
+  }[]) {
+    if (dealLeftOpen(row)) closed.add(row.id);
+  }
+  return closed;
+}
 
 /** Same pairs, buy and sell as the Rates board. Per 1 unit, including ruble. */
 function DeskMarketRates({ board }: { board: CurrentBoard }) {
@@ -203,7 +210,6 @@ export default function RateDesk() {
   useTick(10000);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
-  const [otherReasons, setOtherReasons] = useState<OtherReason[]>([]);
   const [replies, setReplies] = useState<ClientReply[]>([]);
   const [repliesNote, setRepliesNote] = useState('');
   const [fixRate, setFixRate] = useState<Record<number, string>>({});
@@ -217,9 +223,7 @@ export default function RateDesk() {
   const [defaultValid, setDefaultValid] = useState(15);
   const [cards, setCards] = useState<Record<number, CardState>>({});
   const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
-  const [booked, setBooked] = useState<Record<number, true>>({});
   const [banks, setBanks] = useState<Record<number, string[]>>({});
-  const [clientIds, setClientIds] = useState<Record<number, string>>({});
   const [hidePast, setHidePast] = useState<Record<number, true>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -246,26 +250,17 @@ export default function RateDesk() {
           : t('{n} ახალი მოთხოვნა', '{n} new requests', { n: fresh.length }));
       }
       initial.current = false;
-      setQueue(q ?? []);
-      setQuotes(quoted ?? []);
+      const queueRows = q ?? [];
+      const quoteRows = quoted ?? [];
+      const watchIds = [...queueRows.map((r) => r.request_id), ...quoteRows.map((r) => r.request_id)];
+      const closed = await closedIds(watchIds);
+      setQueue(queueRows.filter((r) => !closed.has(r.request_id)));
+      setQuotes(quoteRows.filter((r) => !closed.has(r.request_id)));
     } catch (err) {
       toast((err as Error).message, 'error');
     }
     try {
-      const { data, error } = await supabase.from('request_outcomes')
-        .select('id, client_name, client_id, kam_name, sells_currency, gets_currency, amount, gets_amount, rate, client_rate, note, loss_reason_note, request_date')
-        .not('loss_reason_note', 'is', null)
-        .gte('request_date', todayTbilisi(-7))
-        .order('request_date', { ascending: false })
-        .limit(30);
-      if (error) setOtherReasons([]);
-      else setOtherReasons(((data ?? []) as OtherReason[]).filter((row) => row.loss_reason_note.trim()));
-    } catch {
-      setOtherReasons([]);
-    }
-    try {
       const list = await rpc<ClientReply[]>('treasury_client_replies');
-      setReplies(list);
       setRepliesNote('');
       const { data: older } = await supabase
         .from('request_outcomes')
@@ -300,21 +295,11 @@ export default function RateDesk() {
           client_replied_at: null,
           note: row.note,
         }));
-      setExtraAgreed(extras);
-      const ids = [
-        ...list.filter((r) => r.client_reply === 'approved').map((r) => r.request_id),
-        ...extras.map((r) => r.request_id),
-      ];
-      if (ids.length) {
-        const { data: marks } = await supabase.from('requests').select('id, rate_written_at').in('id', ids);
-        const next: Record<number, true> = {};
-        for (const row of (marks ?? []) as { id: number; rate_written_at: string | null }[]) {
-          if (row.rate_written_at) next[row.id] = true;
-        }
-        setBooked(next);
-      } else {
-        setBooked({});
-      }
+      const ids = [...list.map((r) => r.request_id), ...extras.map((r) => r.request_id)];
+      const closed = await closedIds(ids);
+      const stillHere = (row: ClientReply) => !closed.has(row.request_id) && row.client_reply !== 'declined';
+      setReplies(list.filter(stillHere));
+      setExtraAgreed(extras.filter((row) => !closed.has(row.request_id)));
     } catch {
       setReplies([]);
       setExtraAgreed([]);
@@ -352,27 +337,22 @@ export default function RateDesk() {
       ...queue.map((r) => r.request_id),
       ...replies.map((r) => r.request_id),
       ...extraAgreed.map((r) => r.request_id),
-      ...quotes.map((q) => q.request_id),
-      ...otherReasons.map((r) => r.id),
     ]));
-    if (!ids.length) { setBanks({}); setClientIds({}); setHidePast({}); return; }
+    if (!ids.length) { setBanks({}); setHidePast({}); return; }
     let live = true;
     (async () => {
-      const withSet = await supabase.from('requests').select('id, client_id, bank, banks').in('id', ids);
+      const withSet = await supabase.from('requests').select('id, bank, banks').in('id', ids);
       const res = withSet.error
-        ? await supabase.from('requests').select('id, client_id, bank').in('id', ids)
+        ? await supabase.from('requests').select('id, bank').in('id', ids)
         : withSet;
       if (!live || res.error || !res.data) return;
       const next: Record<number, string[]> = {};
-      const clients: Record<number, string> = {};
-      for (const row of res.data as { id: number; client_id?: string | null; bank: string | null; banks?: string[] | string | null }[]) {
-        if (row.client_id) clients[row.id] = row.client_id;
+      for (const row of res.data as { id: number; bank: string | null; banks?: string[] | string | null }[]) {
         const fromSet = bankList(row.banks);
         const picked = fromSet.length ? fromSet : bankList(row.bank);
         if (picked.length) next[row.id] = picked;
       }
       setBanks(next);
-      setClientIds(clients);
     })();
     (async () => {
       const full = await supabase.from('request_outcomes')
@@ -400,7 +380,7 @@ export default function RateDesk() {
       setHidePast(next);
     })();
     return () => { live = false; };
-  }, [queue, replies, extraAgreed, quotes, otherReasons]);
+  }, [queue, replies, extraAgreed]);
 
   const blankCard = (valid: number): CardState => ({ rate: '', valid, declining: false, confirmFar: false, tried: false });
   const card = (id: number): CardState => cards[id] ?? blankCard(defaultValid);
@@ -468,8 +448,8 @@ export default function RateDesk() {
     setWritingId(r.request_id);
     try {
       await rpc('treasury_mark_rate_written', { p_request_id: r.request_id });
-      setBooked((m) => ({ ...m, [r.request_id]: true }));
       toast(t('KAM-ს ეცნობა, რომ კურსი გაწერილია.', 'The KAM is notified that the rate is written.'));
+      load();
     } catch (err) {
       toast((err as Error).message, 'error');
     }
@@ -523,12 +503,10 @@ export default function RateDesk() {
 
   const validCount = quotes.filter((q) => q.quote_state === 'quoted' && !q.went_through).length;
   const waitingBetter = replies.filter((r) => r.client_reply === 'better' && !r.better_decision);
-  const answeredBetter = replies.filter((r) => r.client_reply === 'better' && r.better_decision);
   const approvedReplies = [
     ...replies.filter((r) => r.client_reply === 'approved'),
     ...extraAgreed.filter((r) => !replies.some((x) => x.request_id === r.request_id)),
   ];
-  const declinedReplies = replies.filter((r) => r.client_reply === 'declined');
   const adminDelete = (id: number) => realRole === 'admin'
     ? <DeleteRequestButton requestId={id} onDeleted={load} />
     : null;
@@ -542,8 +520,8 @@ export default function RateDesk() {
         </div>
         <div className="stats">
           <div className="stat"><div className="label">{t('კურსს ელოდება', 'Waiting for a rate')}</div><div className="value" style={{ color: 'var(--aubergine)' }}>{queue.length}</div></div>
+          <div className="stat"><div className="label">{t('კურსი გასაწერია', 'Rate to write')}</div><div className="value" style={{ color: 'var(--aubergine)' }}>{approvedReplies.length}</div></div>
           <div className="stat"><div className="label">{t('მოქმედი კურსები', 'Live rates')}</div><div className="value">{validCount}</div></div>
-          <div className="stat"><div className="label">{t('დღეს გაცემული', 'Given today')}</div><div className="value">{quotes.length}</div></div>
           <div className="stat"><div className="label">{t('უკეთესი კურსი', 'Better rate')}</div><div className="value">{waitingBetter.length}</div></div>
         </div>
       </div>
@@ -672,7 +650,7 @@ export default function RateDesk() {
               <span className="small muted">დადასტურება ან გასწორებული კურსი ბრუნდება KAM-თან. უარი აჩერებს მოთხოვნას.</span>
             </div>
             {repliesNote && <div className="card"><p className="empty">{repliesNote}</p></div>}
-            {loaded && !repliesNote && !waitingBetter.length && !answeredBetter.length && <div className="card"><p className="empty">არაფერი ელოდება.</p></div>}
+            {loaded && !repliesNote && !waitingBetter.length && <div className="card"><p className="empty">არაფერი ელოდება.</p></div>}
             <div className="stack-sm">
               {waitingBetter.map((r) => {
                 const raw = fixRate[r.request_id] ?? '';
@@ -760,33 +738,14 @@ export default function RateDesk() {
                 );
               })}
             </div>
-            {answeredBetter.map((r) => (
-              <div key={r.request_id} className="list-row">
-                <div className="who">
-                  <div className="name">{r.client_name ?? r.client_id}</div>
-                  <div className="tiny muted">ID {r.client_id}</div>
-                  <div className="tiny muted">{r.kam_name}</div>
-                  <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
-                </div>
-                <div className="what">
-                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
-                  <div className="tiny muted">{r.better_decision === 'accepted' ? t('სახაზინომ დაადასტურა {rate}.', 'Treasury accepted {rate}.', { rate: fmtRate(r.given_rate) }) : t('გასწორებული კურსი: {rate}.', 'Corrected rate: {rate}.', { rate: fmtRate(r.given_rate) })}</div>
-                  {(r.rate != null || r.given_rate != null) && <QuotedRateEditor requestId={r.request_id} rate={r.rate ?? r.given_rate} onChanged={load} />}
-                </div>
-                {adminDelete(r.request_id)}
-                {!hidePast[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
-              </div>
-            ))}
           </section>
 
-          <section className="card flush" aria-labelledby="approved-desk-title" style={{ marginTop: 22 }}>
+          <section className="card flush" aria-labelledby="write-desk-title" style={{ marginTop: 22 }}>
             <div className="card-head">
-              <h2 id="approved-desk-title" style={{ fontSize: 22 }}>{t('კლიენტმა დაამტკიცა', 'Client approved')}</h2>
-              <span className="small muted">{t('კურსის ძირითად სისტემაში ჩაწერის შემდეგ დააჭირეთ „კურსი გაწერილია“. KAM-ს ეცნობება.', 'After you enter the rate in the core system, press “Rate is written”. The KAM is notified.')}</span>
+              <h2 id="write-desk-title" style={{ fontSize: 22 }}>{t('კურსი გასაწერია', 'Rate to write')}</h2>
+              <span className="small muted">{t('კლიენტმა დაამტკიცა და კურსი ძირითად სისტემაში ჯერ არ არის ჩაწერილი. ჩაწერის შემდეგ დააჭირეთ „კურსი გაწერილია“. გაწერილი კურსი ისტორიაში გადადის.', 'The client approved, and the rate is not in the core system yet. After you enter it, press “Rate is written”. A written rate moves to History.')}</span>
             </div>
-            {loaded && !repliesNote && !approvedReplies.length && <p className="empty">დღეს არ არის.</p>}
+            {loaded && !repliesNote && !approvedReplies.length && <p className="empty">{t('კურსი გასაწერი არ არის.', 'Nothing is waiting to be written.')}</p>}
             {approvedReplies.map((r) => (
               <div key={r.request_id} className="list-row">
                 <div className="who">
@@ -799,119 +758,19 @@ export default function RateDesk() {
                   <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                   <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
                   {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
-                  <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
+                  <div>{t('გასაწერი კურსი', 'Rate to write')} {fmtRate(r.approved_rate)}</div>
                   {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
-                  {(r.rate != null || booked[r.request_id]) && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
+                  {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
                 <div className="actions">
-                  {booked[r.request_id]
-                    ? <span className="pill pill-ok">{t('კურსი გაწერილია', 'Rate is written')}</span>
-                    : (
-                      <button type="button" className="btn btn-primary" disabled={writingId === r.request_id} onClick={() => markWritten(r)}>
-                        {writingId === r.request_id ? t('ინახება…', 'Saving…') : t('კურსი გაწერილია', 'Rate is written')}
-                      </button>
-                    )}
+                  <button type="button" className="btn btn-primary" disabled={writingId === r.request_id} onClick={() => markWritten(r)}>
+                    {writingId === r.request_id ? t('ინახება…', 'Saving…') : t('კურსი გაწერილია', 'Rate is written')}
+                  </button>
                   {adminDelete(r.request_id)}
                 </div>
                 <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />
                 {r.approved_rate != null && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatHandoff(r.client_id, r.approved_rate)} />}
-                {!hidePast[r.request_id] && !booked[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
-              </div>
-            ))}
-          </section>
-
-          <section className="card flush" aria-labelledby="declined-desk-title">
-            <div className="card-head">
-              <h2 id="declined-desk-title" style={{ fontSize: 22 }}>კლიენტმა უარი თქვა</h2>
-            </div>
-            {loaded && !repliesNote && !declinedReplies.length && <p className="empty">დღეს უარი არ არის.</p>}
-            {declinedReplies.map((r) => (
-              <div key={r.request_id} className="list-row">
-                <div className="who">
-                  <div className="name">{r.client_name ?? r.client_id}</div>
-                  <div className="tiny muted">ID {r.client_id}</div>
-                  <div className="tiny muted">{r.kam_name}</div>
-                  <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
-                </div>
-                <div className="what">
-                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
-                  {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
-                  <div className="tiny muted">{t('მიზეზი', 'Reason')}: {r.client_decline_reason}</div>
-                  {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
-                </div>
-                {adminDelete(r.request_id)}
                 {!hidePast[r.request_id] && <ClientHistory clientId={r.client_id} excludeId={r.request_id} />}
-              </div>
-            ))}
-          </section>
-
-          <section className="card flush" aria-labelledby="quotes-title">
-            <div className="card-head">
-              <h2 id="quotes-title">დღევანდელი კურსები</h2>
-              <span className="small muted">კურსზე „გავიდა“ ჩნდება, როცა კურსი გაწერილია ან კლიენტის ტრანზაქცია მოდის</span>
-            </div>
-            {loaded && !quotes.length && <p className="empty">დღეს კურსი ჯერ არ გაცემულა.</p>}
-            {quotes.map((q) => {
-              const valid = q.quote_state === 'quoted' && new Date(q.valid_until) > new Date();
-              return (
-                <div key={q.request_id} className="list-row">
-                  <div className="who">
-                    <div className="name">{q.client_name}</div>
-                    {clientIds[q.request_id] && <div className="tiny muted">ID {clientIds[q.request_id]}</div>}
-                    <div className="tiny muted">{q.kam_name}</div>
-                    <DeskBanks codes={banks[q.request_id]} label={t('ბანკი', 'Bank')} />
-                  </div>
-                  <div className="what">
-                    <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(q.sells_currency, q.amount)}</div>
-                    <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(q.gets_currency, q.gets_amount)}</div>
-                    {q.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(q.client_rate)}</div>}
-                    {q.note && <div className="tiny muted">{t('კომენტარი სახაზინოსთვის', 'Comment for treasury')}: {q.note}</div>}
-                    {q.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {q.loss_reason_note}</div>}
-                    <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(q.rate)}</div>
-                    <QuotedRateEditor requestId={q.request_id} rate={q.rate} onChanged={load} />
-                  </div>
-                  <div className="actions">
-                    {q.went_through ? <span className="pill pill-ok">{t('გავიდა', 'Went through')}</span>
-                      : valid ? <span className="pill pill-ok">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(q.valid_until) })}</span>
-                      : <span className="pill pill-wait">{t('ვადა გაუვიდა {time}-ზე', 'Expired at {time}', { time: fmtTime(q.valid_until) })}</span>}
-                    {adminDelete(q.request_id)}
-                  </div>
-                  {clientIds[q.request_id] && !hidePast[q.request_id] && <ClientHistory clientId={clientIds[q.request_id]} excludeId={q.request_id} />}
-                </div>
-              );
-            })}
-          </section>
-
-          <section className="card flush" aria-labelledby="other-reasons-title">
-            <div className="card-head">
-              <h2 id="other-reasons-title">სხვა მიზეზები</h2>
-              <span className="small muted">რა ჩაწერა KAM-მა „სხვა“-ს გვერდით, როცა გარიგება არ გავიდა, ბოლო 7 დღე</span>
-            </div>
-            {loaded && !otherReasons.length && <p className="empty">ბოლო 7 დღეში არ არის.</p>}
-            {otherReasons.map((r) => (
-              <div key={r.id} className="list-row">
-                <div className="when">
-                  <div className="strong">{fmtDay(r.request_date)}</div>
-                  <div className="tiny muted">{r.kam_name}</div>
-                </div>
-                <div className="who">
-                  <div className="name">{r.client_name ?? r.client_id}</div>
-                  <div className="tiny muted">ID {r.client_id}</div>
-                  <DeskBanks codes={banks[r.id]} label={t('ბანკი', 'Bank')} />
-                </div>
-                <div className="what">
-                  <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
-                  <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
-                  {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
-                  {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
-                  <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>
-                  {r.rate != null && <QuotedRateEditor requestId={r.id} rate={r.rate} onChanged={load} />}
-                </div>
-                {adminDelete(r.id)}
-                {!hidePast[r.id] && <ClientHistory clientId={r.client_id} excludeId={r.id} />}
               </div>
             ))}
           </section>

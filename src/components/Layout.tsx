@@ -25,9 +25,20 @@ export default function Layout({ children }: { children: ReactNode }) {
     try {
       setFresh(await rpc<string | null>('data_freshness'));
       if (items.some((i) => i.badge === 'queue')) {
-        const { count } = await supabase.from('requests').select('id', { count: 'exact', head: true })
-          .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null)');
-        setCounts((c) => ({ ...c, queue: count ?? 0 }));
+        const queueCount = supabase.from('requests').select('id', { count: 'exact', head: true })
+          .eq('source', 'app')
+          .is('rate_written_at', null)
+          .is('payment_confirmed_at', null)
+          .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null),client_reply.eq.approved');
+        const withLost = await queueCount.is('marked_lost_at', null);
+        const counted = withLost.error
+          ? await supabase.from('requests').select('id', { count: 'exact', head: true })
+            .eq('source', 'app')
+            .is('rate_written_at', null)
+            .is('payment_confirmed_at', null)
+            .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null),client_reply.eq.approved')
+          : withLost;
+        setCounts((c) => ({ ...c, queue: counted.count ?? 0 }));
       }
       if (items.some((i) => i.badge === 'losses')) {
         const { count } = await supabase.from('request_outcomes').select('id', { count: 'exact', head: true })

@@ -28,6 +28,67 @@ export interface StatusInput {
  * through” mark. Closed: a loss (including one treasury has not approved),
  * a client decline, or a treasury decline.
  */
+/** Still open for a KAM or an admin to mark lost or success. */
+export function isOpenRequest(row: {
+  source?: string | null;
+  went_through?: boolean | null;
+  outcome?: string | null;
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+  loss_open?: boolean | null;
+}): boolean {
+  if (row.source === 'import') return false;
+  if (row.went_through || row.outcome === 'went_through') return false;
+  if (row.rate_written_at || row.payment_confirmed_at) return false;
+  if (row.loss_open || row.outcome === 'did_not_go_through') return false;
+  return true;
+}
+
+/** Written, paid, matched, or already a loss. It has left the open desk. */
+export function dealLeftOpen(row: {
+  went_through?: boolean | null;
+  outcome?: string | null;
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+  loss_open?: boolean | null;
+}): boolean {
+  if (row.went_through || row.outcome === 'went_through') return true;
+  if (row.rate_written_at || row.payment_confirmed_at) return true;
+  if (row.loss_open || row.outcome === 'did_not_go_through') return true;
+  return false;
+}
+
+/**
+ * A rate was quoted and the deal is still open.
+ * Client-approved rows stay on the rate desk until the rate is written.
+ * A better rate treasury has not answered stays on the rate desk too.
+ */
+export function isQuotedProgress(row: {
+  source?: string | null;
+  quote_status?: string | null;
+  quote_state?: string | null;
+  client_reply?: string | null;
+  better_decision?: string | null;
+  went_through?: boolean | null;
+  outcome?: string | null;
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+  loss_open?: boolean | null;
+}): boolean {
+  if (row.source === 'import') return false;
+  const quoted = row.quote_status === 'quoted' || row.quote_state === 'quoted' || row.quote_state === 'expired';
+  if (!quoted) return false;
+  if (dealLeftOpen(row)) return false;
+  if (row.client_reply === 'approved' || row.client_reply === 'declined') return false;
+  if (row.client_reply === 'better' && !row.better_decision) return false;
+  return true;
+}
+
+/** The rate was given and then written in the core. */
+export function isWrittenHistory(row: { rate_written_at?: string | null }): boolean {
+  return row.rate_written_at != null && row.rate_written_at !== '';
+}
+
 export function hideEarlierDeals(row: {
   went_through?: boolean | null;
   rate_written_at?: string | null;

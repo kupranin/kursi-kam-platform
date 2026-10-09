@@ -7,7 +7,7 @@ import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
-import { hideEarlierDeals, treasuryReason } from '../lib/requestStatus';
+import { hideEarlierDeals, isOpenRequest, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
@@ -15,6 +15,7 @@ import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
 import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
 import LossApproval from '../components/LossApproval';
+import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/RequestOutcomeButtons';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
@@ -584,7 +585,7 @@ export default function Requests() {
       {isKam && <section className="card flush" aria-labelledby="open-title">
         <div className="card-head">
           <h2 id="open-title" style={{ fontSize: 22 }}>{t('ღია მოთხოვნები', 'Open requests')}</h2>
-          <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. მოთხოვნა თავისით იხურება, როცა კურსი გაწერილია ან კლიენტის ტრანზაქცია მოდის.', 'Treasury’s rate appears here. The request closes itself when the rate is written, or when the client’s transaction arrives.')}</span>
+          <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. ღია მოთხოვნაზე შეგიძლიათ მონიშნოთ, რომ ტრანზაქცია გავიდა, ან რომ დაიკარგა.', 'Treasury’s rate appears here. On an open request you can mark that the transaction went through, or that it was lost.')}</span>
         </div>
         {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
         {open.map((r) => {
@@ -641,6 +642,7 @@ export default function Requests() {
                   </>
                 )}
                 {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
+                <RequestOutcomeButtons row={r} onDone={refresh} />
                 {own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
                 {own && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
@@ -731,6 +733,7 @@ export default function Requests() {
             </div>
             {canChange(r) && (
               <div className="actions">
+                <RequestOutcomeButtons row={r} onDone={refresh} />
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
                 <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
               </div>
@@ -809,10 +812,11 @@ export default function Requests() {
               <span className={'pill ' + st.cls} style={{ marginLeft: 'auto' }}>
                 {st.cls === 'pill-ok' && <IconCheck />}{st.label}
               </span>
-              {canChange(r) && (
+              {(canChange(r) || (canMarkRequestOutcome(realRole, profile?.id, r.kam_id) && isOpenRequest(r))) && (
                 <div className="actions">
-                  <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                  <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
+                  <RequestOutcomeButtons row={r} onDone={refresh} />
+                  {canChange(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
+                  {canChange(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
                 </div>
               )}
               {editForm(r)}
