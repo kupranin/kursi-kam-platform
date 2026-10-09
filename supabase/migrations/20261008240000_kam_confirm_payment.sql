@@ -19,6 +19,9 @@
 
 alter table public.requests add column if not exists payment_confirmed_at timestamptz;
 alter table public.requests add column if not exists payment_confirmed_by uuid;
+alter table public.requests add column if not exists loss_approved_at timestamptz;
+alter table public.requests add column if not exists loss_approved_by uuid;
+alter table public.requests add column if not exists loss_approval_comment text;
 
 do $payment_confirmed_by_fkey$
 begin
@@ -308,9 +311,10 @@ grant select on public.request_outcomes to authenticated;
 
 -- Analysis uses the same lost path. An unapproved app loss stays open.
 -- A written rate stays success. A confirmed payment is success too, and
--- a saved loss reason stays in the reason text. Same columns as before,
--- so this replace does not drop the view.
-create or replace view public.analyst_deals
+-- a saved loss reason stays in the reason text. Create or replace cannot
+-- insert a column, so the old list is dropped first. Request rows stay.
+drop view if exists public.analyst_deals;
+create view public.analyst_deals
 with (security_invoker = false, security_barrier = true)
 as
 select
@@ -356,8 +360,8 @@ from (
       when r.rate_written_at is not null or r.payment_confirmed_at is not null then 'success'
       when w.tx_hit or w.file_won then 'success'
       when r.client_reply = 'better' and r.better_decision is null then 'open'
-      when c.loss_candidate and r.loss_approved_at is null then 'open'
-      when c.loss_candidate then 'lost'
+      when lc.loss_candidate and r.loss_approved_at is null then 'open'
+      when lc.loss_candidate then 'lost'
       when w.file_lost then 'lost'
       when w.file_open then 'open'
       when r.request_date >= coalesce(private.freshness_date(), r.request_date) then 'open'
@@ -424,7 +428,7 @@ from (
         or r.request_date < coalesce(private.freshness_date(), r.request_date)
       )
     ) as loss_candidate
-  ) c
+  ) lc
 ) d
 where private.my_role() in ('analyst', 'admin');
 
