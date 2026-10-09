@@ -5,7 +5,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDay, sideAmount } from '../lib/format';
 import { treasuryReason } from '../lib/requestStatus';
-import type { RequestRow } from '../lib/types';
+import type { LossReason, RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LossApproval from '../components/LossApproval';
 
@@ -21,6 +21,12 @@ function declineLabel(reason: string, lang: 'ka' | 'en'): string {
   return treasuryReason(reason, lang) || DECLINE_REASONS.find((r) => r.value === reason)?.label || reason;
 }
 
+function reasonLabel(reasons: LossReason[], code: string, lang: 'ka' | 'en'): string {
+  const reason = reasons.find((x) => x.code === code);
+  if (!reason) return code;
+  return (lang === 'en' ? reason.label_en : reason.label_ka).trim() || reason.label_en || reason.label_ka;
+}
+
 function stillOpenLoss(row: RequestRow): boolean {
   return row.loss_open === true
     && !row.went_through
@@ -33,6 +39,7 @@ export default function LostRequests() {
   const { t, lang } = useI18n();
   const { realRole } = useViewAs();
   const [rows, setRows] = useState<RequestRow[]>([]);
+  const [reasons, setReasons] = useState<LossReason[]>([]);
   const [total, setTotal] = useState(0);
   const [shown, setShown] = useState(PAGE);
   const [hasMore, setHasMore] = useState(false);
@@ -45,13 +52,17 @@ export default function LostRequests() {
   useEffect(() => {
     let gone = false;
     (async () => {
-      const { data, error: err, count } = await supabase
-        .from('request_outcomes')
-        .select('*', { count: 'exact' })
-        .eq('loss_open', true)
-        .order('request_date', { ascending: false })
-        .order('id', { ascending: false })
-        .range(0, shown - 1);
+      const [{ data, error: err, count }, reasonRes] = await Promise.all([
+        supabase
+          .from('request_outcomes')
+          .select('*', { count: 'exact' })
+          .eq('loss_open', true)
+          .order('request_date', { ascending: false })
+          .order('id', { ascending: false })
+          .range(0, shown - 1),
+        supabase.from('loss_reasons').select('*').eq('active', true).order('sort_order'),
+      ]);
+      if (!gone) setReasons((reasonRes.data ?? []) as LossReason[]);
       if (gone) return;
       if (err) {
         setRows([]);
@@ -103,6 +114,12 @@ export default function LostRequests() {
                 <div className="tiny muted">{fmtDay(r.request_date)} · ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
                 <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                 <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                {r.loss_reason && (
+                  <p className="note-box">
+                    {t('KAM-ის მიზეზი', 'KAM reason')}: {reasonLabel(reasons, r.loss_reason, lang)}
+                    {r.loss_reason_note ? ` — ${r.loss_reason_note}` : ''}
+                  </p>
+                )}
                 {r.client_reply === 'declined' && r.client_decline_reason && (
                   <p className="note-box">{t('კლიენტმა უარი თქვა', 'Client declined')}: {r.client_decline_reason}</p>
                 )}

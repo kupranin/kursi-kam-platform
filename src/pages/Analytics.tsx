@@ -273,8 +273,8 @@ export default function Analytics() {
         ));
         if (ambiguous) {
           parts.push(t(
-            '{n} არ მიება, რადგან ეს თანხა ერთ მოთხოვნაზე ზუსტად არ ჯდება.',
-            '{n} were not attached, because that amount does not fit exactly one request.',
+            '{n} არ მიება ერთ მოთხოვნას, რადგან ეს თანხა ზუსტად არ ჯდება. ბრუნვაში მაინც ითვლება, თუ კლიენტს იმ თვეში მოთხოვნა აქვს.',
+            '{n} were not attached to one request, because that amount is not an exact fit. They still count in turnover when that client requested in the month.',
             { n: ambiguous.toLocaleString('en-US') },
           ));
         }
@@ -309,7 +309,10 @@ export default function Analytics() {
         <div>
           <h1>{t('ანალიტიკა', 'Analytics')}</h1>
           <p>{seeTransactions
-            ? 'ბრუნვა და შემოსავალი, ტრანზაქციების ფაილიდან. ქვემოთ სახაზინოს დროცაა.'
+            ? t(
+              'წარმატებული გადახდა ბრუნვაში ითვლება, როცა იმ კლიენტს იმავე თვეში მოთხოვნა აქვს. თანხა არის abs_gel + cross_gel. ერთ მოთხოვნაზე ზუსტი დამთხვევა საჭირო არ არის. შემოსავალი იმავე სტრიქონების საკომისიოა. ქვემოთ სახაზინოს დროცაა.',
+              'A successful payment counts when that client requested in the same month. The amount is abs_gel + cross_gel. It does not have to match one request. The fee is total_income on those same rows. Treasury time is below.',
+            )
             : t('სახაზინოს პასუხისა და კურსის გაწერის დრო.', 'How long treasury takes to answer, and to write the rate.')}</p>
         </div>
         <div className="row">
@@ -353,8 +356,8 @@ export default function Analytics() {
           <h2 id="upload-title">ტრანზაქციების ატვირთვა</h2>
           <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
             {t(
-              'Excel ან CSV. სტრიქონი მოთხოვნას ემთხვევა: იგივე კლიენტი (sender id), იგივე დღე, იგივე ვალუტები (currency და currency to send) და ზუსტად იგივე ლარის თანხა (abs_gel, ან cross_gel თუ არც ერთი მხარე ლარი არ არის). თუ ფაილში არის Create time, მოთხოვნის დროც უნდა ემთხვეოდეს იმავე წუთს (თბილისის დრო). წამები არ ითვლება. თუ დრო არ არის, საკმარისია იგივე დღე. თუ ეს ერთ მოთხოვნაზე ზუსტად არ ჯდება, სტრიქონი არ მიება. იგივე დღეების ხელახალი ატვირთვა იმ დღეებს ცვლის, რომ ორჯერ არ დაითვალოს. თარიღი: created at ან created date. დრო: create time. ასევე payment status. total_income საკომისიოა და აუცილებელი არ არის.',
-              'Excel or CSV. A row matches a request when the client (sender id), the day, the currencies (currency and currency to send), and the lari amount (abs_gel, or cross_gel when neither side is lari) are the same. If the file has a Create time, the request must be the same minute, in Tbilisi. Seconds are not required. If there is no time, the day is enough. If that does not fit exactly one request, the row is not attached. Uploading those days again replaces them, so they are not counted twice. Date: created at or created date. Time: create time. Also payment status. total_income is the fee and is not required.',
+              'Excel ან CSV. ბრუნვა ითვლის წარმატებულ გადახდას (payment status SUCCESS), თუ იმ კლიენტს (sender id) იმავე თვეში მოთხოვნა აქვს. თანხა abs_gel + cross_gel. ერთი მოთხოვნა, დღე, ვალუტა ან წუთი ბრუნვისთვის საჭირო არ არის. წინა თვის გადახდა ამ თვეში არ შედის. შემოსავალი total_income-ია. თარიღი: created at ან created date. დრო: create time. იგივე დღის ხელახალი ატვირთვა იმ დღეს ცვლის, რომ ორჯერ არ დაითვალოს.',
+              'Excel or CSV. Turnover counts a successful payment (payment status SUCCESS) when that client (sender id) requested in the same month. The amount is abs_gel + cross_gel. Turnover does not require one request, a day, a currency pair, or a minute. A payment from the previous month is not in this month. The fee is total_income. Date: created at or created date. Time: create time. Uploading a day again replaces that day, so it is not counted twice.',
             )}
           </p>
           <label className={'btn btn-primary' + (uploading ? ' disabled' : '')}>
