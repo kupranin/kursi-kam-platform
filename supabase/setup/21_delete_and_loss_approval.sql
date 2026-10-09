@@ -250,7 +250,9 @@ select
   b.loss_approved_by,
   b.loss_approval_comment,
   b.loss_approver_name,
-  (b.loss_candidate and b.loss_approved_at is null) as loss_open
+  (b.loss_candidate and b.loss_approved_at is null) as loss_open,
+  b.payment_confirmed_at,
+  b.payment_confirmed_by
 from (
   select
     r.id,
@@ -301,6 +303,8 @@ from (
     r.loss_approved_by,
     r.loss_approval_comment,
     ap.full_name as loss_approver_name,
+    r.payment_confirmed_at,
+    r.payment_confirmed_by,
     w.rate_written,
     w.tx_hit,
     w.file_won,
