@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase, rpc } from '../../lib/supabase';
 import { useToast } from '../../lib/toast';
 import { fmtDateTime } from '../../lib/format';
+import LoadingLine from '../../components/LoadingLine';
 
 interface NotificationRule { event_type: string; audience: string; enabled: boolean; description: string }
 interface HookStatus { audience: string; has_webhook: boolean; last_delivered_at: string | null; failed_last_24h: number; waiting: number }
@@ -53,6 +54,7 @@ export default function MessagesPanel() {
   const [hooks, setHooks] = useState<HookStatus[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [testEvent, setTestEvent] = useState('rate.ready');
+  const [loaded, setLoaded] = useState(false);
 
   async function load() {
     const [r, e] = await Promise.all([
@@ -62,6 +64,7 @@ export default function MessagesPanel() {
     setRules((r.data ?? []) as NotificationRule[]);
     setEvents((e.data ?? []) as EventRow[]);
     try { setHooks(await rpc<HookStatus[]>('admin_message_status')); } catch { setHooks([]); }
+    setLoaded(true);
   }
   useEffect(() => { load(); }, []);
 
@@ -100,6 +103,7 @@ export default function MessagesPanel() {
         </div>
       </div>
 
+      {!loaded && <LoadingLine />}
       <div style={{ padding: '0 24px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
         {hooks.filter((h) => h.has_webhook || h.audience !== 'manager').map((h) => (
           <div key={h.audience} style={{ padding: '14px 16px', borderRadius: 12, background: h.has_webhook ? '#EAF7F1' : 'var(--warn-bg)' }}>

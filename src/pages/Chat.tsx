@@ -6,6 +6,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime } from '../lib/format';
 import type { StaffMessage, StaffPerson } from '../lib/types';
+import LoadingLine from '../components/LoadingLine';
 
 const MAX_BODY = 2000;
 
@@ -165,7 +166,7 @@ export default function Chat() {
         </nav>
       )}
 
-      {!loaded && <p className="muted">იტვირთება…</p>}
+      {!loaded && <LoadingLine />}
       {loaded && loadError && !people.length && <p className="alert-box" role="alert">{loadError}</p>}
 
       {loaded && !loadError && showingLog && (

@@ -5,9 +5,12 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtRate, sideAmount } from '../lib/format';
-import { classifyRequest, treasuryReason, type LogCode } from '../lib/requestStatus';
+import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { classifyRequest, isWrittenHistory, treasuryReason, type LogCode } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
 import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
+import RatePeople from '../components/RatePeople';
 
 export default function RequestLog() {
   const { profile } = useAuth();
@@ -23,7 +26,7 @@ export default function RequestLog() {
   const load = useCallback(async () => {
     let q = supabase
       .from('request_outcomes')
-      .select('id, kam_id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, rate_valid_until, outcome, went_through, source')
+      .select('id, kam_id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, rate_valid_until, rate_written_at, outcome, went_through, source')
       .eq('source', 'app')
       .order('requested_at', { ascending: false })
       .limit(300);
@@ -31,7 +34,8 @@ export default function RequestLog() {
     const { data, error: err } = await q;
     if (err) setError(err.message);
     else {
-      setRows((data ?? []) as RequestRow[]);
+      const list = (data ?? []) as RequestRow[];
+      setRows(applyRatePeople(list, await loadRatePeople(list.map((row) => row.id))));
       setError('');
     }
     setLoaded(true);
@@ -80,7 +84,7 @@ export default function RequestLog() {
       </div>
       {error && <p className="alert-box" role="alert">{error}</p>}
       <section className="card flush" aria-label={t('მოთხოვნების ჟურნალი', 'Request log')}>
-        {!loaded && <p className="empty">{t('იტვირთება…', 'Loading…')}</p>}
+        {!loaded && <LoadingLine />}
         {loaded && !error && !shown.length && <p className="empty">{t('ამ ხედში მოთხოვნა არ არის.', 'No requests in this view.')}</p>}
         {shown.length > 0 && (
           <div className="table-wrap">
@@ -116,15 +120,21 @@ export default function RequestLog() {
                         <div>{t('ყიდის', 'Sells')} {sideAmount(row.sells_currency, row.amount)}</div>
                         <div>{t('იღებს', 'Gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
                       </td>
-                      <td className="num strong">{rate != null ? fmtRate(rate) : ''}</td>
+                      <td className="num strong">
+                        {rate != null ? fmtRate(rate) : ''}
+                        <RatePeople quoted={row.quoted_by_name} written={row.written_by_name} />
+                      </td>
                       <td>
                         <div>{label(status.code)}</div>
                         {reason && <div className="tiny muted">{reason}</div>}
                       </td>
-                      {showDelete && canDeleteRequest(realRole, profile?.id, row.kam_id) && (
-                        <td><DeleteRequestButton requestId={row.id} onDeleted={load} /></td>
+                      {showDelete && (
+                        <td>
+                          {canDeleteRequest(realRole, profile?.id, row.kam_id) && !isWrittenHistory(row) && (
+                            <DeleteRequestButton requestId={row.id} onDeleted={load} />
+                          )}
+                        </td>
                       )}
-                      {showDelete && !canDeleteRequest(realRole, profile?.id, row.kam_id) && <td />}
                     </tr>
                   );
                 })}

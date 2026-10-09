@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { rpc } from '../../lib/supabase';
 import { useToast } from '../../lib/toast';
 import { fmtDateTime, fmtWhole } from '../../lib/format';
+import LoadingLine from '../../components/LoadingLine';
 
 interface Run { id: number; kind: string; started_at: string; finished_at: string | null; ok: boolean | null; rows_upserted: number | null; error: string | null }
 interface Status { freshness: string | null; last_nightly: string | null; backfill_waiting: number; runs: Run[] }
@@ -36,6 +37,7 @@ export default function SyncPanel() {
         </div>
         <button type="button" className="btn" onClick={syncNow} disabled={busy}>{busy ? 'სინქრონიზდება…' : 'სინქრონიზაცია ახლა'}</button>
       </div>
+      {!status && <LoadingLine />}
       {status && (
         <>
           <div className="stats" style={{ padding: '0 24px 18px' }}>

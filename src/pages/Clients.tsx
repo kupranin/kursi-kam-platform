@@ -4,6 +4,7 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { fmtDay } from '../lib/format';
 import type { ClientMatch } from '../lib/types';
+import LoadingLine from '../components/LoadingLine';
 
 export default function Clients() {
   const { role } = useViewAs();
@@ -39,6 +40,7 @@ export default function Clients() {
         <input id="client-search" className="input" autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('დაიწყეთ აკრეფა', 'Start typing')} />
       </div>
       <section className="card flush" aria-label={t('კლიენტები', 'Clients')} style={{ paddingTop: 8 }}>
+        {loading && <LoadingLine />}
         {!loading && !rows.length && <p className="empty">{q ? t('ვერ მოიძებნა.', 'Nothing found.') : t('კლიენტები ჯერ არ არის.', 'No clients yet.')}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">

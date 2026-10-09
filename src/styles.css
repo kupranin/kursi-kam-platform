@@ -203,6 +203,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .list-row .who { flex: 1 1 200px; min-width: 0; }
 .list-row .what { flex: 1 1 240px; min-width: 0; }
 .list-row .actions { flex: none; display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.rate-people { margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 400; text-align: left; }
 .strong { font-weight: 600; }
 .name { font-weight: 600; font-size: 17px; }
 
@@ -306,13 +307,65 @@ table.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .pair-board .table th:first-child, .pair-board .table td:first-child { padding-left: 8px; }
 .pair-board .table th:last-child, .pair-board .table td:last-child { padding-right: 8px; }
 
-@media (max-width: 640px) {
-  .page { padding: 20px 16px 64px; }
-  h1 { font-size: 26px; }
-  .card { padding: 18px 16px; }
-  .card.flush > .card-head, .list-row, .chat-pick, .chat-people button.person { padding-left: 16px; padding-right: 16px; }
-  .table th:first-child, .table td:first-child, .table tbody th:first-child { padding-left: 16px; }
-  .list-row .when { flex-basis: auto; }
-  .stat { padding: 0 14px; }
+@media (max-width: 800px) {
+  html, body { overflow-x: clip; max-width: 100%; }
+  .topbar { padding-top: env(safe-area-inset-top); max-width: 100%; }
+  .topbar-inner { padding: 8px 12px; gap: 8px; min-height: 0; width: 100%; max-width: 100%; min-width: 0; }
+  .page { max-width: 100%; min-width: 0; }
+  .brand { order: 1; flex: 1 1 auto; min-width: 0; }
+  .topbar-right { display: contents; }
+  .view-as, .lang-switch, .bell, .user-menu { order: 2; }
+  .freshness {
+    order: 4;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 2px;
+    padding-bottom: 2px;
+  }
+  .nav a { flex: none; white-space: nowrap; padding: 8px 12px; }
+  .page { padding: 16px 12px calc(48px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 24px; }
+  .page-head { align-items: stretch; }
+  .page-head p { font-size: 15px; }
+  .card { padding: 16px 14px; }
+  .card.flush > .card-head, .list-row, .chat-pick, .chat-people button.person { padding-left: 14px; padding-right: 14px; }
+  .card-head, .page-head .row, .req-card .row-between { align-items: stretch; }
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+  .table th:first-child, .table td:first-child, .table tbody th:first-child { padding-left: 14px; }
+  .list-row { align-items: flex-start; gap: 8px 12px; }
+  .list-row .when, .list-row .who, .list-row .what { flex: 1 1 100%; }
+  .list-row, .card, .req-card { max-width: 100%; min-width: 0; }
+  .list-row .actions { width: 100%; max-width: 100%; margin-left: 0; min-width: 0; }
+  .list-row .actions .btn, .req-card .actions .btn, .page .form-row .btn {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+  .stats { width: 100%; gap: 8px 0; }
+  .stat { flex: 1 1 45%; border-left: 0; padding: 4px 12px 4px 0; }
+  .stats.big .value { font-size: 26px; }
+  .deal-side, .form-row > .field, .other-reason, .other-reason .input { flex-basis: 100%; width: 100%; }
+  .req-card { padding: 14px; }
+  .rate-charts { grid-template-columns: 1fr; }
+  .rate-chart-side { grid-template-columns: 4.4rem minmax(0, 1fr) 3.4rem; }
+  .chat-compose { flex-wrap: wrap; }
+  .chat-compose .btn { width: 100%; }
   .combo-list { width: 100%; }
+  .auth-card { padding: 22px 16px; }
+  .pill { white-space: normal; }
 }

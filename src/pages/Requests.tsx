@@ -7,26 +7,24 @@ import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
-import { hideEarlierDeals, isOpenRequest, treasuryReason } from '../lib/requestStatus';
+import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { hideEarlierDeals, isOpenRequest, isWrittenHistory, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
 import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
+import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
 import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/RequestOutcomeButtons';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
 
-async function attachWritten(rows: RequestRow[]): Promise<RequestRow[]> {
-  const ids = rows.filter((r) => r.client_reply === 'approved' && r.approved_rate != null).map((r) => r.id);
-  if (!ids.length) return rows;
-  const { data, error } = await supabase.from('requests').select('id, rate_written_at').in('id', ids);
-  if (error || !data) return rows;
-  const written = new Map((data as { id: number; rate_written_at: string | null }[]).map((row) => [row.id, row.rate_written_at]));
-  return rows.map((r) => (written.has(r.id) ? { ...r, rate_written_at: written.get(r.id) ?? null } : r));
+async function withPeople(rows: RequestRow[]): Promise<RequestRow[]> {
+  return applyRatePeople(rows, await loadRatePeople(rows.map((row) => row.id)));
 }
 
 function bookedLine(r: RequestRow): string | null {
@@ -145,7 +143,7 @@ export default function Requests() {
       .eq('kam_id', profile!.id)
       .or(`request_date.eq.${today},quote_status.eq.asking`)
       .order('asked_at', { ascending: false });
-    if (!error) setRows(await attachWritten((data ?? []) as RequestRow[]));
+    if (!error) setRows(await withPeople((data ?? []) as RequestRow[]));
     setLoaded(true);
   }, [profile, today, isKam]);
 
@@ -170,7 +168,7 @@ export default function Requests() {
     if (ticket !== histReq.current) return;
     if (error) setHistError(error.message);
     else {
-      const written = await attachWritten((data ?? []) as RequestRow[]);
+      const written = await withPeople((data ?? []) as RequestRow[]);
       if (ticket !== histReq.current) return;
       setHistory(written);
       setHistCount(count ?? 0);
@@ -190,7 +188,7 @@ export default function Requests() {
       .limit(40);
     if (error) setApprovedError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
     else {
-      setApprovedRows(await attachWritten((data ?? []) as RequestRow[]));
+      setApprovedRows(await withPeople((data ?? []) as RequestRow[]));
       setApprovedError('');
     }
     setApprovedLoaded(true);
@@ -433,7 +431,7 @@ export default function Requests() {
           <div className="row" style={{ paddingTop: 27, gap: 12 }}>
             <button type="submit" className="btn btn-primary" disabled={editBusy}>{editBusy ? t('ინახება…', 'Saving…') : t('შენახვა', 'Save')}</button>
             <button type="button" className="link" onClick={() => setEditId(null)}>{t('გაუქმება', 'Cancel')}</button>
-            {canChange(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { setEditId(null); refresh(); }} />}
+            {canChange(r) && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { setEditId(null); refresh(); }} />}
           </div>
         </div>
         {idOk && !hideEarlierDeals(r) && <ClientHistory clientId={editClientId.trim()} excludeId={r.id} />}
@@ -587,6 +585,7 @@ export default function Requests() {
           <h2 id="open-title" style={{ fontSize: 22 }}>{t('ღია მოთხოვნები', 'Open requests')}</h2>
           <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. ღია მოთხოვნაზე შეგიძლიათ მონიშნოთ, რომ ტრანზაქცია გავიდა, ან რომ დაიკარგა.', 'Treasury’s rate appears here. On an open request you can mark that the transaction went through, or that it was lost.')}</span>
         </div>
+        {!loaded && <LoadingLine />}
         {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
         {open.map((r) => {
           const st = stateOf(r);
@@ -616,6 +615,7 @@ export default function Requests() {
               </div>
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
+                <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {answer
@@ -644,7 +644,7 @@ export default function Requests() {
                 {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
                 <RequestOutcomeButtons row={r} onDone={refresh} />
                 {own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
-                {own && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+                {own && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
               {editForm(r)}
               <LossApproval row={r} onDone={refresh} />
@@ -682,6 +682,7 @@ export default function Requests() {
 
       {isKam && <section className="card flush" aria-labelledby="done-title">
         <div className="card-head"><h2 id="done-title" style={{ fontSize: 18 }}>{t('დღეს გავიდა', 'Went through today')}</h2></div>
+        {!loaded && <LoadingLine />}
         {loaded && !done.length && <p className="empty">{t('დღეს ჯერ არაფერია.', 'Nothing yet today.')}</p>}
         {done.map((r) => {
           const transferText = bookedLine(r);
@@ -689,12 +690,12 @@ export default function Requests() {
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
             <span className="who strong">{r.client_name ?? r.client_id}</span>
-            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}</span>
+            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} /></span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
             {canChange(r) && (
               <div className="actions">
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
+                {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
             )}
             {editForm(r)}
@@ -714,6 +715,7 @@ export default function Requests() {
           </div>
         </div>
         {approvedError && <p className="empty">{approvedError}</p>}
+        {!approvedLoaded && !approvedError && <LoadingLine />}
         {approvedLoaded && !approvedError && !approvedRows.length && <p className="empty">{t('ჯერ არაფერია.', 'Nothing yet.')}</p>}
         {approvedRows.map((r) => (
           <div key={r.id} className="list-row">
@@ -728,6 +730,7 @@ export default function Requests() {
             </div>
             <div className="what">
               <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
+              <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
               <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
               {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
             </div>
@@ -735,7 +738,7 @@ export default function Requests() {
               <div className="actions">
                 <RequestOutcomeButtons row={r} onDone={refresh} />
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />
+                {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
             )}
             {editForm(r)}
@@ -775,7 +778,7 @@ export default function Requests() {
           </div>
         </div>
         {histError && <p className="alert-box" role="alert">{histError}</p>}
-        {!histLoaded && <p className="empty">{t('იტვირთება…', 'Loading…')}</p>}
+        {!histLoaded && <LoadingLine />}
         {histLoaded && !histError && !history.length && (
           <p className="empty">
             {month === 'all' && kamFilter === 'all'
@@ -801,6 +804,7 @@ export default function Requests() {
               </div>
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}</div>
+                <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>}
@@ -816,7 +820,7 @@ export default function Requests() {
                 <div className="actions">
                   <RequestOutcomeButtons row={r} onDone={refresh} />
                   {canChange(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
-                  {canChange(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+                  {canChange(r) && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
                 </div>
               )}
               {editForm(r)}

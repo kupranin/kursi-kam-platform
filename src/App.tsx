@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { useI18n } from './lib/i18n';
@@ -27,16 +28,17 @@ import Admin from './pages/admin/Admin';
 import Analyst from './pages/Analyst';
 
 export default function App() {
-  const { loading, session, profile, needsSecondFactor, recovering, signOut } = useAuth();
+  const { loading, session, profile, profileUnavailable, needsSecondFactor, recovering, signOut } = useAuth();
   const { role } = useViewAs();
   const { t } = useI18n();
   const location = useLocation();
 
   if (!isConfigured) return <SetupNeeded />;
   if (location.pathname === '/set-password' || recovering || arrivedFrom === 'invite' || arrivedFrom === 'recovery') return <SetPassword />;
-  if (loading) return <div className="loading">{t('იტვირთება…', 'Loading…')}</div>;
+  if (loading) return <div className="loading">{t('იტვირთება', 'Loading')}</div>;
   if (!session) return <Login />;
   if (needsSecondFactor) return <SecondFactor />;
+  if (profileUnavailable) return <PlatformStarting />;
   if (!profile) {
     return (
       <div className="auth-wrap">
@@ -76,6 +78,34 @@ export default function App() {
         <Route path="*" element={<Navigate to={HOME[role]} replace />} />
       </Routes>
     </Layout>
+  );
+}
+
+function PlatformStarting() {
+  const { t } = useI18n();
+  const { refresh } = useAuth();
+  const [busy, setBusy] = useState(false);
+
+  async function again() {
+    setBusy(true);
+    try {
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <LangSwitch />
+        <h1>{t('პლატფორმა ჯერ ირთვება', 'The platform is still starting')}</h1>
+        <p>{t('რამდენიმე წუთში სცადეთ თავიდან.', 'Try again in a few minutes.')}</p>
+        <button type="button" className="btn" onClick={again} disabled={busy}>
+          {busy ? t('მიმდინარეობს…', 'Trying…') : t('თავიდან ცდა', 'Try again')}
+        </button>
+      </div>
+    </div>
   );
 }
 

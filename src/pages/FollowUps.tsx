@@ -5,9 +5,13 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
+import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { isWrittenHistory } from '../lib/requestStatus';
 import type { LossReason, RequestRow, Role, WinbackRow } from '../lib/types';
 import { IconCheck } from '../components/Icons';
 import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
+import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
 
 function isOther(reason: LossReason): boolean {
@@ -56,7 +60,8 @@ export default function FollowUps() {
       supabase.from('loss_reasons').select('*').eq('active', true).order('sort_order'),
       rpc<WinbackRow[]>('winback_list').catch(() => [] as WinbackRow[]),
     ]);
-    setAsks((a.data ?? []) as RequestRow[]);
+    const asks = (a.data ?? []) as RequestRow[];
+    setAsks(applyRatePeople(asks, await loadRatePeople(asks.map((row) => row.id))));
     setReasons((r.data ?? []) as LossReason[]);
     setWinback(w ?? []);
     setLoaded(true);
@@ -145,6 +150,7 @@ export default function FollowUps() {
           </div>
           {asks.length > 0 && <span className="strong" style={{ color: 'var(--aubergine)' }}>{left === 0 ? 'ყველას პასუხი გაეცა. გმადლობთ.' : left + ' დარჩა'}</span>}
         </div>
+        {!loaded && <LoadingLine />}
         {loaded && !asks.length && <p className="empty">საპასუხო არაფერია.</p>}
         <div className="stack-sm">
           {asks.map((a) => (
@@ -155,6 +161,7 @@ export default function FollowUps() {
                   {fmtDay(a.request_date)}: {describeDeal(a.sells_currency, a.amount, a.gets_currency, a.gets_amount)}{a.rate ? ' კურსით ' + fmtRate(a.rate) : ''}
                   {showOwner && a.kam_name ? ', ' + a.kam_name : ''}
                 </div>
+                <RatePeople quoted={a.quoted_by_name} written={a.written_by_name} />
                 <LossApproval row={a} onDone={load} />
               </div>
               {answered[a.id] ? (
@@ -191,7 +198,7 @@ export default function FollowUps() {
                   )) : <span className="pill pill-wait">KAM-ს ელოდება</span>}
                 </div>
               )}
-              {canDeleteRequest(realRole, profile?.id, a.kam_id) && (
+              {canDeleteRequest(realRole, profile?.id, a.kam_id) && !isWrittenHistory(a) && (
                 <DeleteRequestButton requestId={a.id} onDeleted={load} />
               )}
             </div>
@@ -221,6 +228,7 @@ export default function FollowUps() {
       </div>
 
       <section className="card flush" aria-label="დასაბრუნებელი კლიენტები" style={{ paddingTop: 8 }}>
+        {!loaded && <LoadingLine />}
         {loaded && !shown.length && <p className="empty">აქ დასაბრუნებელი კლიენტი არ არის.</p>}
         {shown.length > 0 && (
           <div className="table-wrap">

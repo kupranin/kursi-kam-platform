@@ -5,6 +5,7 @@
 --
 -- Delete: a KAM can delete only a request they logged (kam_id).
 -- An admin (private.is_admin(), the real role) can delete any request.
+-- Nobody can delete a request after the rate is written (rate_written_at).
 -- Manager, treasury, and analyst cannot delete. View-as is not a role.
 -- The client row stays. Quotes under the request go with it. Notifications
 -- and a matched payment are unlinked so they do not block the delete.
@@ -95,10 +96,13 @@ create policy requests_update on public.requests
 create policy requests_delete on public.requests
   for delete to authenticated
   using (
-    (select private.is_admin())
-    or (
-      (select private.my_role()) = 'kam'
-      and kam_id = (select private.my_profile_id())
+    rate_written_at is null
+    and (
+      (select private.is_admin())
+      or (
+        (select private.my_role()) = 'kam'
+        and kam_id = (select private.my_profile_id())
+      )
     )
   );
 
@@ -610,6 +614,9 @@ begin
   end if;
   if v_req.kam_id is distinct from v_me and not private.is_admin() then
     raise exception 'This request belongs to another KAM' using errcode = '42501';
+  end if;
+  if v_req.rate_written_at is not null then
+    raise exception 'გაწერილი კურსის შემდეგ გარიგება ვერ იშლება' using errcode = '22023';
   end if;
 
   delete from public.quotes q where q.request_id = p_request_id;

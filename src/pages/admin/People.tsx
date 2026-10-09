@@ -5,6 +5,7 @@ import { useToast } from '../../lib/toast';
 import { fmtDateTime } from '../../lib/format';
 import { ROLE_NAMES, type Role } from '../../lib/types';
 import { IconPlus } from '../../components/Icons';
+import LoadingLine from '../../components/LoadingLine';
 
 interface Person {
   id: string;
@@ -292,7 +293,7 @@ export default function People() {
         </form>
       )}
 
-      {!loaded && <p className="empty">იტვირთება…</p>}
+      {!loaded && <LoadingLine />}
       {loaded && (
         <div className="table-wrap">
           <table className="table" style={{ minWidth: 1120 }}>

@@ -4,6 +4,7 @@ import { useToast } from '../../lib/toast';
 import { fmtDateTime } from '../../lib/format';
 import type { LossReason, Rules } from '../../lib/types';
 import type { Names } from './Admin';
+import LoadingLine from '../../components/LoadingLine';
 
 type Form = {
   cutoff: string; validity: string; windowDays: string; tierA: string; tierB: string; deleteMin: string;
@@ -39,7 +40,7 @@ export default function RulesPanel({ names }: { names: Names }) {
   }
   useEffect(() => { load(); }, []);
 
-  if (!form || !rules) return <section id="rules" className="card"><h2>დათვლის წესები</h2><p className="empty">იტვირთება…</p></section>;
+  if (!form || !rules) return <section id="rules" className="card"><h2>დათვლის წესები</h2><LoadingLine /></section>;
   const set = (p: Partial<Form>) => setForm({ ...form, ...p });
   const int = (s: string) => Math.round(Number(s.replace(/[\s,]/g, '')));
 

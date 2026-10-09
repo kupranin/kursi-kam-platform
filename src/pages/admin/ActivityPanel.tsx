@@ -4,6 +4,7 @@ import { describeDeal, downloadCsv, fmtDateTime, fmtRate } from '../../lib/forma
 import { ROLE_NAMES, type Role } from '../../lib/types';
 import type { Names } from './Admin';
 import { EVENT_NAMES } from './MessagesPanel';
+import LoadingLine from '../../components/LoadingLine';
 
 interface AuditRow {
   id: number; at: string; actor_profile_id: string | null; action: string; table_name: string | null; row_key: string | null;
@@ -125,12 +126,20 @@ function describe(a: AuditRow, names: Names): string {
 export default function ActivityPanel({ names }: { names: Names }) {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [who, setWho] = useState('all');
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    let gone = false;
+    setLoaded(false);
     let q = supabase.from('audit_log').select('*').order('id', { ascending: false }).limit(150);
     if (who === 'system') q = q.is('actor_profile_id', null);
     else if (who !== 'all') q = q.eq('actor_profile_id', who);
-    q.then(({ data }) => setRows((data ?? []) as AuditRow[]));
+    q.then(({ data }) => {
+      if (gone) return;
+      setRows((data ?? []) as AuditRow[]);
+      setLoaded(true);
+    });
+    return () => { gone = true; };
   }, [who]);
 
   const actor = (id: string | null) => (id ? names[id] ?? 'ვიღაც' : 'სისტემა');
@@ -152,7 +161,8 @@ export default function ActivityPanel({ names }: { names: Names }) {
           <button type="button" className="btn btn-quiet" onClick={() => downloadCsv('activity.csv', [['როდის', 'ვინ', 'რა'], ...rows.map((r) => [fmtDateTime(r.at), actor(r.actor_profile_id), describe(r, names)])])}>ჩამოტვირთვა</button>
         </div>
       </div>
-      {!rows.length && <p className="empty">ჯერ არაფერია.</p>}
+      {!loaded && <LoadingLine />}
+      {loaded && !rows.length && <p className="empty">ჯერ არაფერია.</p>}
       {rows.map((r) => (
         <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
           <span className="muted" style={{ flex: '0 0 130px' }}>{fmtDateTime(r.at)}</span>

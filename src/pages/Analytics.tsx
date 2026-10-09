@@ -5,6 +5,7 @@ import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { fmtMinutes, fmtShort, fmtWhole, monthOptions } from '../lib/format';
 import { readTransactionFile, TransactionFileError } from '../lib/transactionFile';
+import LoadingLine from '../components/LoadingLine';
 
 interface MonthRow {
   month: string;
@@ -361,7 +362,7 @@ export default function Analytics() {
             )}
           </p>
           <label className={'btn btn-primary' + (uploading ? ' disabled' : '')}>
-            {uploading ? progress || 'იტვირთება…' : 'ფაილის არჩევა'}
+            {uploading ? progress || t('იტვირთება', 'Loading') : 'ფაილის არჩევა'}
             <input
               type="file"
               accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
@@ -392,7 +393,7 @@ export default function Analytics() {
         <div className="card-head">
           <h2 id="months-title">{label}</h2>
         </div>
-        {loading && <p className="empty">იტვირთება…</p>}
+        {loading && <LoadingLine />}
         {!loading && !kpis.by_month.length && <p className="empty">ამ პერიოდში ტრანზაქცია ჯერ არ არის. ადმინს შეუძლია Excel-ის ატვირთვა ზემოთ.</p>}
         {!loading && kpis.by_month.length > 0 && (
           <div className="table-wrap">

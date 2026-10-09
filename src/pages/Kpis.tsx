@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { todayTbilisi } from '../lib/format';
+import LoadingLine from '../components/LoadingLine';
 
 type Segment = 'business' | 'kam' | 'retail';
 type Metric = 'turnover' | 'active_users' | 'new_users' | 'registrations';
@@ -164,7 +165,7 @@ export default function Kpis() {
           <h2 id="plan-title">{MONTH_NAME[month - 1]} {year}</h2>
           <p className="small muted">მარჟა ხელით იწერება. გეგმის ფურცელი მას არ ითვლის.</p>
         </div>
-        {!loaded && <p className="empty">იტვირთება…</p>}
+        {!loaded && <LoadingLine />}
         {loaded && (
           <div className="table-wrap">
             <table className="table sheet" style={{ minWidth: 980 }}>

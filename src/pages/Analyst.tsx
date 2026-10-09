@@ -4,6 +4,8 @@ import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { useViewAs } from '../lib/viewAs';
 import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, monthOptions, parseRate, todayTbilisi } from '../lib/format';
+import { loadRatePeople } from '../lib/ratePeople';
+import LoadingLine from '../components/LoadingLine';
 
 type Status = 'success' | 'lost' | 'open';
 type StatusFilter = 'all' | Status;
@@ -27,9 +29,15 @@ interface Deal {
   first_response_minutes: number | null;
   rate_write_minutes: number | null;
   quoted_by_name: string | null;
+  written_by_name: string | null;
 }
 
 const PAGE = 100;
+
+async function withWriters(page: Deal[]): Promise<Deal[]> {
+  const people = await loadRatePeople(page.map((row) => row.id));
+  return page.map((row) => ({ ...row, written_by_name: people.get(row.id)?.written_by_name ?? null }));
+}
 
 function monthEnd(start: string): string {
   const [y, m] = start.split('-').map(Number);
@@ -65,6 +73,7 @@ function asDeal(row: Deal): Deal {
     gel_amount: num(row.gel_amount),
     first_response_minutes: num(row.first_response_minutes),
     rate_write_minutes: num(row.rate_write_minutes),
+    written_by_name: row.written_by_name ?? null,
   };
 }
 
@@ -102,7 +111,7 @@ export default function Analyst() {
       setError(err.message);
       setMore(false);
     } else {
-      const page = ((data ?? []) as Deal[]).map(asDeal);
+      const page = await withWriters(((data ?? []) as Deal[]).map(asDeal));
       setRows(append ? [...rows, ...page] : page);
       setMore(page.length === PAGE);
       setError('');
@@ -124,7 +133,7 @@ export default function Analyst() {
         setError(err.message);
         setMore(false);
       } else {
-        const page = ((data ?? []) as Deal[]).map(asDeal);
+        const page = await withWriters(((data ?? []) as Deal[]).map(asDeal));
         setRows(page);
         setMore(page.length === PAGE);
         setError('');
@@ -193,7 +202,7 @@ export default function Analyst() {
         if (to) q = q.lte('request_date', to);
         const { data, error: err } = await q.range(start, start + 999);
         if (err) throw err;
-        const page = ((data ?? []) as Deal[]).map(asDeal);
+        const page = await withWriters(((data ?? []) as Deal[]).map(asDeal));
         all.push(...page);
         if (page.length < 1000) break;
       }
@@ -214,6 +223,7 @@ export default function Analyst() {
         t('მისაღები თანხა', 'Amount to receive'),
         t('კურსი', 'Rate'),
         t('კურსი გასცა', 'Quoted by'),
+        t('კურსი გაწერა', 'Written by'),
         t('თანხა GEL', 'Amount GEL'),
         t('სტატუსი', 'Status'),
         t('მიზეზი', 'Reason'),
@@ -234,6 +244,7 @@ export default function Analyst() {
           r.gets_amount,
           r.rate,
           r.quoted_by_name ?? '',
+          r.written_by_name ?? '',
           r.amount_gel,
           statusText(r.status),
           r.loss_reason ?? '',
@@ -293,7 +304,7 @@ export default function Analyst() {
       {error && <p className="alert-box" role="alert">{error}</p>}
 
       <section className="card flush" aria-label={t('მოთხოვნების ანალიზი', 'Request analysis')}>
-        {!loaded && <p className="empty">{t('იტვირთება…', 'Loading…')}</p>}
+        {!loaded && <LoadingLine />}
         {loaded && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">
@@ -312,6 +323,7 @@ export default function Analyst() {
                   <th className="num">{t('მისაღები თანხა', 'Amount to receive')}</th>
                   <th className="num">{t('კურსი', 'Rate')}</th>
                   <th>{t('კურსი გასცა', 'Quoted by')}</th>
+                  <th>{t('კურსი გაწერა', 'Written by')}</th>
                   <th className="num">{t('თანხა GEL', 'Amount GEL')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
@@ -352,6 +364,7 @@ export default function Analyst() {
                       ) : (r.rate != null ? fmtRate(r.rate) : '')}
                     </td>
                     <td>{r.quoted_by_name ?? ''}</td>
+                    <td>{r.written_by_name ?? ''}</td>
                     <td className="num">
                       {open ? (
                         <input className={'input cell' + (tried && gelP && !gelP.ok ? ' invalid' : '')} inputMode="decimal" aria-label={t('თანხა GEL', 'Amount GEL')} value={draft.gel} onChange={(e) => setDraft({ ...draft, gel: e.target.value, gelTouched: true })} />

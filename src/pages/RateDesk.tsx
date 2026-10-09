@@ -10,6 +10,9 @@ import { useViewAs } from '../lib/viewAs';
 import { dealLeftOpen, hideEarlierDeals, treasuryReason } from '../lib/requestStatus';
 import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
+import RatePeople from '../components/RatePeople';
+import { loadRatePeople, ratePeopleFor } from '../lib/ratePeople';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import ClientHistory from '../components/ClientHistory';
@@ -132,6 +135,8 @@ interface ClientReply {
   client_decline_reason: string | null;
   client_replied_at: string | null;
   note: string | null;
+  quoted_by_name?: string | null;
+  written_by_name?: string | null;
 }
 
 const EMPTY_MARKET_BOARD: CurrentBoard = { pairs: [], rows: [], updatedAt: null };
@@ -254,8 +259,10 @@ export default function RateDesk() {
       const quoteRows = quoted ?? [];
       const watchIds = [...queueRows.map((r) => r.request_id), ...quoteRows.map((r) => r.request_id)];
       const closed = await closedIds(watchIds);
+      const openQuotes = quoteRows.filter((r) => !closed.has(r.request_id));
+      const quotePeople = await loadRatePeople(openQuotes.map((r) => r.request_id));
       setQueue(queueRows.filter((r) => !closed.has(r.request_id)));
-      setQuotes(quoteRows.filter((r) => !closed.has(r.request_id)));
+      setQuotes(openQuotes.map((r) => ({ ...r, ...ratePeopleFor(quotePeople, r.request_id) })));
     } catch (err) {
       toast((err as Error).message, 'error');
     }
@@ -297,9 +304,11 @@ export default function RateDesk() {
         }));
       const ids = [...list.map((r) => r.request_id), ...extras.map((r) => r.request_id)];
       const closed = await closedIds(ids);
+      const people = await loadRatePeople(ids);
+      const stamp = (row: ClientReply): ClientReply => ({ ...row, ...ratePeopleFor(people, row.request_id) });
       const stillHere = (row: ClientReply) => !closed.has(row.request_id) && row.client_reply !== 'declined';
-      setReplies(list.filter(stillHere));
-      setExtraAgreed(extras.filter((row) => !closed.has(row.request_id)));
+      setReplies(list.filter(stillHere).map(stamp));
+      setExtraAgreed(extras.filter((row) => !closed.has(row.request_id)).map(stamp));
     } catch {
       setReplies([]);
       setExtraAgreed([]);
@@ -533,6 +542,7 @@ export default function RateDesk() {
               <h2 id="queue-title" style={{ fontSize: 22 }}>{t('კურსს ელოდება', 'Waiting for a rate')}</h2>
               <span className="small muted">{t('ჯერ ძველი. ჩაწერეთ კურსი და დააჭირეთ Enter-ს, რომ KAM-ს გაეგზავნოს.', 'Oldest first. Type a rate and press Enter to send it to the KAM.')}</span>
             </div>
+            {!loaded && <LoadingLine />}
             {loaded && !queue.length && <div className="card"><p className="empty">{t('არაფერი ელოდება. KAM-ების ახალი მოთხოვნები აქ ჩნდება.', 'Nothing is waiting. New requests from KAMs appear here.')}</p></div>}
             <div className="stack-sm">
               {queue.map((r) => {
@@ -650,6 +660,7 @@ export default function RateDesk() {
               <span className="small muted">დადასტურება ან გასწორებული კურსი ბრუნდება KAM-თან. უარი აჩერებს მოთხოვნას.</span>
             </div>
             {repliesNote && <div className="card"><p className="empty">{repliesNote}</p></div>}
+            {!loaded && !repliesNote && <LoadingLine />}
             {loaded && !repliesNote && !waitingBetter.length && <div className="card"><p className="empty">არაფერი ელოდება.</p></div>}
             <div className="stack-sm">
               {waitingBetter.map((r) => {
@@ -675,6 +686,7 @@ export default function RateDesk() {
                     <div className="tiny muted">ID {r.client_id}</div>
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                     <p className="note-box">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
+                    <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
                     {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                     <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
@@ -745,6 +757,7 @@ export default function RateDesk() {
               <h2 id="write-desk-title" style={{ fontSize: 22 }}>{t('კურსი გასაწერია', 'Rate to write')}</h2>
               <span className="small muted">{t('კლიენტმა დაამტკიცა და კურსი ძირითად სისტემაში ჯერ არ არის ჩაწერილი. ჩაწერის შემდეგ დააჭირეთ „კურსი გაწერილია“. გაწერილი კურსი ისტორიაში გადადის.', 'The client approved, and the rate is not in the core system yet. After you enter it, press “Rate is written”. A written rate moves to History.')}</span>
             </div>
+            {!loaded && !repliesNote && <LoadingLine />}
             {loaded && !repliesNote && !approvedReplies.length && <p className="empty">{t('კურსი გასაწერი არ არის.', 'Nothing is waiting to be written.')}</p>}
             {approvedReplies.map((r) => (
               <div key={r.request_id} className="list-row">
@@ -759,6 +772,7 @@ export default function RateDesk() {
                   <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
                   {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                   <div>{t('გასაწერი კურსი', 'Rate to write')} {fmtRate(r.approved_rate)}</div>
+                  <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                   {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
                   {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
@@ -782,6 +796,7 @@ export default function RateDesk() {
               <h2 id="rates-title">კურსები ახლა</h2>
               <p className="small" style={{ color: 'var(--ink-2)' }}>GEL 1 ერთეულზე. ვყიდულობთ, როცა კლიენტი ყიდის.</p>
             </div>
+            {!marketLoaded && <LoadingLine />}
             {marketLoaded && !rates.length && !marketBoard.rows.length && <p className="empty">კურსი ჯერ არ არის ჩატვირთული. ისინი კურსის წყაროებიდან მოდის (იხილეთ დაყენების გზამკვლევი).</p>}
             {marketBoard.rows.length > 0 && <DeskMarketRates board={marketBoard} />}
             {gelRows.length > 0 && (
@@ -814,8 +829,9 @@ export default function RateDesk() {
           <section className="card" aria-labelledby="given-title">
             <h2 id="given-title">დღეს გაცემული განსაკუთრებული კურსები</h2>
             <p className="small" style={{ margin: '4px 0 10px', color: 'var(--ink-2)' }}>გარიგების მიმართულებით, ვადაგასულების ჩათვლით</p>
-            {!groups.size && <p className="empty">ჯერ არ არის.</p>}
-            {Array.from(groups.entries()).map(([k, list]) => {
+            {!loaded && <LoadingLine />}
+            {loaded && !groups.size && <p className="empty">ჯერ არ არის.</p>}
+            {loaded && Array.from(groups.entries()).map(([k, list]) => {
               const [a, b] = k.split('>');
               const values = list.map((x) => Number(x.rate));
               const std = b === 'GEL'
@@ -831,6 +847,9 @@ export default function RateDesk() {
                     {values.length > 1 && `, ${fmtRate(Math.min(...values))}-დან ${fmtRate(Math.max(...values))}-მდე`}
                     {std != null && `. ჩვენი სტანდარტი ${fmtRate(std)}.`}
                   </div>
+                  {list.map((item) => (
+                    <RatePeople key={item.request_id} quoted={item.quoted_by_name} written={item.written_by_name} />
+                  ))}
                 </div>
               );
             })}
@@ -839,7 +858,8 @@ export default function RateDesk() {
           <section className="card" aria-labelledby="pos-title">
             <h2 id="pos-title">თუ ყველა მოქმედი კურსი გავა</h2>
             <p className="small" style={{ margin: '4px 0 12px', color: 'var(--ink-2)' }}>ცვლილება თითო ვალუტის პოზიციაზე</p>
-            {!Object.keys(effect).length && <p className="empty">მოქმედი კურსი ახლა არ არის.</p>}
+            {!loaded && <LoadingLine />}
+            {loaded && !Object.keys(effect).length && <p className="empty">მოქმედი კურსი ახლა არ არის.</p>}
             {Object.entries(effect).map(([ccy, v]) => {
               const eq = usdEq(ccy, v);
               return (

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { loadRatePeople, type RatePeopleNames } from '../lib/ratePeople';
 import { useI18n } from '../lib/i18n';
 import { fmtDay, fmtRate, fmtTime, fmtWhole, sideAmount } from '../lib/format';
 import { dealPair, latestQuotesForPair, type RateSnapshot } from '../lib/rateGrid';
 import { IconCheck } from './Icons';
+import LoadingLine from './LoadingLine';
+import RatePeople from './RatePeople';
 
 interface HistRow {
   id: number;
@@ -89,6 +92,7 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
   const [rows, setRows] = useState<HistRow[]>([]);
   const [snaps, setSnaps] = useState<RateSnapshot[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [people, setPeople] = useState<Map<number, RatePeopleNames>>(new Map());
   const [failed, setFailed] = useState(false);
   const seq = useRef(0);
   const titleId = 'client-history-' + clientId + '-' + (excludeId ?? 'new');
@@ -107,6 +111,7 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
         if (error) {
           setRows([]);
           setSnaps([]);
+          setPeople(new Map());
           setFailed(true);
           setLoaded(true);
           return;
@@ -119,16 +124,21 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
           rate: num(row.rate),
           total_count: num(row.total_count),
         }));
-        const shots = await loadKursi(list);
+        const [shots, names] = await Promise.all([
+          loadKursi(list),
+          loadRatePeople(list.map((row) => row.id)),
+        ]);
         if (my !== seq.current) return;
         setRows(list);
         setSnaps(shots);
+        setPeople(names);
         setFailed(false);
         setLoaded(true);
       } catch {
         if (my !== seq.current) return;
         setRows([]);
         setSnaps([]);
+        setPeople(new Map());
         setFailed(true);
         setLoaded(true);
       }
@@ -143,7 +153,7 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
   return (
     <section className="client-history" aria-labelledby={titleId}>
       <div className="small strong" id={titleId}>{t('ამ კლიენტის მოთხოვნები ბოლო 6 თვეში', 'This client\'s requests in the last 6 months')}</div>
-      {!loaded && <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('იტვირთება…', 'Loading…')}</p>}
+      {!loaded && <LoadingLine compact />}
       {loaded && failed && <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('ისტორია ჯერ არ იტვირთება.', 'History is not loading yet.')}</p>}
       {loaded && !failed && !rows.length && (
         <p className="tiny muted" style={{ margin: '6px 0 0' }}>{t('ბოლო 6 თვეში ამ კლიენტთან მოთხოვნა არ არის.', 'No request for this client in the last 6 months.')}</p>
@@ -191,7 +201,10 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                       <td>{row.kam_name ?? t('KAM არ არის', 'No KAM')}</td>
                       <td>{sideAmount(row.sells_currency, num(row.amount))}</td>
                       <td>{sideAmount(row.gets_currency, num(row.gets_amount))}</td>
-                      <td className="num">{rate != null && <div className="strong">{fmtRate(rate)}</div>}</td>
+                      <td className="num">
+                        {rate != null && <div className="strong">{fmtRate(rate)}</div>}
+                        <RatePeople quoted={people.get(row.id)?.quoted_by_name} written={people.get(row.id)?.written_by_name} />
+                      </td>
                       <td className="num">
                         {standard && rate != null && (
                           <>

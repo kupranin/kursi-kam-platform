@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
-import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtDay, fmtRate, sideAmount } from '../lib/format';
+import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
-import DeleteRequestButton from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
+import RatePeople from '../components/RatePeople';
 
 const PAGE = 100;
 
 /** Deals whose quoted rate was written in the core. They leave the rate desk. */
 export default function DeskHistory() {
   const { t } = useI18n();
-  const { realRole } = useViewAs();
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [total, setTotal] = useState(0);
   const [shown, setShown] = useState(PAGE);
@@ -42,7 +42,8 @@ export default function DeskHistory() {
         setHasMore(false);
         setError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
       } else {
-        const page = ((data ?? []) as RequestRow[]).filter(isWrittenHistory);
+        const raw = ((data ?? []) as RequestRow[]).filter(isWrittenHistory);
+        const page = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
         setRows(page);
         setTotal(count ?? page.length);
         setHasMore((count ?? 0) > shown);
@@ -74,6 +75,7 @@ export default function DeskHistory() {
       </div>
 
       {error && <p className="alert-box" role="alert">{error}</p>}
+      {!loaded && !error && <LoadingLine />}
       {loaded && !error && !rows.length && (
         <div className="card"><p className="empty">{t('გაწერილი კურსი ჯერ არ არის.', 'No written rate yet.')}</p></div>
       )}
@@ -90,11 +92,11 @@ export default function DeskHistory() {
                 {r.rate != null && r.approved_rate !== r.rate && (
                   <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>
                 )}
+                <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.rate_written_at && <div className="tiny muted">{t('ჩაიწერა {when}', 'Written {when}', { when: fmtDateTime(r.rate_written_at) })}</div>}
               </div>
               <div className="actions">
                 <span className="pill pill-ok">{t('კურსი გაწერილია', 'Rate is written')}</span>
-                {realRole === 'admin' && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
               </div>
             </div>
           </article>

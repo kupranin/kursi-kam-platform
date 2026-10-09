@@ -4,10 +4,13 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDay, sideAmount } from '../lib/format';
-import { treasuryReason } from '../lib/requestStatus';
+import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { isWrittenHistory, treasuryReason } from '../lib/requestStatus';
 import type { LossReason, RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
 import LossApproval from '../components/LossApproval';
+import RatePeople from '../components/RatePeople';
 
 const PAGE = 100;
 
@@ -70,7 +73,8 @@ export default function LostRequests() {
         setHasMore(false);
         setError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
       } else {
-        const page = ((data ?? []) as RequestRow[]).filter(stillOpenLoss);
+        const raw = ((data ?? []) as RequestRow[]).filter(stillOpenLoss);
+        const page = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
         setRows(page);
         setTotal(count ?? page.length);
         setHasMore((count ?? 0) > shown);
@@ -102,6 +106,7 @@ export default function LostRequests() {
       </div>
 
       {error && <p className="alert-box" role="alert">{error}</p>}
+      {!loaded && !error && <LoadingLine />}
       {loaded && !error && !rows.length && (
         <div className="card"><p className="empty">{t('დასადასტურებელი დანაკარგი არ არის.', 'No loss is waiting for approval.')}</p></div>
       )}
@@ -114,6 +119,7 @@ export default function LostRequests() {
                 <div className="tiny muted">{fmtDay(r.request_date)} · ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
                 <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                 <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
+                <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.loss_reason && (
                   <p className="note-box">
                     {t('KAM-ის მიზეზი', 'KAM reason')}: {reasonLabel(reasons, r.loss_reason, lang)}
@@ -127,7 +133,7 @@ export default function LostRequests() {
                   <p className="note-box">{t('სახაზინომ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>
                 )}
               </div>
-              {realRole === 'admin' && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
+              {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
             </div>
             <LossApproval row={r} onDone={reload} />
           </article>

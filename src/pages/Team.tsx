@@ -7,6 +7,7 @@ import { useViewAs } from '../lib/viewAs';
 import { downloadCsv, fmtShort, fmtWhole, monthOptions } from '../lib/format';
 import type { PortfolioRow, Rules, SummaryRow, WinbackRow } from '../lib/types';
 import { IconDownload } from '../components/Icons';
+import LoadingLine from '../components/LoadingLine';
 
 export default function Team() {
   const { profile } = useAuth();
@@ -101,7 +102,7 @@ export default function Team() {
           <h2 id="score-title">{isKam ? monthLabel : 'KAM-ის მიხედვით, ' + monthLabel}</h2>
           <div className="legend"><span><i style={{ background: 'var(--aubergine)' }} />გავიდა</span><span><i style={{ background: 'var(--orange)' }} />არ გავიდა</span></div>
         </div>
-        {loading && <p className="empty">იტვირთება…</p>}
+        {loading && <LoadingLine />}
         {!loading && !visibleSummary.length && <p className="empty">ამ თვეში მოთხოვნა ან ბრუნვა ჯერ არ არის.</p>}
         {!loading && visibleSummary.length > 0 && (
           <div className="table-wrap">
@@ -157,7 +158,8 @@ export default function Team() {
           <section className="card" aria-labelledby="fail-title">
             <h2 id="fail-title">ყველაზე დიდი ბრუნვა, რომელიც არ გავიდა</h2>
             <p className="small muted" style={{ margin: '4px 0 14px' }}>{monthLabel}</p>
-            {!biggestFailed.length && <p className="empty">ამ თვეში არ არის.</p>}
+            {loading && <LoadingLine />}
+            {!loading && !biggestFailed.length && <p className="empty">ამ თვეში არ არის.</p>}
             <div className="stack-sm">
               {biggestFailed.map((p) => {
                 const t = Number(p.turnover), ns = Number(p.turnover_not_successful);

@@ -44,6 +44,10 @@ export interface RequestRow {
   client_decline_reason?: string | null;
   client_replied_at?: string | null;
   rate_written_at?: string | null;
+  /** Treasury person who gave the rate. Empty until request_rate_names is loaded. */
+  quoted_by_name?: string | null;
+  /** Person who wrote the rate in the core. Empty until that list is loaded. */
+  written_by_name?: string | null;
   bank?: string | null;
   loss_approved_at?: string | null;
   loss_approved_by?: string | null;
@@ -145,6 +149,8 @@ export interface QuoteToday {
   valid_until: string;
   quote_state: QuoteState;
   went_through: boolean;
+  quoted_by_name?: string | null;
+  written_by_name?: string | null;
 }
 
 export interface ReferenceRate {

@@ -7,6 +7,8 @@ interface AuthState {
   loading: boolean;
   session: Session | null;
   profile: Profile | null;
+  /** True when the profile lookup failed (database down, timeout, network). False when the lookup succeeded, even if no active profile came back. */
+  profileUnavailable: boolean;
   needsSecondFactor: boolean;
   recovering: boolean;
   refresh: () => Promise<void>;
@@ -19,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
   const [needsSecondFactor, setNeedsSecondFactor] = useState(false);
   const [recovering, setRecovering] = useState(false);
 
@@ -26,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(s);
     if (!s) {
       setProfile(null);
+      setProfileUnavailable(false);
       setNeedsSecondFactor(false);
       setLoading(false);
       return;
@@ -35,8 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setNeedsSecondFactor(Boolean(aal && aal.currentLevel === 'aal1' && aal.nextLevel === 'aal2'));
       const rows = await rpc<Profile[]>('my_profile');
       setProfile(rows && rows.length ? rows[0] : null);
+      setProfileUnavailable(false);
     } catch {
+      // A failed lookup is not the same as a missing or switched-off account.
       setProfile(null);
+      setProfileUnavailable(true);
     }
     setLoading(false);
   }, []);
@@ -66,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ loading, session, profile, needsSecondFactor, recovering, refresh, signOut }}>
+    <AuthContext.Provider value={{ loading, session, profile, profileUnavailable, needsSecondFactor, recovering, refresh, signOut }}>
       {children}
     </AuthContext.Provider>
   );

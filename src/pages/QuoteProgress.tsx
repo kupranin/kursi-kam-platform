@@ -4,9 +4,12 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtRate, fmtTime, sideAmount } from '../lib/format';
-import { isQuotedProgress } from '../lib/requestStatus';
+import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { isQuotedProgress, isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
+import LoadingLine from '../components/LoadingLine';
+import RatePeople from '../components/RatePeople';
 
 const PAGE = 100;
 
@@ -61,7 +64,8 @@ export default function QuoteProgress() {
         setHasMore(false);
         setError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
       } else {
-        const page = ((data ?? []) as RequestRow[]).filter(isQuotedProgress);
+        const raw = ((data ?? []) as RequestRow[]).filter(isQuotedProgress);
+        const page = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
         setRows(page);
         setTotal(count ?? page.length);
         setHasMore((count ?? 0) > shown);
@@ -93,6 +97,7 @@ export default function QuoteProgress() {
       </div>
 
       {error && <p className="alert-box" role="alert">{error}</p>}
+      {!loaded && !error && <LoadingLine />}
       {loaded && !error && !rows.length && (
         <div className="card"><p className="empty">{t('ღია გაცემული კურსი არ არის.', 'No quoted deal is still open.')}</p></div>
       )}
@@ -109,13 +114,14 @@ export default function QuoteProgress() {
                   <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                   <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
                   {rate != null && <div className="small" style={{ marginTop: 6 }}>{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(rate)}</div>}
+                  <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                   {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                   {r.rate_valid_until && <div className="tiny muted">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(r.rate_valid_until) })}</div>}
                   {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
                 </div>
                 <div className="actions">
                   <span className={'pill ' + pill.cls}>{pill.label}</span>
-                  {realRole === 'admin' && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
+                  {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
                 </div>
               </div>
             </article>
