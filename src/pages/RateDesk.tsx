@@ -924,9 +924,6 @@ export default function RateDesk() {
                         const rate = deskRate(row);
                         const seen = deskSeenAt(row);
                         const awaitingLoss = isPendingLoss(row);
-                        const savedLossNote = !row.went_through && !row.rate_written_at && !row.payment_confirmed_at
-                          ? row.loss_approval_comment?.trim() ?? ''
-                          : '';
                         return (
                           <Fragment key={row.id}>
                           <tr>
@@ -957,7 +954,7 @@ export default function RateDesk() {
                               {st.detail && <div className="tiny muted">{st.detail}</div>}
                             </td>
                           </tr>
-                          {(awaitingLoss || savedLossNote) && (
+                          {awaitingLoss && (
                             <tr>
                               <td colSpan={6} style={{ minWidth: 0 }}>
                                 <LossApproval row={row} onDone={load} />

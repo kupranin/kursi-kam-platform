@@ -24,6 +24,8 @@ interface Deal {
   amount_gel: number | null;
   gel_amount: number | null;
   status: Status;
+  /** waiting: marked lost, treasury has not approved. approved: treasury approved. */
+  loss_phase?: 'waiting' | 'approved' | null;
   loss_reason: string | null;
   /** Loss-approval note. Not the per-row comment treasury writes here. */
   treasury_comment: string | null;
@@ -173,9 +175,15 @@ export default function Analyst() {
     return () => { gone = true; };
   }, [status, from, to, rangeInvalid, reloadKey]);
 
-  function statusText(value: Status): string {
-    if (value === 'success') return t('წარმატებული', 'Success');
-    if (value === 'lost') return t('დაკარგული', 'Lost');
+  function statusText(row: { status: Status; loss_phase?: string | null }): string {
+    if (row.status === 'success') return t('წარმატებული', 'Success');
+    if (row.status === 'lost' && row.loss_phase === 'waiting') {
+      return t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury');
+    }
+    if (row.status === 'lost' && row.loss_phase === 'approved') {
+      return t('დანაკარგი დადასტურებულია', 'Loss approved');
+    }
+    if (row.status === 'lost') return t('დაკარგული', 'Lost');
     return t('ღია', 'Open');
   }
 
@@ -316,7 +324,7 @@ export default function Analyst() {
           r.quoted_by_name ?? '',
           r.written_by_name ?? '',
           r.amount_gel,
-          statusText(r.status),
+          statusText(r),
           r.loss_reason ?? '',
           r.treasury_comment ?? '',
           r.deal_comment ?? '',
@@ -344,8 +352,8 @@ export default function Analyst() {
         <div>
           <h1>{t('მოთხოვნების ანალიზი', 'Request analysis')}</h1>
           <p>{t(
-            'ყველა მოთხოვნა: თანხები, კურსი, ლარში გადაყვანა, შედეგი და მიზეზი. თარიღი ყოველ სტრიქონზეა.',
-            'Every request: amounts, rate, lari value, result, and reason. Each row has its date.',
+            'ყველა მოთხოვნა: თანხები, კურსი, ლარში გადაყვანა, შედეგი და მიზეზი. დაკარგულის თარიღი არის ის დღე, როცა მოინიშნა, თბილისის დროით. დანარჩენზე თარიღი მოთხოვნის დღეა.',
+            'Every request: amounts, rate, lari value, result, and reason. A lost deal is dated on the day it was marked, Tbilisi time. Every other row keeps the request date.',
           )}</p>
         </div>
         <div className="date-range">
@@ -452,7 +460,7 @@ export default function Analyst() {
                     </td>
                     <td>
                       <span className={'pill ' + (r.status === 'success' ? 'pill-ok' : r.status === 'lost' ? 'pill-alert' : 'pill-wait')}>
-                        {statusText(r.status)}
+                        {statusText(r)}
                       </span>
                     </td>
                     <td>{r.loss_reason ?? ''}</td>
