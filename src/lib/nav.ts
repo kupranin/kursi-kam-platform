@@ -10,7 +10,7 @@ export const HOME: Record<Role, string> = {
 
 export const PAGES: Record<Role, string[]> = {
   kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat'],
-  treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/rates', '/log', '/chat'],
+  treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat'],
   admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
   manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
   analyst: ['/analysis', '/analytics'],
@@ -31,6 +31,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/quoted-progress', ka: 'გაცემულის მიმდინარეობა', en: 'Quoted progress' },
     { to: '/lost-requests', ka: 'დაკარგული მოთხოვნები', en: 'Lost requests', badge: 'losses' },
     { to: '/desk-history', ka: 'ისტორია', en: 'History' },
+    { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
     { to: '/chat', ka: 'ჩატი', en: 'Chat' },

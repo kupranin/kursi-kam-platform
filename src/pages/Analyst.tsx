@@ -3,7 +3,7 @@ import { rpc, supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { useViewAs } from '../lib/viewAs';
-import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, monthOptions, parseRate, todayTbilisi } from '../lib/format';
+import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, parseRate, todayTbilisi } from '../lib/format';
 import { loadRatePeople } from '../lib/ratePeople';
 import LoadingLine from '../components/LoadingLine';
 
@@ -25,7 +25,9 @@ interface Deal {
   gel_amount: number | null;
   status: Status;
   loss_reason: string | null;
+  /** Loss-approval note. Not the per-row comment treasury writes here. */
   treasury_comment: string | null;
+  deal_comment: string | null;
   first_response_minutes: number | null;
   rate_write_minutes: number | null;
   quoted_by_name: string | null;
@@ -33,16 +35,11 @@ interface Deal {
 }
 
 const PAGE = 100;
+const COMMENT_MAX = 500;
 
 async function withWriters(page: Deal[]): Promise<Deal[]> {
   const people = await loadRatePeople(page.map((row) => row.id));
   return page.map((row) => ({ ...row, written_by_name: people.get(row.id)?.written_by_name ?? null }));
-}
-
-function monthEnd(start: string): string {
-  const [y, m] = start.split('-').map(Number);
-  const last = new Date(Date.UTC(y, m, 0));
-  return last.toISOString().slice(0, 10);
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -53,6 +50,14 @@ function num(value: number | string | null | undefined): number | null {
 
 function draftText(value: number | null): string {
   return value == null ? '' : String(value);
+}
+
+function isoDate(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return value;
 }
 
 interface Draft {
@@ -74,6 +79,8 @@ function asDeal(row: Deal): Deal {
     first_response_minutes: num(row.first_response_minutes),
     rate_write_minutes: num(row.rate_write_minutes),
     written_by_name: row.written_by_name ?? null,
+    deal_comment: row.deal_comment ?? null,
+    treasury_comment: row.treasury_comment ?? null,
   };
 }
 
@@ -82,8 +89,10 @@ export default function Analyst() {
   const toast = useToast();
   const { role, realRole } = useViewAs();
   const canEdit = realRole === 'admin' && role === 'admin';
+  const canComment = (realRole === 'treasury' && role === 'treasury') || canEdit;
   const [status, setStatus] = useState<StatusFilter>('all');
-  const [month, setMonth] = useState('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [rows, setRows] = useState<Deal[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [more, setMore] = useState(false);
@@ -93,19 +102,32 @@ export default function Analyst() {
   const [draft, setDraft] = useState<Draft>({ sell: '', gets: '', rate: '', gel: '', gelTouched: false });
   const [tried, setTried] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
+  const [commentSaving, setCommentSaving] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const months = monthOptions(18);
 
-  const from = month === 'all' ? null : month;
-  const to = month === 'all' ? null : monthEnd(month);
+  const from = isoDate(fromDate);
+  const to = isoDate(toDate);
+  const rangeInvalid = Boolean(from && to && from > to);
 
-  const load = useCallback(async (append: boolean) => {
-    const start = append ? rows.length : 0;
+  function dealsQuery() {
     let q = supabase.from('analyst_deals').select('*').order('request_date', { ascending: false }).order('id', { ascending: false });
     if (status !== 'all') q = q.eq('status', status);
     if (from) q = q.gte('request_date', from);
     if (to) q = q.lte('request_date', to);
-    const { data, error: err } = await q.range(start, start + PAGE - 1);
+    return q;
+  }
+
+  const load = useCallback(async (append: boolean) => {
+    if (rangeInvalid) {
+      setRows([]);
+      setMore(false);
+      setError('');
+      setLoaded(true);
+      return;
+    }
+    const start = append ? rows.length : 0;
+    const { data, error: err } = await dealsQuery().range(start, start + PAGE - 1);
     if (err) {
       if (!append) setRows([]);
       setError(err.message);
@@ -117,10 +139,18 @@ export default function Analyst() {
       setError('');
     }
     setLoaded(true);
-  }, [status, from, to, rows]);
+  }, [status, from, to, rows, rangeInvalid]);
 
   useEffect(() => {
     let gone = false;
+    setLoaded(false);
+    if (rangeInvalid) {
+      setRows([]);
+      setMore(false);
+      setError('');
+      setLoaded(true);
+      return;
+    }
     (async () => {
       let q = supabase.from('analyst_deals').select('*').order('request_date', { ascending: false }).order('id', { ascending: false });
       if (status !== 'all') q = q.eq('status', status);
@@ -141,12 +171,21 @@ export default function Analyst() {
       setLoaded(true);
     })();
     return () => { gone = true; };
-  }, [status, from, to, reloadKey]);
+  }, [status, from, to, rangeInvalid, reloadKey]);
 
   function statusText(value: Status): string {
     if (value === 'success') return t('წარმატებული', 'Success');
     if (value === 'lost') return t('დაკარგული', 'Lost');
     return t('ღია', 'Open');
+  }
+
+  function commentText(r: Deal): string {
+    const draftValue = commentDrafts[r.id];
+    return draftValue !== undefined ? draftValue : (r.deal_comment ?? '');
+  }
+
+  function commentDirty(r: Deal): boolean {
+    return commentText(r).trim() !== (r.deal_comment ?? '').trim();
   }
 
   function startEdit(r: Deal) {
@@ -191,7 +230,37 @@ export default function Analyst() {
     }
   }
 
+  async function saveComment(r: Deal) {
+    const text = commentText(r).trim();
+    if (text.length > COMMENT_MAX) {
+      toast(t('კომენტარი ძალიან გრძელია.', 'The comment is too long.'), 'error');
+      return;
+    }
+    setCommentSaving(r.id);
+    try {
+      await rpc('set_deal_comment', {
+        p_request_id: r.id,
+        p_comment: text || null,
+      });
+      setRows((prev) => prev.map((row) => row.id === r.id ? { ...row, deal_comment: text || null } : row));
+      setCommentDrafts((prev) => {
+        const next = { ...prev };
+        delete next[r.id];
+        return next;
+      });
+      toast(t('შენახულია.', 'Saved.'));
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setCommentSaving(null);
+    }
+  }
+
   async function download() {
+    if (rangeInvalid) {
+      toast(t('თარიღიდან თარიღამდეზე გვიანაა.', 'From is after To.'), 'error');
+      return;
+    }
     setDownloading(true);
     try {
       const all: Deal[] = [];
@@ -227,6 +296,7 @@ export default function Analyst() {
         t('თანხა GEL', 'Amount GEL'),
         t('სტატუსი', 'Status'),
         t('მიზეზი', 'Reason'),
+        t('დანაკარგის კომენტარი', 'Loss comment'),
         t('სახაზინოს კომენტარი', 'Treasury comment'),
       ];
       downloadCsv(`kursi-requests-${todayTbilisi()}.csv`, [
@@ -249,6 +319,7 @@ export default function Analyst() {
           statusText(r.status),
           r.loss_reason ?? '',
           r.treasury_comment ?? '',
+          r.deal_comment ?? '',
         ]),
       ]);
     } catch (err) {
@@ -265,6 +336,8 @@ export default function Analyst() {
     { id: 'open', label: t('ღია', 'Open') },
   ];
 
+  const rangeMessage = t('თარიღიდან თარიღამდეზე გვიანაა.', 'From is after To.');
+
   return (
     <>
       <div className="page-head">
@@ -275,12 +348,15 @@ export default function Analyst() {
             'Every request: amounts, rate, lari value, result, and reason. Each row has its date.',
           )}</p>
         </div>
-        <div className="row">
-          <label className="sr-only" htmlFor="analysis-month">{t('თვე', 'Month')}</label>
-          <select id="analysis-month" className="select" style={{ width: 'auto' }} value={month} onChange={(e) => setMonth(e.target.value)}>
-            <option value="all">{t('ყველა თვე', 'All months')}</option>
-            {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+        <div className="date-range">
+          <div className="field">
+            <label htmlFor="analysis-from">{t('თარიღიდან', 'From')}</label>
+            <input id="analysis-from" type="date" className="input" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="analysis-to">{t('თარიღამდე', 'To')}</label>
+            <input id="analysis-to" type="date" className="input" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
           <button type="button" className="btn" onClick={download} disabled={downloading}>
             {downloading ? t('იწერება…', 'Preparing…') : t('ჩამოტვირთვა', 'Download')}
           </button>
@@ -295,20 +371,22 @@ export default function Analyst() {
 
       <p className="small" style={{ color: 'var(--ink-2)', marginTop: 8 }}>
         {t(
-          'GEL თანხა, როცა შევსებულია, ლარის ციფრია. რუბლზე 1-ზე ნაკლები კურსი ლარია ერთ რუბლზე. რუბლის კურსი 1 ან მეტი ლარი არ არის, ამიტომ ლარი ცარიელი რჩება. ჩამოტვირთვა იღებს ამ ფილტრის ყველა სტრიქონს.',
-          'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. Download includes every row in this filter.',
+          'GEL თანხა, როცა შევსებულია, ლარის ციფრია. რუბლზე 1-ზე ნაკლები კურსი ლარია ერთ რუბლზე. რუბლის კურსი 1 ან მეტი ლარი არ არის, ამიტომ ლარი ცარიელი რჩება. ჩამოტვირთვა იღებს ამ ფილტრის ყველა სტრიქონს. თარიღიდან და თარიღამდე ცარიელი რომ დარჩეს, ყველა დღე შედის.',
+          'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. Download includes every row in this filter. Leave From and To empty to include every date.',
         )}
         {canEdit && <> {t('ადმინს შეუძლია კურსის და თანხების გასწორება.', 'An admin can correct the rate and the amounts.')}</>}
+        {canComment && <> {t('სახაზინოს კომენტარს სახაზინო ან ადმინი წერს. ანალიტიკოსი მხოლოდ კითხულობს.', 'Treasury or an admin writes the treasury comment. An analyst only reads it.')}</>}
       </p>
 
+      {rangeInvalid && <p className="alert-box" role="alert">{rangeMessage}</p>}
       {error && <p className="alert-box" role="alert">{error}</p>}
 
       <section className="card flush" aria-label={t('მოთხოვნების ანალიზი', 'Request analysis')}>
         {!loaded && <LoadingLine />}
-        {loaded && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
-        {rows.length > 0 && (
+        {loaded && !rangeInvalid && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
+        {loaded && rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: canEdit ? 1960 : 1720 }}>
+            <table className="table" style={{ minWidth: canEdit ? 2280 : canComment ? 2100 : 1960 }}>
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
@@ -327,6 +405,7 @@ export default function Analyst() {
                   <th className="num">{t('თანხა GEL', 'Amount GEL')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
+                  <th>{t('დანაკარგის კომენტარი', 'Loss comment')}</th>
                   <th>{t('სახაზინოს კომენტარი', 'Treasury comment')}</th>
                   {canEdit && <th>{t('შესწორება', 'Edit')}</th>}
                 </tr>
@@ -338,6 +417,7 @@ export default function Analyst() {
                   const getsP = open ? parseRate(draft.gets) : null;
                   const rateP = open ? parseRate(draft.rate) : null;
                   const gelP = open ? parseRate(draft.gel) : null;
+                  const note = commentText(r);
                   return (
                   <tr key={r.id}>
                     <td className="nowrap">{r.request_date}</td>
@@ -376,7 +456,26 @@ export default function Analyst() {
                       </span>
                     </td>
                     <td>{r.loss_reason ?? ''}</td>
-                    <td>{r.treasury_comment ?? ''}</td>
+                    <td className="deal-comment">{r.treasury_comment ?? ''}</td>
+                    <td>
+                      {canComment ? (
+                        <div className="comment-edit">
+                          <textarea
+                            className="input"
+                            maxLength={COMMENT_MAX}
+                            rows={2}
+                            aria-label={t('სახაზინოს კომენტარი', 'Treasury comment')}
+                            value={note}
+                            onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                          />
+                          <button type="button" className="btn btn-primary" disabled={!commentDirty(r) || commentSaving === r.id} onClick={() => saveComment(r)}>
+                            {commentSaving === r.id ? t('ინახება', 'Saving') : t('შენახვა', 'Save')}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="deal-comment">{r.deal_comment ?? ''}</span>
+                      )}
+                    </td>
                     {canEdit && (
                       <td className="nowrap">
                         {open ? (
@@ -398,7 +497,7 @@ export default function Analyst() {
             </table>
           </div>
         )}
-        {more && (
+        {more && loaded && (
           <div style={{ padding: 16 }}>
             <button type="button" className="btn" onClick={() => load(true)}>{t('მეტის ჩვენება', 'Show more')}</button>
           </div>
