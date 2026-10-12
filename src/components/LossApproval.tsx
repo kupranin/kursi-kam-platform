@@ -3,9 +3,19 @@ import { rpc } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
-import type { RequestRow } from '../lib/types';
 
-function pendingLoss(row: RequestRow): boolean {
+/** Fields the existing loss approval uses. A full request row satisfies this. */
+export interface LossApprovalRow {
+  id: number;
+  loss_open?: boolean | null;
+  went_through?: boolean | null;
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+  loss_approval_comment?: string | null;
+  loss_approver_name?: string | null;
+}
+
+function pendingLoss(row: LossApprovalRow): boolean {
   return row.loss_open === true
     && !row.went_through
     && !row.rate_written_at
@@ -13,7 +23,7 @@ function pendingLoss(row: RequestRow): boolean {
 }
 
 /** Treasury explanation on a lost request, and the approval box for treasury or an admin. */
-export default function LossApproval({ row, onDone }: { row: RequestRow; onDone: () => void }) {
+export default function LossApproval({ row, onDone }: { row: LossApprovalRow; onDone: () => void }) {
   const { realRole } = useViewAs();
   const { t } = useI18n();
   const toast = useToast();
@@ -61,7 +71,7 @@ export default function LossApproval({ row, onDone }: { row: RequestRow; onDone:
       )}
       {comment && (
         <p className="note-box">
-          {t('ხაზინის კომენტარი', 'Treasury comment')}: {comment}
+          {t('დანაკარგის კომენტარი', 'Loss comment')}: {comment}
           {row.loss_approver_name ? ` — ${row.loss_approver_name}` : ''}
         </p>
       )}
@@ -69,7 +79,7 @@ export default function LossApproval({ row, onDone }: { row: RequestRow; onDone:
         <form onSubmit={approve} noValidate className="form-row" style={{ marginTop: 8 }}>
           <div className="field" style={{ flex: '1 1 280px' }}>
             <label htmlFor={'loss-comment-' + row.id}>
-              {t('ხაზინის კომენტარი', 'Treasury comment')}{' '}
+              {t('დანაკარგის კომენტარი', 'Loss comment')}{' '}
               <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span>
             </label>
             <textarea

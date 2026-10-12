@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
@@ -8,8 +8,9 @@ import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { dealLeftOpen, hideEarlierDeals, treasuryReason } from '../lib/requestStatus';
-import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
+import { bankList, type LossReason, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
+import LossApproval from '../components/LossApproval';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 import { applyRatePeople, loadRatePeople, ratePeopleFor } from '../lib/ratePeople';
@@ -170,6 +171,13 @@ interface DeskDayRow {
   outcome: string | null;
   went_through: boolean | null;
   loss_open: boolean | null;
+  loss_reason: string | null;
+  loss_reason_at: string | null;
+  loss_reason_note: string | null;
+  loss_approved_at: string | null;
+  loss_approval_comment: string | null;
+  loss_approver_name: string | null;
+  payment_confirmed_at: string | null;
   bank: string | null;
   note: string | null;
   quoted_by_name?: string | null;
@@ -187,18 +195,19 @@ interface DeskDayRow {
  * quoted_at (treasury gave a rate or sent it back — a decline sets quoted_at),
  * rate_valid_until (that rate was still live today, including on the KAM open list),
  * client_replied_at (the client approved, asked for a better rate, or rejected),
- * or rate_written_at (treasury wrote the rate).
+ * rate_written_at (treasury wrote the rate),
+ * or loss_reason_at (a KAM marked it lost — დაიკარგა — and sent the reason).
  * Leaving the waiting queue does not remove it. A quoted deal the KAM still
- * has open, and a rate already written, both stay until midnight.
+ * has open, a rate already written, and a loss from today all stay until midnight.
  */
 function onDeskToday(row: DeskDayRow, today: string): boolean {
   if (row.request_date === today) return true;
-  return [row.requested_at, row.asked_at, row.quoted_at, row.rate_valid_until, row.client_replied_at, row.rate_written_at]
+  return [row.requested_at, row.asked_at, row.quoted_at, row.rate_valid_until, row.client_replied_at, row.rate_written_at, row.loss_reason_at]
     .some((iso) => tbilisiDay(iso) === today);
 }
 
 function deskSeenAt(row: DeskDayRow): string {
-  return [row.rate_written_at, row.client_replied_at, row.quoted_at, row.asked_at, row.requested_at]
+  return [row.loss_reason_at, row.rate_written_at, row.client_replied_at, row.quoted_at, row.asked_at, row.requested_at]
     .filter((iso): iso is string => !!iso)
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? row.requested_at;
 }
@@ -214,10 +223,41 @@ function deskRate(row: DeskDayRow): number | null {
   return row.rate;
 }
 
+const LOSS_LABELS: Record<string, [string, string]> = {
+  better_rate: ['სხვაგან უკეთესი კურსი', 'Better rate elsewhere'],
+  postponed: ['გადადო', 'Postponed'],
+  funds_not_received: ['თანხა არ ჩაურიცხავს', 'Funds not received'],
+  other: ['სხვა', 'Other'],
+};
+
+function lossDetail(row: DeskDayRow, reasons: LossReason[], lang: 'ka' | 'en'): string {
+  const fromTable = reasons.find((r) => r.code === row.loss_reason);
+  const pair = row.loss_reason ? LOSS_LABELS[row.loss_reason] : undefined;
+  const label = fromTable
+    ? ((lang === 'en' ? fromTable.label_en : fromTable.label_ka).trim() || fromTable.label_en || fromTable.label_ka)
+    : pair
+      ? (lang === 'en' ? pair[1] : pair[0])
+      : (row.loss_reason ?? '');
+  const note = row.loss_reason_note?.trim() ?? '';
+  if (label && note) return `${label} — ${note}`;
+  if (label || note) return label || note;
+  if (row.client_reply === 'declined' && row.client_decline_reason) return row.client_decline_reason;
+  if (row.decline_reason) return treasuryReason(row.decline_reason, lang);
+  return '';
+}
+
+/** A KAM loss (დაიკარგა) stays a loss even while the quote is still on the row. */
+function isDeskLoss(row: DeskDayRow): boolean {
+  if (row.rate_written_at || row.went_through) return false;
+  if (row.loss_open) return true;
+  return row.outcome === 'did_not_go_through' && !!row.loss_reason;
+}
+
 function dayStatus(
   row: DeskDayRow,
   t: (ka: string, en: string, vars?: Record<string, string | number>) => string,
   lang: 'ka' | 'en',
+  reasons: LossReason[],
 ): { label: string; cls: string; detail: string } {
   if (row.rate_written_at) {
     return {
@@ -227,6 +267,14 @@ function dayStatus(
       }),
       cls: 'pill-ok',
       detail: '',
+    };
+  }
+  if (isDeskLoss(row)) {
+    const approved = !row.loss_open && !!row.loss_approved_at;
+    return {
+      label: approved ? t('დანაკარგი დადასტურებულია', 'Loss approved') : t('დაიკარგა', 'Lost'),
+      cls: approved ? 'pill-wait' : 'pill-alert',
+      detail: lossDetail(row, reasons, lang),
     };
   }
   if (row.quote_status === 'declined' || row.quote_state === 'declined') {
@@ -265,7 +313,7 @@ function dayStatus(
   return { label: t('ღიაა', 'Open'), cls: 'pill-wait', detail: '' };
 }
 
-const DAY_COLUMNS = 'id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, client_rate, rate, approved_rate, given_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, request_date, asked_at, quoted_at, client_replied_at, rate_valid_until, rate_written_at, outcome, went_through, loss_open, bank, note';
+const DAY_COLUMNS = 'id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, client_rate, rate, approved_rate, given_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, request_date, asked_at, quoted_at, client_replied_at, rate_valid_until, rate_written_at, outcome, went_through, loss_open, loss_reason, loss_reason_at, loss_reason_note, loss_approved_at, loss_approval_comment, loss_approver_name, payment_confirmed_at, bank, note';
 
 /** Today's app requests, plus anything treasury quoted or wrote today. One failed slice does not drop the rest. */
 async function loadDeskDay(today: string, alsoIds: number[]): Promise<DeskDayRow[]> {
@@ -278,6 +326,7 @@ async function loadDeskDay(today: string, alsoIds: number[]): Promise<DeskDayRow
     day().gte('client_replied_at', start),
     day().gte('rate_written_at', start),
     day().gte('rate_valid_until', start),
+    day().gte('loss_reason_at', start),
   ];
   if (alsoIds.length) queries.push(supabase.from('request_outcomes').select(DAY_COLUMNS).in('id', alsoIds).limit(1000));
   const slices = await Promise.all(queries);
@@ -387,6 +436,7 @@ export default function RateDesk() {
   const [hidePast, setHidePast] = useState<Record<number, true>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
   const [dayRows, setDayRows] = useState<DeskDayRow[]>([]);
+  const [lossReasons, setLossReasons] = useState<LossReason[]>([]);
   const [dayNote, setDayNote] = useState('');
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
@@ -480,6 +530,8 @@ export default function RateDesk() {
         // on the KAM desk. quotedTodayIds keeps a rate treasury gave today
         // even after it leaves the waiting queue and stays on the KAM card.
         const raw = await loadDeskDay(todayTbilisi(), quotedTodayIds);
+        const reasonRes = await supabase.from('loss_reasons').select('code, label_en, label_ka, sort_order, active').eq('active', true).order('sort_order');
+        if (!reasonRes.error && reasonRes.data) setLossReasons(reasonRes.data as LossReason[]);
         setDayRows(applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id))));
         setDayNote('');
       } catch {
@@ -726,8 +778,8 @@ export default function RateDesk() {
                   {loaded && !dayNote && <span className="strong" style={{ fontSize: 22 }}>{dayDeals.length}</span>}
                 </div>
                 <p className="small" style={{ color: 'var(--ink-2)', marginTop: 6 }}>{t(
-                  'ყველა გარიგება, რომელიც დღეს კურსის მაგიდაზე იყო: გაცემული კურსი, რომელიც KAM-ის ღია მოთხოვნაზეა დარჩენილი, გაწერილი და უარყოფილი. შუაღამეს, თბილისის დროით, სია ახალ დღეზე გადადის. ძველი გარიგებები ისტორიაში რჩება.',
-                  'Every deal that was on the rate desk today: a rate already given that is still on the KAM’s open list, a written rate, and a rejected one. At midnight, Tbilisi time, the list moves on to the new day. Older deals stay in History.',
+                  'ყველა გარიგება, რომელიც დღეს კურსის მაგიდაზე იყო: გაცემული კურსი, რომელიც KAM-ის ღია მოთხოვნაზეა დარჩენილი, გაწერილი, უარყოფილი და დაკარგული. შუაღამეს, თბილისის დროით, სია ახალ დღეზე გადადის. ძველი გარიგებები ისტორიაში რჩება.',
+                  'Every deal that was on the rate desk today: a rate already given that is still on the KAM open list, a written rate, a rejected one, and a lost one. At midnight, Tbilisi time, the list moves on to the new day. Older deals stay in History.',
                 )}</p>
               </div>
               {!loaded && !dayNote && <LoadingLine />}
@@ -748,11 +800,19 @@ export default function RateDesk() {
                     </thead>
                     <tbody>
                       {dayDeals.map((row) => {
-                        const st = dayStatus(row, t, lang);
+                        const st = dayStatus(row, t, lang, lossReasons);
                         const rate = deskRate(row);
                         const seen = deskSeenAt(row);
+                        const awaitingLoss = row.loss_open === true
+                          && !row.went_through
+                          && !row.rate_written_at
+                          && !row.payment_confirmed_at;
+                        const savedLossNote = !row.went_through && !row.rate_written_at && !row.payment_confirmed_at
+                          ? row.loss_approval_comment?.trim() ?? ''
+                          : '';
                         return (
-                          <tr key={row.id}>
+                          <Fragment key={row.id}>
+                          <tr>
                             <td className="nowrap">{fmtDateTime(seen)}</td>
                             <td>
                               <div className="strong">{row.client_name ?? row.client_id}</div>
@@ -780,6 +840,14 @@ export default function RateDesk() {
                               {st.detail && <div className="tiny muted">{st.detail}</div>}
                             </td>
                           </tr>
+                          {(awaitingLoss || savedLossNote) && (
+                            <tr>
+                              <td colSpan={6} style={{ minWidth: 0 }}>
+                                <LossApproval row={row} onDone={load} />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         );
                       })}
                     </tbody>
