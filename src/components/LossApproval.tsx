@@ -54,14 +54,14 @@ export default function LossApproval({ row, onDone }: { row: RequestRow; onDone:
           <span className="pill pill-alert">{t('არ გავიდა', 'Did not go through')}</span>
           {' '}
           <span className="muted">{t(
-            'სახაზინომ ჯერ არ დაადასტურა. სანამ არ დაადასტურებს, დანაკარგი საბოლოო არ არის.',
+            'ხაზინამ ჯერ არ დაადასტურა. სანამ არ დაადასტურებს, დანაკარგი საბოლოო არ არის.',
             'Treasury has not approved it yet. Until they approve it, the loss is not final.',
           )}</span>
         </p>
       )}
       {comment && (
         <p className="note-box">
-          {t('სახაზინოს კომენტარი', 'Treasury comment')}: {comment}
+          {t('ხაზინის კომენტარი', 'Treasury comment')}: {comment}
           {row.loss_approver_name ? ` — ${row.loss_approver_name}` : ''}
         </p>
       )}
@@ -69,7 +69,7 @@ export default function LossApproval({ row, onDone }: { row: RequestRow; onDone:
         <form onSubmit={approve} noValidate className="form-row" style={{ marginTop: 8 }}>
           <div className="field" style={{ flex: '1 1 280px' }}>
             <label htmlFor={'loss-comment-' + row.id}>
-              {t('სახაზინოს კომენტარი', 'Treasury comment')}{' '}
+              {t('ხაზინის კომენტარი', 'Treasury comment')}{' '}
               <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span>
             </label>
             <textarea

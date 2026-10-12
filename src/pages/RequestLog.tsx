@@ -47,8 +47,8 @@ export default function RequestLog() {
   function label(code: LogCode): string {
     if (code === 'agreed') return t('შეთანხმებულია', 'Agreed');
     if (code === 'client_declined') return t('კლიენტმა უარი თქვა', 'Declined by client');
-    if (code === 'treasury_declined') return t('სახაზინომ უარი თქვა', 'Declined by treasury');
-    if (code === 'waiting_treasury') return t('სახაზინოს ელოდება', 'Waiting on treasury');
+    if (code === 'treasury_declined') return t('ხაზინამ უარი თქვა', 'Declined by treasury');
+    if (code === 'waiting_treasury') return t('ხაზინას ელოდება', 'Waiting on treasury');
     if (code === 'waiting_kam') return t('KAM-ს ელოდება', 'Waiting on KAM');
     if (code === 'expired') return t('კურსს ვადა გაუვიდა', 'Rate expired');
     if (code === 'went_through') return t('გავიდა', 'Went through');
@@ -62,8 +62,8 @@ export default function RequestLog() {
     { id: 'all', label: t('ყველა', 'All') },
     { id: 'agreed', label: t('შეთანხმებულია', 'Agreed') },
     { id: 'client_declined', label: t('კლიენტმა უარი თქვა', 'Declined by client') },
-    { id: 'treasury_declined', label: t('სახაზინომ უარი თქვა', 'Declined by treasury') },
-    { id: 'waiting_treasury', label: t('სახაზინოს ელოდება', 'Waiting on treasury') },
+    { id: 'treasury_declined', label: t('ხაზინამ უარი თქვა', 'Declined by treasury') },
+    { id: 'waiting_treasury', label: t('ხაზინას ელოდება', 'Waiting on treasury') },
     { id: 'waiting_kam', label: t('KAM-ს ელოდება', 'Waiting on KAM') },
   ];
 

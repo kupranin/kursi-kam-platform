@@ -27,7 +27,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     const roleName = (role: Role | string) => {
       if (role === 'admin') return t('ადმინი', 'Admin');
       if (role === 'manager') return t('მენეჯერი', 'Manager');
-      if (role === 'treasury') return t('სახაზინო', 'Treasury');
+      if (role === 'treasury') return t('ხაზინა', 'Treasury');
       if (role === 'kam') return 'KAM';
       if (role === 'analyst') return t('ანალიტიკოსი', 'Analyst');
       return String(role);

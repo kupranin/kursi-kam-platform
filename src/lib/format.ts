@@ -60,6 +60,40 @@ export function todayTbilisi(offsetDays = 0): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
 }
 
+/** Calendar day in Tbilisi (YYYY-MM-DD) for an instant. Empty when the value is missing. */
+export function tbilisiDay(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
+}
+
+/**
+ * UTC ISO of 00:00 at the start of a Tbilisi calendar day (YYYY-MM-DD).
+ * The desk's daily list uses this as the day boundary and drops the row
+ * from that list at the next Tbilisi midnight. The row itself stays stored.
+ */
+export function tbilisiDayStart(day: string): string {
+  const utcMidnight = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)));
+  const probe = new Date(utcMidnight);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(probe);
+  const pick = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value);
+  let hour = pick('hour');
+  if (hour === 24) hour = 0;
+  const asUtc = Date.UTC(pick('year'), pick('month') - 1, pick('day'), hour, pick('minute'), pick('second'));
+  const offsetMs = asUtc - probe.getTime();
+  return new Date(utcMidnight - offsetMs).toISOString();
+}
+
 export function longToday(): string {
   return new Date().toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ });
 }

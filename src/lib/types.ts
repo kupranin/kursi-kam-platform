@@ -210,7 +210,7 @@ export function formatBanks(value: readonly string[] | string | null | undefined
 export const ROLE_NAMES: Record<Role, string> = {
   admin: 'ადმინი',
   manager: 'მენეჯერი',
-  treasury: 'სახაზინო',
+  treasury: 'ხაზინა',
   kam: 'KAM',
   analyst: 'ანალიტიკოსი',
 };

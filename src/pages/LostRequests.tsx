@@ -130,7 +130,7 @@ export default function LostRequests() {
                   <p className="note-box">{t('კლიენტმა უარი თქვა', 'Client declined')}: {r.client_decline_reason}</p>
                 )}
                 {r.quote_status === 'declined' && r.decline_reason && (
-                  <p className="note-box">{t('სახაზინომ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>
+                  <p className="note-box">{t('ხაზინამ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>
                 )}
               </div>
               {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}

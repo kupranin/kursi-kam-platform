@@ -7,7 +7,7 @@ import type { Role } from '../lib/types';
 
 const CHOICES: { id: Role; ka: string; en: string }[] = [
   { id: 'admin', ka: 'ადმინი', en: 'Admin' },
-  { id: 'treasury', ka: 'სახაზინო', en: 'Treasury' },
+  { id: 'treasury', ka: 'ხაზინა', en: 'Treasury' },
   { id: 'kam', ka: 'KAM', en: 'KAM' },
   { id: 'manager', ka: 'მენეჯერი', en: 'Manager' },
   { id: 'analyst', ka: 'ანალიტიკოსი', en: 'Analyst' },

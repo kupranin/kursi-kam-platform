@@ -80,7 +80,7 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
       return;
     }
     if (!window.confirm(t(
-      'მოვნიშნოთ დაკარგულად? მიზეზით სახაზინოს გაეგზავნება დასადასტურებლად.',
+      'მოვნიშნოთ დაკარგულად? მიზეზით ხაზინას გაეგზავნება დასადასტურებლად.',
       'Mark this as lost? It goes to treasury for approval with this reason.',
     ))) return;
     setBusy('lost');
@@ -90,7 +90,7 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
         p_reason: reason,
         ...(detail ? { p_detail: detail } : {}),
       });
-      toast(t('დაკარგულად მოინიშნა. სახაზინოს დადასტურებას ელოდება.', 'Marked as lost. It is waiting for treasury to approve it.'));
+      toast(t('დაკარგულად მოინიშნა. ხაზინის დადასტურებას ელოდება.', 'Marked as lost. It is waiting for treasury to approve it.'));
       onDone();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -110,7 +110,7 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
       </div>
       {picking && (
         <div className="stack-sm" style={{ width: '100%' }}>
-          <div className="tiny muted">{t('მიზეზი სავალდებულოა, სანამ სახაზინოს გაეგზავნება.', 'A reason is required before this goes to treasury.')}</div>
+          <div className="tiny muted">{t('მიზეზი სავალდებულოა, სანამ ხაზინას გაეგზავნება.', 'A reason is required before this goes to treasury.')}</div>
           <div className="chips">
             {reasons.map((r) => (
               <button
@@ -137,7 +137,7 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
             </label>
           )}
           <button type="button" className="btn btn-primary" disabled={busy != null || !reason} onClick={markLost}>
-            {busy === 'lost' ? t('ინახება…', 'Saving…') : t('სახაზინოსთვის გაგზავნა', 'Send to treasury')}
+            {busy === 'lost' ? t('ინახება…', 'Saving…') : t('ხაზინისთვის გაგზავნა', 'Send to treasury')}
           </button>
         </div>
       )}

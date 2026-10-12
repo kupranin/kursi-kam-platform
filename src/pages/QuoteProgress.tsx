@@ -113,7 +113,7 @@ export default function QuoteProgress() {
                   <div className="tiny muted">ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
                   <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                   <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
-                  {rate != null && <div className="small" style={{ marginTop: 6 }}>{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(rate)}</div>}
+                  {rate != null && <div className="small" style={{ marginTop: 6 }}>{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(rate)}</div>}
                   <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                   {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                   {r.rate_valid_until && <div className="tiny muted">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(r.rate_valid_until) })}</div>}

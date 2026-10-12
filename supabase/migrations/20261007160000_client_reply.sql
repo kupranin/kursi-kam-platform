@@ -193,7 +193,7 @@ begin
     raise exception 'ეს მოთხოვნა სხვა კამ-ს ეკუთვნის' using errcode = '42501';
   end if;
   if v_req.source <> 'app' or v_req.quote_status <> 'quoted' then
-    raise exception 'სახაზინომ ჯერ კურსი არ გასცა' using errcode = '22023';
+    raise exception 'ხაზინამ ჯერ კურსი არ გასცა' using errcode = '22023';
   end if;
   if v_req.client_reply is not null then
     raise exception 'ამ მოთხოვნაზე პასუხი უკვე ჩაწერილია' using errcode = '22023';
@@ -276,7 +276,7 @@ begin
         format('%s: %s approved %s. Quoted rate was %s. Client sells %s. Client gets %s.',
                f->>'kam_name', f->>'client_name', f->>'approved_rate_text', f->>'rate_text',
                f->>'sells_text', f->>'gets_text'),
-        format('%s: %s-მა დაამტკიცა კურსი %s. სახაზინოს კურსი იყო %s. კლიენტი ყიდის %s. კლიენტი იღებს %s.',
+        format('%s: %s-მა დაამტკიცა კურსი %s. ხაზინის კურსი იყო %s. კლიენტი ყიდის %s. კლიენტი იღებს %s.',
                f->>'kam_name', f->>'client_name', f->>'approved_rate_text', f->>'rate_text',
                f->>'sells_text', f->>'gets_text'),
         f
@@ -307,7 +307,7 @@ declare
   v_rate numeric;
 begin
   if v_me is null or not (private.is_treasury() or private.is_admin()) then
-    raise exception 'მხოლოდ სახაზინოს შეუძლია ამ კურსის პასუხი' using errcode = '42501';
+    raise exception 'მხოლოდ ხაზინას შეუძლია ამ კურსის პასუხი' using errcode = '42501';
   end if;
 
   select * into v_req from public.requests r where r.id = p_request_id for update;
@@ -367,7 +367,7 @@ as $$
 #variable_conflict use_column
 begin
   if not (private.is_treasury() or private.is_admin()) then
-    raise exception 'მხოლოდ სახაზინოს შეუძლია ამ სიის ნახვა' using errcode = '42501';
+    raise exception 'მხოლოდ ხაზინას შეუძლია ამ სიის ნახვა' using errcode = '42501';
   end if;
   return query
   select r.id,
@@ -433,7 +433,7 @@ begin
     raise exception 'კლიენტმა უკვე დაამტკიცა ეს კურსი' using errcode = '22023';
   end if;
   if v_row.client_reply = 'better' and v_row.better_decision is null then
-    raise exception 'სახაზინო ჯერ პასუხობს კურსს, რომელიც კლიენტს სურს' using errcode = '22023';
+    raise exception 'ხაზინა ჯერ პასუხობს კურსს, რომელიც კლიენტს სურს' using errcode = '22023';
   end if;
   update public.requests r
      set quote_status = 'asking', asked_at = now(), rate = null, rate_valid_until = null,
@@ -525,7 +525,7 @@ begin
   end if;
   if p_event = 'request.client_approved' then
     v_en := '[Test] Test KAM: Test client approved 2.7000. Quoted rate was 2.6900. Client sells USD 100,000. Client gets GEL.';
-    v_ka := '[ტესტი] Test KAM: Test client-მა დაამტკიცა კურსი 2.7000. სახაზინოს კურსი იყო 2.6900. კლიენტი ყიდის USD 100,000. კლიენტი იღებს GEL-ს.';
+    v_ka := '[ტესტი] Test KAM: Test client-მა დაამტკიცა კურსი 2.7000. ხაზინის კურსი იყო 2.6900. კლიენტი ყიდის USD 100,000. კლიენტი იღებს GEL-ს.';
   else
     v_en := '[Test] ' || p_event || ': this is how this message arrives. Test client sells USD 100,000 for GEL, rate 2.6900.';
     v_ka := '[ტესტი] ' || p_event || ': ასე მოვა ეს გზავნილი. Test client ყიდის 100,000 USD-ს, კურსი 2.6900.';

@@ -2410,7 +2410,7 @@ begin
       perform private.emit('request.sent_back', new.id, new.kam_id,
         format('Treasury sent back %s (sells %s %s for %s): %s',
                f->>'client_name', f->>'sells_currency', f->>'amount_text', f->>'gets_currency', f->>'decline_reason'),
-        format('სახაზინო სამსახურმა დააბრუნა მოთხოვნა: %s (ყიდის %s %s-ს, იღებს %s-ს). მიზეზი: %s',
+        format('ხაზინის სამსახურმა დააბრუნა მოთხოვნა: %s (ყიდის %s %s-ს, იღებს %s-ს). მიზეზი: %s',
                f->>'client_name', f->>'amount_text', f->>'sells_currency', f->>'gets_currency', f->>'decline_reason'),
         f);
 

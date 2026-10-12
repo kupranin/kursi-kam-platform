@@ -55,7 +55,7 @@ begin
   if private.is_admin() or private.is_treasury() then
     return new;
   end if;
-  raise exception 'მხოლოდ სახაზინოს ან ადმინს შეუძლია კომენტარის ჩაწერა' using errcode = '42501';
+  raise exception 'მხოლოდ ხაზინას ან ადმინს შეუძლია კომენტარის ჩაწერა' using errcode = '42501';
 end;
 $$;
 
@@ -77,7 +77,7 @@ declare
   v_comment text := nullif(btrim(coalesce(p_comment, '')), '');
 begin
   if not (private.is_treasury() or private.is_admin()) then
-    raise exception 'მხოლოდ სახაზინოს ან ადმინს შეუძლია კომენტარის ჩაწერა' using errcode = '42501';
+    raise exception 'მხოლოდ ხაზინას ან ადმინს შეუძლია კომენტარის ჩაწერა' using errcode = '42501';
   end if;
   if v_comment is not null and char_length(v_comment) > 500 then
     raise exception 'კომენტარი ძალიან გრძელია' using errcode = '22023';

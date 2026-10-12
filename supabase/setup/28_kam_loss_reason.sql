@@ -53,7 +53,7 @@ begin
     raise exception 'Your account cannot change requests' using errcode = '42501';
   end if;
   if v_reason is null then
-    raise exception 'მიზეზი აუცილებელია, სანამ სახაზინოს გაეგზავნება' using errcode = '22023';
+    raise exception 'მიზეზი აუცილებელია, სანამ ხაზინას გაეგზავნება' using errcode = '22023';
   end if;
   if not exists (
     select 1 from public.loss_reasons l where l.code = v_reason and l.active

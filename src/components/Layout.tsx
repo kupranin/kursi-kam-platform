@@ -77,7 +77,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <span className="brand-mark">K</span>
             <span>kursi business</span>
             {role !== 'admin' && realRole === 'admin' && <span className="role-tag">{roleName(role)}</span>}
-            {role === 'treasury' && realRole === 'treasury' && <span className="role-tag">{t('სახაზინო', 'Treasury')}</span>}
+            {role === 'treasury' && realRole === 'treasury' && <span className="role-tag">{t('ხაზინა', 'Treasury')}</span>}
           </Link>
           <nav className="nav" aria-label={t('მთავარი', 'Main')}>
             {items.map((i) => (

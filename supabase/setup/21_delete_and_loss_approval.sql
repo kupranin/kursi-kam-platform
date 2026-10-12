@@ -577,7 +577,7 @@ begin
     raise exception 'კლიენტმა უკვე დაამტკიცა ეს კურსი' using errcode = '22023';
   end if;
   if v_row.client_reply = 'better' and v_row.better_decision is null then
-    raise exception 'სახაზინო ჯერ პასუხობს კურსს, რომელიც კლიენტს სურს' using errcode = '22023';
+    raise exception 'ხაზინა ჯერ პასუხობს კურსს, რომელიც კლიენტს სურს' using errcode = '22023';
   end if;
   update public.requests r
      set quote_status = 'asking', asked_at = now(), rate = null, rate_valid_until = null,
@@ -641,7 +641,7 @@ declare
   v_comment text := nullif(btrim(coalesce(p_comment, '')), '');
 begin
   if v_me is null or not (private.is_treasury() or private.is_admin()) then
-    raise exception 'მხოლოდ სახაზინოს შეუძლია დანაკარგის დადასტურება' using errcode = '42501';
+    raise exception 'მხოლოდ ხაზინას შეუძლია დანაკარგის დადასტურება' using errcode = '42501';
   end if;
   if private.my_role() = 'kam' or (not private.is_admin() and exists (
     select 1 from public.requests r where r.id = p_request_id and r.kam_id = v_me
@@ -679,7 +679,7 @@ begin
     begin
       perform private.inbox_add(
         'kam', v_req.kam_id, 'loss.approved', p_request_id,
-        'სახაზინომ დანაკარგი დაადასტურა',
+        'ხაზინამ დანაკარგი დაადასტურა',
         'Treasury approved the loss',
         v_comment,
         v_comment

@@ -311,10 +311,10 @@ export default function Analytics() {
           <h1>{t('ანალიტიკა', 'Analytics')}</h1>
           <p>{seeTransactions
             ? t(
-              'წარმატებული გადახდა ბრუნვაში ითვლება, როცა იმ კლიენტს იმავე თვეში მოთხოვნა აქვს. თანხა არის abs_gel + cross_gel. ერთ მოთხოვნაზე ზუსტი დამთხვევა საჭირო არ არის. შემოსავალი იმავე სტრიქონების საკომისიოა. ქვემოთ სახაზინოს დროცაა.',
+              'წარმატებული გადახდა ბრუნვაში ითვლება, როცა იმ კლიენტს იმავე თვეში მოთხოვნა აქვს. თანხა არის abs_gel + cross_gel. ერთ მოთხოვნაზე ზუსტი დამთხვევა საჭირო არ არის. შემოსავალი იმავე სტრიქონების საკომისიოა. ქვემოთ ხაზინის დროცაა.',
               'A successful payment counts when that client requested in the same month. The amount is abs_gel + cross_gel. It does not have to match one request. The fee is total_income on those same rows. Treasury time is below.',
             )
-            : t('სახაზინოს პასუხისა და კურსის გაწერის დრო.', 'How long treasury takes to answer, and to write the rate.')}</p>
+            : t('ხაზინის პასუხისა და კურსის გაწერის დრო.', 'How long treasury takes to answer, and to write the rate.')}</p>
         </div>
         <div className="row">
           <label className="sr-only" htmlFor="analytics-month">პერიოდი</label>
@@ -328,10 +328,10 @@ export default function Analytics() {
       </div>
 
       <section className="card" aria-labelledby="times-title">
-        <h2 id="times-title">{t('სახაზინოს დრო', 'Treasury time')}</h2>
+        <h2 id="times-title">{t('ხაზინის დრო', 'Treasury time')}</h2>
         <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
           {t(
-            'პირველი პასუხი: KAM-ის მოთხოვნიდან სახაზინოს პირველ პასუხამდე. კურსის გაწერა: კლიენტის დათანხმებიდან იმ მომენტამდე, როცა სახაზინო კურსს გაწერილად მონიშნავს. თუ ჯერ არ არის გაწერილი, ეს დრო ცარიელია. ძველი ფაილის სტრიქონები აქ არ შედის.',
+            'პირველი პასუხი: KAM-ის მოთხოვნიდან ხაზინის პირველ პასუხამდე. კურსის გაწერა: კლიენტის დათანხმებიდან იმ მომენტამდე, როცა ხაზინა კურსს გაწერილად მონიშნავს. თუ ჯერ არ არის გაწერილი, ეს დრო ცარიელია. ძველი ფაილის სტრიქონები აქ არ შედის.',
             'First response: from the KAM placing the request until treasury’s first answer. Rate writing: from the client agreeing until treasury marks the rate as written. If it is not written yet, that time stays empty. Rows from the old file are not included.',
           )}
         </p>

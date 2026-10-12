@@ -14,7 +14,7 @@ interface AuditRow {
 const RULE_LABELS: Record<string, string> = {
   month_grace_days: 'თვის ზღვარი', default_quote_minutes: 'კურსის მოქმედება', winback_window_days: 'დაბრუნების ფანჯარა',
   tier_a_min_gel: 'პრიორიტეტი A-ის ზღვარი', tier_b_min_gel: 'პრიორიტეტი B-ის ზღვარი', request_delete_minutes: 'წაშლის დრო',
-  admin_requires_mfa: 'ავთენტიფიკატორი ადმინებისთვის', treasury_alert_seconds: 'სახაზინოს გაფრთხილების დრო',
+  admin_requires_mfa: 'ავთენტიფიკატორი ადმინებისთვის', treasury_alert_seconds: 'ხაზინის გაფრთხილების დრო',
   expiry_warning_minutes: 'ვადის გაფრთხილება', app_url: 'პლატფორმის მისამართი',
 };
 
@@ -41,7 +41,7 @@ const STEP_KA: Record<string, string> = {
 
 const AUDIENCE_KA: Record<string, string> = {
   kam: 'KAM',
-  treasury: 'სახაზინო',
+  treasury: 'ხაზინა',
   admin: 'ადმინები',
   manager: 'მენეჯერები',
 };
@@ -79,10 +79,10 @@ function describe(a: AuditRow, names: Names): string {
       if (o.client_reply !== n.client_reply && n.client_reply === 'approved') return `კლიენტმა დაამტკიცა მოთხოვნა #${a.row_key}, კურსი ${fmtRate(n.approved_rate)}`;
       if (o.client_reply !== n.client_reply && n.client_reply === 'better') return `კლიენტს უკეთესი კურსი სურს, მოთხოვნა #${a.row_key}: ${fmtRate(n.wanted_rate)}`;
       if (o.client_reply !== n.client_reply && n.client_reply === 'declined') return `კლიენტმა უარი თქვა, მოთხოვნა #${a.row_key}: ${n.client_decline_reason}`;
-      if (o.better_decision !== n.better_decision && n.better_decision === 'accepted') return `სახაზინომ დაადასტურა ${fmtRate(n.given_rate)}, მოთხოვნა #${a.row_key}`;
+      if (o.better_decision !== n.better_decision && n.better_decision === 'accepted') return `ხაზინამ დაადასტურა ${fmtRate(n.given_rate)}, მოთხოვნა #${a.row_key}`;
       if (o.better_decision !== n.better_decision && n.better_decision === 'corrected') return `გასწორებული კურსი ${fmtRate(n.given_rate)}, მოთხოვნა #${a.row_key}`;
-      if (o.quote_status !== 'declined' && n.quote_status === 'declined' && n.decline_reason) return `სახაზინომ უარი თქვა, მოთხოვნა #${a.row_key}: ${DECLINE_KA[n.decline_reason] ?? n.decline_reason}`;
-      if (o.client_reply === 'better' && !n.client_reply && n.quote_status === 'quoted') return `სახაზინომ დააბრუნა კურსი ${fmtRate(n.rate)}, მოთხოვნა #${a.row_key}`;
+      if (o.quote_status !== 'declined' && n.quote_status === 'declined' && n.decline_reason) return `ხაზინამ უარი თქვა, მოთხოვნა #${a.row_key}: ${DECLINE_KA[n.decline_reason] ?? n.decline_reason}`;
+      if (o.client_reply === 'better' && !n.client_reply && n.quote_status === 'quoted') return `ხაზინამ დააბრუნა კურსი ${fmtRate(n.rate)}, მოთხოვნა #${a.row_key}`;
       if (o.loss_reason !== n.loss_reason || o.loss_reason_note !== n.loss_reason_note) {
         if (!n.loss_reason) return `მიზეზი გასუფთავდა მოთხოვნაზე #${a.row_key}`;
         return `მიზეზი მიეთითა მოთხოვნაზე #${a.row_key}: ${LOSS_KA[n.loss_reason] ?? n.loss_reason}${n.loss_reason_note ? ` (${n.loss_reason_note})` : ''}`;

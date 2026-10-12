@@ -47,7 +47,7 @@ declare
   f        jsonb;
 begin
   if v_me is null or not (private.is_treasury() or private.is_admin()) then
-    raise exception 'მხოლოდ სახაზინოს შეუძლია ამ კურსის პასუხი' using errcode = '42501';
+    raise exception 'მხოლოდ ხაზინას შეუძლია ამ კურსის პასუხი' using errcode = '42501';
   end if;
 
   select * into v_req from public.requests r where r.id = p_request_id for update;
@@ -106,7 +106,7 @@ begin
         v_req.kam_id,
         format('Treasury sent back %s (client sells %s, client gets %s): %s',
                f->>'client_name', f->>'sells_text', f->>'gets_text', f->>'decline_reason'),
-        format('სახაზინო სამსახურმა დააბრუნა მოთხოვნა: %s (კლიენტი ყიდის %s, იღებს %s). მიზეზი: %s',
+        format('ხაზინის სამსახურმა დააბრუნა მოთხოვნა: %s (კლიენტი ყიდის %s, იღებს %s). მიზეზი: %s',
                f->>'client_name', f->>'sells_text', f->>'gets_text', f->>'decline_reason'),
         f
       );

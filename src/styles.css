@@ -88,6 +88,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card.tint { background: var(--lavender-pale); border-color: transparent; }
 .card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
 .card-head p { margin: 4px 0 0; }
+.desk-day { min-width: 0; max-width: 100%; }
+.desk-day .table-wrap { max-height: min(480px, 55vh); overflow: auto; }
+.desk-day .table { min-width: 760px; }
+.desk-day .table th { position: sticky; top: 0; background: #fff; z-index: 1; }
 .cols { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 .col-main { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
 .col-side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }

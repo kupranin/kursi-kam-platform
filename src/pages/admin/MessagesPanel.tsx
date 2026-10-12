@@ -24,8 +24,8 @@ export const EVENT_NAMES: Record<string, string> = {
   'sync.failed': 'ტრანზაქციების სინქრონიზაცია ჩაიშალა',
   'user.invite': 'ადამიანი მოწვეულია',
 };
-const AUDIENCE: Record<string, string> = { kam: 'KAM, რომელმაც იკითხა', treasury: 'სახაზინო', admin: 'ადმინები', manager: 'მენეჯერები' };
-const HOOK_NAME: Record<string, string> = { kam: 'KAM-ები', treasury: 'სახაზინო', admin: 'ადმინები', manager: 'მენეჯერები' };
+const AUDIENCE: Record<string, string> = { kam: 'KAM, რომელმაც იკითხა', treasury: 'ხაზინა', admin: 'ადმინები', manager: 'მენეჯერები' };
+const HOOK_NAME: Record<string, string> = { kam: 'KAM-ები', treasury: 'ხაზინა', admin: 'ადმინები', manager: 'მენეჯერები' };
 const STATUS: Record<string, { text: string; cls: string }> = {
   delivered: { text: 'მიწოდებულია', cls: 'pill-ok' },
   sent: { text: 'გაიგზავნა, GoSMS-ს ან Meta-ს ელოდება', cls: 'pill-wait' },
@@ -39,11 +39,11 @@ const DESC_KA: Record<string, string> = {
   'A KAM asks again after an expired rate or a send-back': 'KAM ხელახლა ითხოვს ვადაგასული კურსის ან დაბრუნების შემდეგ',
   'A request has waited longer than the alert time': 'მოთხოვნა გაფრთხილების დროზე დიდხანს ელოდება',
   'Same alert, copied to admins': 'იგივე გაფრთხილება, ასლი ადმინებს',
-  'Treasury sent a rate': 'სახაზინომ კურსი გაგზავნა',
-  'Treasury sent the request back, with the reason': 'სახაზინომ მოთხოვნა დააბრუნა, მიზეზით',
+  'Treasury sent a rate': 'ხაზინამ კურსი გაგზავნა',
+  'Treasury sent the request back, with the reason': 'ხაზინამ მოთხოვნა დააბრუნა, მიზეზით',
   'A rate is about to expire and the client\'s transaction hasn\'t arrived': 'კურსს ვადა ეწურება და კლიენტის ტრანზაქცია ჯერ არ მოსულა',
   'The client\'s transaction arrived': 'კლიენტის ტრანზაქცია მოვიდა',
-  'Same news, copied to treasury': 'იგივე ამბავი, ასლი სახაზინოს',
+  'Same news, copied to treasury': 'იგივე ამბავი, ასლი ხაზინას',
   'Morning summary: reasons to give and priority A clients to call': 'დილის შეჯამება: მისათითებელი მიზეზები და პრიორიტეტი A-ს კლიენტები, რომლებსაც უნდა დარეკოთ',
   'Transactions could not be updated from ClickHouse': 'ტრანზაქციები ClickHouse-იდან ვერ განახლდა',
 };

@@ -297,7 +297,7 @@ export default function Analyst() {
         t('სტატუსი', 'Status'),
         t('მიზეზი', 'Reason'),
         t('დანაკარგის კომენტარი', 'Loss comment'),
-        t('სახაზინოს კომენტარი', 'Treasury comment'),
+        t('ხაზინის კომენტარი', 'Treasury comment'),
       ];
       downloadCsv(`kursi-requests-${todayTbilisi()}.csv`, [
         headers,
@@ -375,7 +375,7 @@ export default function Analyst() {
           'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. Download includes every row in this filter. Leave From and To empty to include every date.',
         )}
         {canEdit && <> {t('ადმინს შეუძლია კურსის და თანხების გასწორება.', 'An admin can correct the rate and the amounts.')}</>}
-        {canComment && <> {t('სახაზინოს კომენტარს სახაზინო ან ადმინი წერს. ანალიტიკოსი მხოლოდ კითხულობს.', 'Treasury or an admin writes the treasury comment. An analyst only reads it.')}</>}
+        {canComment && <> {t('ხაზინის კომენტარს ხაზინა ან ადმინი წერს. ანალიტიკოსი მხოლოდ კითხულობს.', 'Treasury or an admin writes the treasury comment. An analyst only reads it.')}</>}
       </p>
 
       {rangeInvalid && <p className="alert-box" role="alert">{rangeMessage}</p>}
@@ -406,7 +406,7 @@ export default function Analyst() {
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
                   <th>{t('დანაკარგის კომენტარი', 'Loss comment')}</th>
-                  <th>{t('სახაზინოს კომენტარი', 'Treasury comment')}</th>
+                  <th>{t('ხაზინის კომენტარი', 'Treasury comment')}</th>
                   {canEdit && <th>{t('შესწორება', 'Edit')}</th>}
                 </tr>
               </thead>
@@ -464,7 +464,7 @@ export default function Analyst() {
                             className="input"
                             maxLength={COMMENT_MAX}
                             rows={2}
-                            aria-label={t('სახაზინოს კომენტარი', 'Treasury comment')}
+                            aria-label={t('ხაზინის კომენტარი', 'Treasury comment')}
                             value={note}
                             onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
                           />

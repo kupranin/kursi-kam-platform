@@ -90,7 +90,7 @@ export default function DeskHistory() {
                 <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
                 {r.approved_rate != null && <div className="small" style={{ marginTop: 6 }}>{t('გაწერილი კურსი', 'Written rate')} {fmtRate(r.approved_rate)}</div>}
                 {r.rate != null && r.approved_rate !== r.rate && (
-                  <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>
+                  <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>
                 )}
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.rate_written_at && <div className="tiny muted">{t('ჩაიწერა {when}', 'Written {when}', { when: fmtDateTime(r.rate_written_at) })}</div>}

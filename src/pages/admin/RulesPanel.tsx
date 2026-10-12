@@ -126,17 +126,17 @@ export default function RulesPanel({ names }: { names: Names }) {
           </span>
         </div>
         <div className="field">
-          <label htmlFor="validity">სახაზინოს კურსი მოქმედებს</label>
+          <label htmlFor="validity">ხაზინის კურსი მოქმედებს</label>
           <select id="validity" className="select" value={form.validity} onChange={(e) => set({ validity: e.target.value })}>
             {['5', '10', '15', '30', '60'].map((m) => <option key={m} value={m}>{m} წუთი</option>)}
           </select>
-          <span className="hint">ნაგულისხმევი. სახაზინოს შეუძლია თითო კურსზე სხვა დრო აირჩიოს.</span>
+          <span className="hint">ნაგულისხმევი. ხაზინას შეუძლია თითო კურსზე სხვა დრო აირჩიოს.</span>
         </div>
         {numField('window', 'დაბრუნება უყურებს უკან', form.windowDays, 'windowDays', 'დღე')}
         {numField('tier-a', 'პრიორიტეტი A იწყება', form.tierA, 'tierA', 'GEL')}
         {numField('tier-b', 'პრიორიტეტი B იწყება', form.tierB, 'tierB', 'GEL')}
         {numField('delete-min', 'KAM-ს შეუძლია მოთხოვნის წაშლა', form.deleteMin, 'deleteMin', 'წუთი')}
-        {numField('alert', 'გააფრთხილე სახაზინო, როცა მოთხოვნა ელოდება', form.alertSeconds, 'alertSeconds', 'წამი')}
+        {numField('alert', 'გააფრთხილე ხაზინა, როცა მოთხოვნა ელოდება', form.alertSeconds, 'alertSeconds', 'წამი')}
         <div className="field">
           <label htmlFor="app-url">პლატფორმის მისამართი</label>
           <input id="app-url" className="input" placeholder="https://kam.kursi.ge" value={form.appUrl} onChange={(e) => set({ appUrl: e.target.value })} />

@@ -61,12 +61,12 @@ function historyStatus(r: RequestRow, went: string, missed: string, pending: str
 
 function clientReplyNote(r: RequestRow, t: (ka: string, en: string, vars?: Record<string, string | number>) => string): string | null {
   if (r.client_reply === 'approved' && r.approved_rate != null) {
-    return t('კლიენტმა დაამტკიცა {rate}. გაეგზავნა სახაზინოს და მენეჯერებს.', 'Client approved {rate}. Sent to treasury and managers.', { rate: fmtRate(r.approved_rate) });
+    return t('კლიენტმა დაამტკიცა {rate}. გაეგზავნა ხაზინას და მენეჯერებს.', 'Client approved {rate}. Sent to treasury and managers.', { rate: fmtRate(r.approved_rate) });
   }
   if (r.client_reply === 'better') {
-    if (r.better_decision === 'accepted' && r.given_rate != null) return t('სახაზინომ დაადასტურა {rate}.', 'Treasury accepted {rate}.', { rate: fmtRate(r.given_rate) });
+    if (r.better_decision === 'accepted' && r.given_rate != null) return t('ხაზინამ დაადასტურა {rate}.', 'Treasury accepted {rate}.', { rate: fmtRate(r.given_rate) });
     if (r.better_decision === 'corrected' && r.given_rate != null) return t('გასწორებული კურსი: {rate}.', 'Corrected rate: {rate}.', { rate: fmtRate(r.given_rate) });
-    if (r.wanted_rate != null) return t('სახაზინოს ელოდება. კლიენტს სურს {rate}.', 'Waiting on treasury. The client wants {rate}.', { rate: fmtRate(r.wanted_rate) });
+    if (r.wanted_rate != null) return t('ხაზინას ელოდება. კლიენტს სურს {rate}.', 'Waiting on treasury. The client wants {rate}.', { rate: fmtRate(r.wanted_rate) });
   }
   if (r.client_reply === 'declined' && r.client_decline_reason) {
     return t('კლიენტმა უარი თქვა: {reason}', 'Client declined: {reason}', { reason: r.client_decline_reason });
@@ -271,7 +271,7 @@ export default function Requests() {
         p_client_name: info.nameFromFile ? null : info.name,
         p_bank: pBank,
       });
-      toast(t('გაეგზავნა სახაზინოს. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
+      toast(t('გაეგზავნა ხაზინას. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
       setInfo(null);
       setClientForm((n) => n + 1);
       setSellsAmount('');
@@ -295,7 +295,7 @@ export default function Requests() {
   async function askAgain(r: RequestRow) {
     try {
       await rpc('ask_again', { p_request_id: r.id, p_note: null });
-      toast(t('ხელახლა გაეგზავნა სახაზინოს.', 'Sent to treasury again.'));
+      toast(t('ხელახლა გაეგზავნა ხაზინას.', 'Sent to treasury again.'));
       load();
     } catch (err) { toast((err as Error).message, 'error'); }
   }
@@ -425,7 +425,7 @@ export default function Requests() {
             <input id={'edit-rate-' + r.id} className={'input' + (editTried && !rateAmt.ok ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
           </div>
           <div className="field" style={{ flex: '2 1 240px', minWidth: 200 }}>
-            <label htmlFor={'edit-note-' + r.id}>{t('კომენტარი სახაზინოსთვის', 'Comment for treasury')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
+            <label htmlFor={'edit-note-' + r.id}>{t('კომენტარი ხაზინისთვის', 'Comment for treasury')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
             <input id={'edit-note-' + r.id} className="input" autoComplete="off" value={editNote} onChange={(e) => setEditNote(e.target.value)} />
           </div>
           <div className="row" style={{ paddingTop: 27, gap: 12 }}>
@@ -471,9 +471,9 @@ export default function Requests() {
         p_reason: reply.kind === 'declined' ? reason : null,
       });
       toast(reply.kind === 'approved'
-        ? t('გაეგზავნა სახაზინოს და მენეჯერებს.', 'Sent to treasury and managers.')
+        ? t('გაეგზავნა ხაზინას და მენეჯერებს.', 'Sent to treasury and managers.')
         : reply.kind === 'better'
-          ? t('გაეგზავნა სახაზინოს.', 'Sent to treasury.')
+          ? t('გაეგზავნა ხაზინას.', 'Sent to treasury.')
           : t('მიზეზი შენახულია.', 'Reason saved.'));
       setReply(null);
       setReplyRate('');
@@ -569,11 +569,11 @@ export default function Requests() {
               <span className={'hint' + (tried && !rateSide.ok ? ' error' : '')}>{tried && !rateSide.ok ? t('ჩაწერეთ კურსი, რომელსაც კლიენტი ითხოვს, ან დატოვეთ ცარიელი', 'Enter the rate the client wants, or leave it blank') : t('დატოვეთ ცარიელი, თუ კლიენტს კურსი არ უთხოვია', 'Leave blank if the client did not ask for a rate')}</span>
             </div>
             <div className="field" style={{ flex: '2 1 240px', minWidth: 200 }}>
-              <label htmlFor="treasury-comment">{t('კომენტარი სახაზინოსთვის', 'Comment for treasury')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
+              <label htmlFor="treasury-comment">{t('კომენტარი ხაზინისთვის', 'Comment for treasury')} <span className="muted" style={{ fontWeight: 400 }}>({t('არასავალდებულო', 'optional')})</span></label>
               <input id="treasury-comment" className="input" autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             <div style={{ paddingTop: 27 }}>
-              <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? t('იგზავნება…', 'Sending…') : t('კურსის თხოვნა სახაზინოს', 'Ask treasury for a rate')}</button>
+              <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? t('იგზავნება…', 'Sending…') : t('კურსის თხოვნა ხაზინას', 'Ask treasury for a rate')}</button>
             </div>
           </div>
           {info?.valid && info.id && <ClientHistory clientId={info.id} />}
@@ -583,10 +583,10 @@ export default function Requests() {
       {isKam && <section className="card flush" aria-labelledby="open-title">
         <div className="card-head">
           <h2 id="open-title" style={{ fontSize: 22 }}>{t('ღია მოთხოვნები', 'Open requests')}</h2>
-          <span className="small muted">{t('სახაზინოს კურსი აქ ჩნდება. ღია მოთხოვნაზე შეგიძლიათ მონიშნოთ, რომ ტრანზაქცია გავიდა, ან რომ დაიკარგა.', 'Treasury’s rate appears here. On an open request you can mark that the transaction went through, or that it was lost.')}</span>
+          <span className="small muted">{t('ხაზინის კურსი აქ ჩნდება. ღია მოთხოვნაზე შეგიძლიათ მონიშნოთ, რომ ტრანზაქცია გავიდა, ან რომ დაიკარგა.', 'Treasury’s rate appears here. On an open request you can mark that the transaction went through, or that it was lost.')}</span>
         </div>
         {!loaded && <LoadingLine />}
-        {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი სახაზინოს გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
+        {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი ხაზინას გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
         {open.map((r) => {
           const st = stateOf(r);
           const answer = clientReplyNote(r, t);
@@ -625,14 +625,14 @@ export default function Requests() {
                       {st === 'asking' && t('იკითხა {time}-ზე', 'Asked at {time}', { time: fmtTime(r.asked_at) })}
                       {st === 'quoted' && t('კლიენტს უთხარით კურსი და ჩაწერეთ პასუხი.', 'Tell the client the rate and record the answer.')}
                       {st === 'expired' && t('ხელახლა იკითხეთ, თუ კლიენტს კვლავ სურს კონვერტაცია', 'Ask again if the client still wants to convert')}
-                      {st === 'declined' && (r.decline_reason ? t('სახაზინომ უარი თქვა: {reason}', 'Treasury declined: {reason}', { reason: treasuryReason(r.decline_reason, lang) }) : t('დაამატეთ დეტალები და ხელახლა იკითხეთ', 'Add details and ask again'))}
+                      {st === 'declined' && (r.decline_reason ? t('ხაზინამ უარი თქვა: {reason}', 'Treasury declined: {reason}', { reason: treasuryReason(r.decline_reason, lang) }) : t('დაამატეთ დეტალები და ხელახლა იკითხეთ', 'Add details and ask again'))}
                     </div>
                   )}
               </div>
-              {st === 'asking' && <span className="pill pill-wait"><IconClock />{t('სახაზინოს ელოდება', 'Waiting on treasury')}</span>}
+              {st === 'asking' && <span className="pill pill-wait"><IconClock />{t('ხაზინას ელოდება', 'Waiting on treasury')}</span>}
               {st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
               {st === 'expired' && <span className="pill pill-wait">{t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
-              {st === 'declined' && <span className="pill pill-alert">{t('სახაზინო', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
+              {st === 'declined' && <span className="pill pill-alert">{t('ხაზინა', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
               <div className="actions">
                 {canAnswer && (
                   <>
@@ -659,7 +659,7 @@ export default function Requests() {
                       <label htmlFor={'reply-rate-' + r.id}>{t('ჩაწერეთ კურსი', 'Enter the rate')}</label>
                       <input id={'reply-rate-' + r.id} className={'input' + (replyTried && !replyRateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={replyRate} onChange={(e) => setReplyRate(e.target.value)} />
                       <span className={'hint' + (replyTried && !replyRateOk ? ' error' : '')}>
-                        {replyTried && !replyRateOk ? t('ჩაწერეთ კურსი', 'Enter the rate') : replyOpen === 'approved' ? t('მოთხოვნა მიდის სახაზინოსთან და მენეჯერებთან.', 'This goes to treasury and to managers.') : t('მოთხოვნა მიდის მხოლოდ სახაზინოსთან. სახაზინოს პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
+                        {replyTried && !replyRateOk ? t('ჩაწერეთ კურსი', 'Enter the rate') : replyOpen === 'approved' ? t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან.', 'This goes to treasury and to managers.') : t('მოთხოვნა მიდის მხოლოდ ხაზინასთან. ხაზინის პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
                       </span>
                     </div>
                   ) : (
@@ -667,7 +667,7 @@ export default function Requests() {
                       <label htmlFor={'reply-reason-' + r.id}>{t('მიზეზი', 'Reason')}</label>
                       <input id={'reply-reason-' + r.id} className={'input' + (replyTried && !replyReasonOk ? ' invalid' : '')} autoComplete="off" value={replyReason} onChange={(e) => setReplyReason(e.target.value)} />
                       <span className={'hint' + (replyTried && !replyReasonOk ? ' error' : '')}>
-                        {replyTried && !replyReasonOk ? t('ჩაწერეთ მიზეზი', 'Enter a reason') : t('სახაზინო დაინახავს მიზეზს.', 'Treasury will see the reason.')}
+                        {replyTried && !replyReasonOk ? t('ჩაწერეთ მიზეზი', 'Enter a reason') : t('ხაზინა დაინახავს მიზეზს.', 'Treasury will see the reason.')}
                       </span>
                     </div>
                   )}
@@ -711,7 +711,7 @@ export default function Requests() {
         <div className="card-head">
           <div>
             <h2 id="approved-title" style={{ fontSize: 22 }}>{t('კლიენტმა დაამტკიცა', 'Client approved')}</h2>
-            <p className="small muted">{t('ბოლო 7 დღის დადასტურებები. სახაზინოც და მენეჯერებიც ხედავენ.', 'Approvals from the last 7 days. Treasury and managers both see them.')}</p>
+            <p className="small muted">{t('ბოლო 7 დღის დადასტურებები. ხაზინაც და მენეჯერებიც ხედავენ.', 'Approvals from the last 7 days. Treasury and managers both see them.')}</p>
           </div>
         </div>
         {approvedError && <p className="empty">{approvedError}</p>}
@@ -732,7 +732,7 @@ export default function Requests() {
               <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
               <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
               <div>{t('კლიენტმა დაამტკიცა', 'Client approved')} {fmtRate(r.approved_rate)}</div>
-              {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
+              {r.rate != null && <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
             </div>
             {canChange(r) && (
               <div className="actions">
@@ -787,7 +787,7 @@ export default function Requests() {
           </p>
         )}
         {histLoaded && history.map((r) => {
-          const st = historyStatus(r, t('გავიდა', 'Went through'), t('არ გავიდა', 'Did not go through'), t('არ გავიდა, სახაზინოს ელოდება', 'Did not go through, waiting on treasury'), t('ჯერ ღიაა', 'Still open'));
+          const st = historyStatus(r, t('გავიდა', 'Went through'), t('არ გავიდა', 'Did not go through'), t('არ გავიდა, ხაზინას ელოდება', 'Did not go through, waiting on treasury'), t('ჯერ ღიაა', 'Still open'));
           const chatText = isKam && r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = isKam ? bookedLine(r) : null;
           return (

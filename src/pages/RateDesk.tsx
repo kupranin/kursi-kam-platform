@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
-import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, todayTbilisi } from '../lib/format';
+import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, tbilisiDay, tbilisiDayStart, todayTbilisi } from '../lib/format';
 import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
@@ -12,7 +12,7 @@ import { bankList, type QueueRow, type QuoteToday, type ReferenceRate } from '..
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
-import { loadRatePeople, ratePeopleFor } from '../lib/ratePeople';
+import { applyRatePeople, loadRatePeople, ratePeopleFor } from '../lib/ratePeople';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import ClientHistory from '../components/ClientHistory';
@@ -96,7 +96,7 @@ function QuotedRateEditor({ requestId, rate, onChanged }: { requestId: number; r
   return (
     <form onSubmit={save} noValidate className="form-row" style={{ marginTop: 12 }}>
       <div className="field" style={{ flex: '0 1 190px' }}>
-        <label htmlFor={'quoted-rate-' + requestId}>{t('სახაზინოს კურსი', 'Treasury rate')}</label>
+        <label htmlFor={'quoted-rate-' + requestId}>{t('ხაზინის კურსი', 'Treasury rate')}</label>
         <input
           id={'quoted-rate-' + requestId}
           className={'input' + (tried && !rateOk ? ' invalid' : '')}
@@ -140,6 +140,160 @@ interface ClientReply {
 }
 
 const EMPTY_MARKET_BOARD: CurrentBoard = { pairs: [], rows: [], updatedAt: null };
+
+interface DeskDayRow {
+  id: number;
+  kam_name: string | null;
+  client_id: string;
+  client_name: string | null;
+  sells_currency: string | null;
+  gets_currency: string | null;
+  amount: number | null;
+  gets_amount: number | null;
+  client_rate: number | null;
+  rate: number | null;
+  approved_rate: number | null;
+  given_rate: number | null;
+  quote_status: string | null;
+  quote_state: string | null;
+  decline_reason: string | null;
+  client_reply: string | null;
+  client_decline_reason: string | null;
+  better_decision: string | null;
+  requested_at: string;
+  request_date: string;
+  asked_at: string | null;
+  quoted_at: string | null;
+  client_replied_at: string | null;
+  rate_valid_until: string | null;
+  rate_written_at: string | null;
+  outcome: string | null;
+  went_through: boolean | null;
+  loss_open: boolean | null;
+  bank: string | null;
+  note: string | null;
+  quoted_by_name?: string | null;
+  written_by_name?: string | null;
+}
+
+/**
+ * Today's rate-desk list. The boundary is midnight in Asia/Tbilisi.
+ * A deal stays on this list until that midnight, then it leaves the list.
+ * Nothing is deleted: older deals stay in History.
+ *
+ * The deal was on the desk today when any of these Tbilisi days is today:
+ * request_date / requested_at (the KAM logged it and it arrived),
+ * asked_at (it was put in front of treasury, including ask-again),
+ * quoted_at (treasury gave a rate or sent it back — a decline sets quoted_at),
+ * rate_valid_until (that rate was still live today, including on the KAM open list),
+ * client_replied_at (the client approved, asked for a better rate, or rejected),
+ * or rate_written_at (treasury wrote the rate).
+ * Leaving the waiting queue does not remove it. A quoted deal the KAM still
+ * has open, and a rate already written, both stay until midnight.
+ */
+function onDeskToday(row: DeskDayRow, today: string): boolean {
+  if (row.request_date === today) return true;
+  return [row.requested_at, row.asked_at, row.quoted_at, row.rate_valid_until, row.client_replied_at, row.rate_written_at]
+    .some((iso) => tbilisiDay(iso) === today);
+}
+
+function deskSeenAt(row: DeskDayRow): string {
+  return [row.rate_written_at, row.client_replied_at, row.quoted_at, row.asked_at, row.requested_at]
+    .filter((iso): iso is string => !!iso)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? row.requested_at;
+}
+
+function deskSeenMs(row: DeskDayRow): number {
+  const ms = new Date(deskSeenAt(row)).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function deskRate(row: DeskDayRow): number | null {
+  if (row.approved_rate != null && (row.rate_written_at || row.client_reply === 'approved')) return row.approved_rate;
+  if (row.given_rate != null) return row.given_rate;
+  return row.rate;
+}
+
+function dayStatus(
+  row: DeskDayRow,
+  t: (ka: string, en: string, vars?: Record<string, string | number>) => string,
+  lang: 'ka' | 'en',
+): { label: string; cls: string; detail: string } {
+  if (row.rate_written_at) {
+    return {
+      label: t('კურსი {rate}, გაწერილია {time}-ზე', 'Rate {rate}, written at {time}', {
+        rate: fmtRate(row.approved_rate ?? row.rate),
+        time: fmtTime(row.rate_written_at),
+      }),
+      cls: 'pill-ok',
+      detail: '',
+    };
+  }
+  if (row.quote_status === 'declined' || row.quote_state === 'declined') {
+    return { label: t('ხაზინამ უარი თქვა', 'Declined by treasury'), cls: 'pill-alert', detail: treasuryReason(row.decline_reason, lang) };
+  }
+  if (row.client_reply === 'declined') {
+    return { label: t('კლიენტმა უარი თქვა', 'Declined by client'), cls: 'pill-alert', detail: row.client_decline_reason ?? '' };
+  }
+  if (row.client_reply === 'approved') return { label: t('კურსი გასაწერია', 'Rate to write'), cls: 'pill-warn', detail: '' };
+  if (row.client_reply === 'better' && !row.better_decision) return { label: t('უკეთესი კურსი', 'Better rate'), cls: 'pill-warn', detail: '' };
+  if (row.quote_status === 'asking' || row.quote_state === 'asking') return { label: t('კურსს ელოდება', 'Waiting for a rate'), cls: 'pill-wait', detail: '' };
+  if ((row.quote_status === 'quoted' || row.quote_state === 'quoted' || row.quote_state === 'expired') && row.rate != null) {
+    const expired = row.quote_state === 'expired'
+      || (!!row.rate_valid_until && new Date(row.rate_valid_until).getTime() < Date.now());
+    if (expired) {
+      return {
+        label: t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', {
+          rate: fmtRate(row.rate),
+          time: fmtTime(row.rate_valid_until),
+        }),
+        cls: 'pill-wait',
+        detail: '',
+      };
+    }
+    return {
+      label: t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', {
+        rate: fmtRate(row.rate),
+        time: fmtTime(row.rate_valid_until),
+      }),
+      cls: 'pill-warn',
+      detail: '',
+    };
+  }
+  if (row.loss_open || row.outcome === 'did_not_go_through') return { label: t('არ გავიდა', 'Did not go through'), cls: 'pill-alert', detail: '' };
+  if (row.went_through || row.outcome === 'went_through') return { label: t('გავიდა', 'Went through'), cls: 'pill-ok', detail: '' };
+  return { label: t('ღიაა', 'Open'), cls: 'pill-wait', detail: '' };
+}
+
+const DAY_COLUMNS = 'id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, client_rate, rate, approved_rate, given_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, request_date, asked_at, quoted_at, client_replied_at, rate_valid_until, rate_written_at, outcome, went_through, loss_open, bank, note';
+
+/** Today's app requests, plus anything treasury quoted or wrote today. One failed slice does not drop the rest. */
+async function loadDeskDay(today: string, alsoIds: number[]): Promise<DeskDayRow[]> {
+  const start = tbilisiDayStart(today);
+  const day = () => supabase.from('request_outcomes').select(DAY_COLUMNS).eq('source', 'app').limit(1000);
+  const queries = [
+    day().eq('request_date', today),
+    day().gte('quoted_at', start),
+    day().gte('asked_at', start),
+    day().gte('client_replied_at', start),
+    day().gte('rate_written_at', start),
+    day().gte('rate_valid_until', start),
+  ];
+  if (alsoIds.length) queries.push(supabase.from('request_outcomes').select(DAY_COLUMNS).in('id', alsoIds).limit(1000));
+  const slices = await Promise.all(queries);
+  const merged = new Map<number, DeskDayRow>();
+  let ok = false;
+  for (const slice of slices) {
+    if (slice.error || !slice.data) continue;
+    ok = true;
+    for (const row of slice.data as DeskDayRow[]) merged.set(row.id, row);
+  }
+  if (!ok) {
+    const err = slices.find((slice) => slice.error)?.error;
+    throw new Error(err?.message || 'day list');
+  }
+  return [...merged.values()];
+}
 
 /** Written, paid, or lost rows. A failed lookup leaves the list as it was. */
 async function closedIds(ids: number[]): Promise<Set<number>> {
@@ -211,7 +365,8 @@ function DeskMarketRates({ board }: { board: CurrentBoard }) {
 export default function RateDesk() {
   const toast = useToast();
   const { t, lang } = useI18n();
-  const { realRole } = useViewAs();
+  const { role, realRole } = useViewAs();
+  const seeDay = role === 'treasury' || role === 'admin';
   useTick(10000);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
@@ -231,6 +386,8 @@ export default function RateDesk() {
   const [banks, setBanks] = useState<Record<number, string[]>>({});
   const [hidePast, setHidePast] = useState<Record<number, true>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
+  const [dayRows, setDayRows] = useState<DeskDayRow[]>([]);
+  const [dayNote, setDayNote] = useState('');
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
   const initial = useRef(true);
@@ -239,6 +396,7 @@ export default function RateDesk() {
   const draftRate = useRef<Record<number, string>>({});
 
   const load = useCallback(async () => {
+    let quotedTodayIds: number[] = [];
     try {
       const [q, quoted] = await Promise.all([
         rpc<QueueRow[]>('treasury_queue'),
@@ -257,6 +415,7 @@ export default function RateDesk() {
       initial.current = false;
       const queueRows = q ?? [];
       const quoteRows = quoted ?? [];
+      quotedTodayIds = quoteRows.map((r) => r.request_id);
       const watchIds = [...queueRows.map((r) => r.request_id), ...quoteRows.map((r) => r.request_id)];
       const closed = await closedIds(watchIds);
       const openQuotes = quoteRows.filter((r) => !closed.has(r.request_id));
@@ -314,8 +473,25 @@ export default function RateDesk() {
       setExtraAgreed([]);
       setRepliesNote(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
     }
+    if (seeDay) {
+      try {
+        // Treasury and admin already read every app request. A KAM's row
+        // policy still returns only their own deals, and this list is not
+        // on the KAM desk. quotedTodayIds keeps a rate treasury gave today
+        // even after it leaves the waiting queue and stays on the KAM card.
+        const raw = await loadDeskDay(todayTbilisi(), quotedTodayIds);
+        setDayRows(applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id))));
+        setDayNote('');
+      } catch {
+        setDayRows([]);
+        setDayNote(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
+      }
+    } else {
+      setDayRows([]);
+      setDayNote('');
+    }
     setLoaded(true);
-  }, [toast, t]);
+  }, [toast, t, seeDay]);
 
   useEffect(() => {
     load();
@@ -519,6 +695,10 @@ export default function RateDesk() {
   const adminDelete = (id: number) => realRole === 'admin'
     ? <DeleteRequestButton requestId={id} onDeleted={load} />
     : null;
+  const today = todayTbilisi();
+  const dayDeals = seeDay
+    ? dayRows.filter((row) => onDeskToday(row, today)).sort((a, b) => deskSeenMs(b) - deskSeenMs(a))
+    : [];
 
   return (
     <>
@@ -532,11 +712,83 @@ export default function RateDesk() {
           <div className="stat"><div className="label">{t('კურსი გასაწერია', 'Rate to write')}</div><div className="value" style={{ color: 'var(--aubergine)' }}>{approvedReplies.length}</div></div>
           <div className="stat"><div className="label">{t('მოქმედი კურსები', 'Live rates')}</div><div className="value">{validCount}</div></div>
           <div className="stat"><div className="label">{t('უკეთესი კურსი', 'Better rate')}</div><div className="value">{waitingBetter.length}</div></div>
+          {seeDay && <div className="stat"><div className="label">{t('დღევანდელი', 'Today')}</div><div className="value">{dayDeals.length}</div></div>}
         </div>
       </div>
 
       <div className="cols">
         <div className="col-main">
+          {seeDay && (
+            <section className="card flush desk-day" aria-labelledby="day-desk-title">
+              <div className="card-head" style={{ display: 'block' }}>
+                <div className="row-between" style={{ gap: 12 }}>
+                  <h2 id="day-desk-title" style={{ fontSize: 22 }}>{t('დღევანდელი გარიგებები', "Today's deals")}</h2>
+                  {loaded && !dayNote && <span className="strong" style={{ fontSize: 22 }}>{dayDeals.length}</span>}
+                </div>
+                <p className="small" style={{ color: 'var(--ink-2)', marginTop: 6 }}>{t(
+                  'ყველა გარიგება, რომელიც დღეს კურსის მაგიდაზე იყო: გაცემული კურსი, რომელიც KAM-ის ღია მოთხოვნაზეა დარჩენილი, გაწერილი და უარყოფილი. შუაღამეს, თბილისის დროით, სია ახალ დღეზე გადადის. ძველი გარიგებები ისტორიაში რჩება.',
+                  'Every deal that was on the rate desk today: a rate already given that is still on the KAM’s open list, a written rate, and a rejected one. At midnight, Tbilisi time, the list moves on to the new day. Older deals stay in History.',
+                )}</p>
+              </div>
+              {!loaded && !dayNote && <LoadingLine />}
+              {dayNote && <p className="empty">{dayNote}</p>}
+              {loaded && !dayNote && !dayDeals.length && <p className="empty">{t('დღეს ჯერ არაფერი ყოფილა კურსის მაგიდაზე.', 'Nothing has been on the rate desk today.')}</p>}
+              {loaded && !dayNote && dayDeals.length > 0 && (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>{t('დრო', 'Time')}</th>
+                        <th>{t('კლიენტი', 'Client')}</th>
+                        <th>KAM</th>
+                        <th>{t('თანხები', 'Amounts')}</th>
+                        <th className="num">{t('კურსი', 'Rate')}</th>
+                        <th>{t('სტატუსი', 'Status')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dayDeals.map((row) => {
+                        const st = dayStatus(row, t, lang);
+                        const rate = deskRate(row);
+                        const seen = deskSeenAt(row);
+                        return (
+                          <tr key={row.id}>
+                            <td className="nowrap">{fmtDateTime(seen)}</td>
+                            <td>
+                              <div className="strong">{row.client_name ?? row.client_id}</div>
+                              <div className="tiny muted">ID {row.client_id}</div>
+                              {row.bank && <div className="tiny muted">{row.bank}</div>}
+                            </td>
+                            <td>{row.kam_name}</td>
+                            <td>
+                              <div>{t('ყიდის', 'Sells')} {sideAmount(row.sells_currency, row.amount)}</div>
+                              <div>{t('იღებს', 'Gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
+                              {row.note && <div className="tiny muted" style={{ overflowWrap: 'anywhere' }}>{t('კომენტარი', 'Comment')}: {row.note}</div>}
+                            </td>
+                            <td className="num strong">
+                              {rate != null ? fmtRate(rate) : ''}
+                              {row.rate != null && rate != null && Number(row.rate) !== Number(rate) && (
+                                <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(row.rate)}</div>
+                              )}
+                              {row.client_rate != null && (
+                                <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(row.client_rate)}</div>
+                              )}
+                              <RatePeople quoted={row.quoted_by_name} written={row.written_by_name} />
+                            </td>
+                            <td>
+                              <span className={'pill ' + st.cls}>{st.label}</span>
+                              {st.detail && <div className="tiny muted">{st.detail}</div>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
           <section aria-labelledby="queue-title">
             <div className="row-between" style={{ marginBottom: 12 }}>
               <h2 id="queue-title" style={{ fontSize: 22 }}>{t('კურსს ელოდება', 'Waiting for a rate')}</h2>
@@ -588,7 +840,7 @@ export default function RateDesk() {
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
                     </div>
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
-                    {r.note && <p className="note-box">კომენტარი სახაზინოსთვის: {r.note}</p>}
+                    {r.note && <p className="note-box">კომენტარი ხაზინისთვის: {r.note}</p>}
                     {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
 
                     {!c.declining && (
@@ -685,7 +937,7 @@ export default function RateDesk() {
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? t('სახელი არ არის', 'No name')}</div>
                     <div className="tiny muted">ID {r.client_id}</div>
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
-                    <p className="note-box">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
+                    <p className="note-box">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
                     <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
                     {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
@@ -773,7 +1025,7 @@ export default function RateDesk() {
                   {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                   <div>{t('გასაწერი კურსი', 'Rate to write')} {fmtRate(r.approved_rate)}</div>
                   <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
-                  {r.rate != null && <div className="tiny muted">{t('სახაზინოს კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
+                  {r.rate != null && <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
                   {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
                 <div className="actions">

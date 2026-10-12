@@ -109,7 +109,7 @@ export default function MarketRates() {
       </div>
 
       {!loaded && <LoadingLine />}
-      {loaded && !board.rows.length && <p className="empty">{t('კურსი ჯერ არ არის შენახული. ადმინს ან სახაზინოს შეუძლია განახლება.', 'No rate is saved yet. An admin or treasury can refresh.')}</p>}
+      {loaded && !board.rows.length && <p className="empty">{t('კურსი ჯერ არ არის შენახული. ადმინს ან ხაზინას შეუძლია განახლება.', 'No rate is saved yet. An admin or treasury can refresh.')}</p>}
       {board.rows.length > 0 && <CurrentBoardTable board={board} />}
       {board.rows.length > 0 && <RateCompareCharts board={board} />}
     </>

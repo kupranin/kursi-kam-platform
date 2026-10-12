@@ -137,7 +137,7 @@ begin
   if old.quote_status = 'asking' and new.quote_status = 'quoted' then
     perform private.inbox_add(
       'kam', new.kam_id, 'rate.quoted', new.id,
-      'სახაზინომ კურსი გასცა', 'Treasury quoted',
+      'ხაზინამ კურსი გასცა', 'Treasury quoted',
       v_client || ': ' || v_rate,
       v_client || ': ' || v_rate
     );
@@ -146,7 +146,7 @@ begin
   if old.quote_status is distinct from 'declined' and new.quote_status = 'declined' then
     perform private.inbox_add(
       'kam', new.kam_id, 'treasury.declined', new.id,
-      'სახაზინომ უარი თქვა', 'Treasury declined',
+      'ხაზინამ უარი თქვა', 'Treasury declined',
       v_client || ': ' || coalesce(new.decline_reason, ''),
       v_client || ': ' || coalesce(new.decline_reason, '')
     );
@@ -205,14 +205,14 @@ begin
     if old.wanted_rate is not null and new.rate is not distinct from old.wanted_rate then
       perform private.inbox_add(
         'kam', new.kam_id, 'rate.quoted', new.id,
-        'სახაზინომ კურსი გასცა', 'Treasury quoted',
+        'ხაზინამ კურსი გასცა', 'Treasury quoted',
         v_client || ': ' || v_rate,
         v_client || ': ' || v_rate
       );
     else
       perform private.inbox_add(
         'kam', new.kam_id, 'treasury.corrected', new.id,
-        'სახაზინომ კურსი გაასწორა', 'Treasury corrected the rate',
+        'ხაზინამ კურსი გაასწორა', 'Treasury corrected the rate',
         v_client || ': ' || v_rate,
         v_client || ': ' || v_rate
       );
@@ -242,7 +242,7 @@ declare
   v_req public.requests%rowtype;
 begin
   if v_me is null or not (private.is_treasury() or private.is_admin()) then
-    raise exception 'მხოლოდ სახაზინოს შეუძლია ამის მონიშვნა' using errcode = '42501';
+    raise exception 'მხოლოდ ხაზინას შეუძლია ამის მონიშვნა' using errcode = '42501';
   end if;
 
   select * into v_req from public.requests r where r.id = p_request_id for update;

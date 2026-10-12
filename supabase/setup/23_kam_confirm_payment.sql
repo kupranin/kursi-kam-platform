@@ -523,7 +523,7 @@ begin
     raise exception 'კლიენტმა უკვე დაამტკიცა ეს კურსი' using errcode = '22023';
   end if;
   if v_row.client_reply = 'better' and v_row.better_decision is null then
-    raise exception 'სახაზინო ჯერ პასუხობს კურსს, რომელიც კლიენტს სურს' using errcode = '22023';
+    raise exception 'ხაზინა ჯერ პასუხობს კურსს, რომელიც კლიენტს სურს' using errcode = '22023';
   end if;
   update public.requests r
      set quote_status = 'asking', asked_at = now(), rate = null, rate_valid_until = null,
