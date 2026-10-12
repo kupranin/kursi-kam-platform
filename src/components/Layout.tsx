@@ -42,7 +42,12 @@ export default function Layout({ children }: { children: ReactNode }) {
       }
       if (items.some((i) => i.badge === 'losses')) {
         const { count } = await supabase.from('request_outcomes').select('id', { count: 'exact', head: true })
-          .eq('loss_open', true);
+          .eq('source', 'app')
+          .eq('went_through', false)
+          .is('rate_written_at', null)
+          .is('payment_confirmed_at', null)
+          .is('loss_approved_at', null)
+          .or('loss_open.eq.true,loss_reason.not.is.null');
         setCounts((c) => ({ ...c, losses: count ?? 0 }));
       }
       if (items.some((i) => i.badge === 'followups')) {

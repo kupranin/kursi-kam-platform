@@ -26,7 +26,7 @@ export default function RequestLog() {
   const load = useCallback(async () => {
     let q = supabase
       .from('request_outcomes')
-      .select('id, kam_id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, rate_valid_until, rate_written_at, outcome, went_through, source')
+      .select('id, kam_id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, rate_valid_until, rate_written_at, outcome, went_through, source, loss_open, loss_reason, loss_approved_at')
       .eq('source', 'app')
       .order('requested_at', { ascending: false })
       .limit(300);

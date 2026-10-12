@@ -19,6 +19,31 @@ export interface StatusInput {
   decline_reason?: string | null;
   client_decline_reason?: string | null;
   went_through?: boolean;
+  loss_open?: boolean | null;
+  loss_reason?: string | null;
+  loss_approved_at?: string | null;
+}
+
+/**
+ * A KAM mark (loss_reason) or an open loss the view already computed.
+ * A written rate, a confirmed payment, or a matched success is not a loss.
+ * An approved loss is final, so it is not still waiting.
+ */
+export function isPendingLoss(row: {
+  source?: string | null;
+  went_through?: boolean | null;
+  outcome?: string | null;
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+  loss_open?: boolean | null;
+  loss_reason?: string | null;
+  loss_approved_at?: string | null;
+}): boolean {
+  if (row.source === 'import') return false;
+  if (row.went_through || row.outcome === 'went_through') return false;
+  if (row.rate_written_at || row.payment_confirmed_at) return false;
+  if (row.loss_approved_at) return false;
+  return row.loss_open === true || !!row.loss_reason;
 }
 
 /**
@@ -36,11 +61,13 @@ export function isOpenRequest(row: {
   rate_written_at?: string | null;
   payment_confirmed_at?: string | null;
   loss_open?: boolean | null;
+  loss_reason?: string | null;
+  loss_approved_at?: string | null;
 }): boolean {
   if (row.source === 'import') return false;
   if (row.went_through || row.outcome === 'went_through') return false;
   if (row.rate_written_at || row.payment_confirmed_at) return false;
-  if (row.loss_open || row.outcome === 'did_not_go_through') return false;
+  if (row.loss_open || row.loss_reason || row.loss_approved_at || row.outcome === 'did_not_go_through') return false;
   return true;
 }
 
@@ -51,10 +78,12 @@ export function dealLeftOpen(row: {
   rate_written_at?: string | null;
   payment_confirmed_at?: string | null;
   loss_open?: boolean | null;
+  loss_reason?: string | null;
+  loss_approved_at?: string | null;
 }): boolean {
   if (row.went_through || row.outcome === 'went_through') return true;
   if (row.rate_written_at || row.payment_confirmed_at) return true;
-  if (row.loss_open || row.outcome === 'did_not_go_through') return true;
+  if (row.loss_open || row.loss_reason || row.loss_approved_at || row.outcome === 'did_not_go_through') return true;
   return false;
 }
 
@@ -95,31 +124,48 @@ export function hideEarlierDeals(row: {
   payment_confirmed_at?: string | null;
   outcome?: string | null;
   loss_open?: boolean | null;
+  loss_reason?: string | null;
+  loss_approved_at?: string | null;
   quote_status?: string | null;
   quote_state?: string | null;
   client_reply?: string | null;
 }): boolean {
   if (row.went_through || row.rate_written_at || row.payment_confirmed_at) return true;
-  if (row.outcome === 'did_not_go_through' || row.loss_open) return true;
+  if (row.outcome === 'did_not_go_through' || row.loss_open || row.loss_reason || row.loss_approved_at) return true;
   if (row.quote_status === 'declined' || row.quote_state === 'declined') return true;
   if (row.client_reply === 'declined') return true;
   return false;
 }
 
+const LOSS_LABELS: Record<string, [string, string]> = {
+  better_rate: ['სხვაგან უკეთესი კურსი', 'Better rate elsewhere'],
+  postponed: ['გადადო', 'Postponed'],
+  funds_not_received: ['თანხა არ ჩაურიცხავს', 'Funds not received'],
+  other: ['სხვა', 'Other'],
+};
+
+export function lossReasonLabel(code: string | null | undefined, lang: 'ka' | 'en'): string {
+  if (!code) return '';
+  const pair = LOSS_LABELS[code];
+  if (!pair) return code;
+  return lang === 'en' ? pair[1] : pair[0];
+}
+
 export function classifyRequest(row: StatusInput): { code: LogCode; reason: string | null } {
+  if (row.went_through || row.outcome === 'went_through') return { code: 'went_through', reason: null };
+  if (row.loss_approved_at || row.loss_reason) return { code: 'did_not', reason: row.loss_reason ?? null };
   if (row.client_reply === 'approved') return { code: 'agreed', reason: null };
   if (row.client_reply === 'declined') return { code: 'client_declined', reason: row.client_decline_reason ?? null };
   if (row.quote_status === 'declined' || row.quote_state === 'declined') {
     return { code: 'treasury_declined', reason: row.decline_reason ?? null };
   }
+  if (row.loss_open || row.outcome === 'did_not_go_through') return { code: 'did_not', reason: null };
   if (row.client_reply === 'better' && !row.better_decision) return { code: 'waiting_treasury', reason: null };
   if (row.quote_status === 'asking' || row.quote_state === 'asking') return { code: 'waiting_treasury', reason: null };
   const expired = row.quote_state === 'expired'
     || (row.quote_status === 'quoted' && !!row.rate_valid_until && new Date(row.rate_valid_until).getTime() < Date.now());
   if (expired) return { code: 'expired', reason: null };
   if (row.quote_status === 'quoted' || row.quote_state === 'quoted') return { code: 'waiting_kam', reason: null };
-  if (row.went_through || row.outcome === 'went_through') return { code: 'went_through', reason: null };
-  if (row.outcome === 'did_not_go_through') return { code: 'did_not', reason: null };
   return { code: 'waiting', reason: null };
 }
 

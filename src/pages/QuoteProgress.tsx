@@ -53,6 +53,7 @@ export default function QuoteProgress() {
         .eq('went_through', false)
         .eq('outcome', 'waiting')
         .eq('loss_open', false)
+        .is('loss_reason', null)
         .or('client_reply.is.null,and(client_reply.eq.better,better_decision.not.is.null)')
         .order('quoted_at', { ascending: false })
         .order('id', { ascending: false })

@@ -8,7 +8,7 @@ import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import { hideEarlierDeals, isOpenRequest, isWrittenHistory, treasuryReason } from '../lib/requestStatus';
+import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
@@ -52,9 +52,10 @@ function nextMonth(isoDate: string): string {
   return `${y}-${String(m + 1).padStart(2, '0')}-01`;
 }
 
-function historyStatus(r: RequestRow, went: string, missed: string, pending: string, open: string): { label: string; cls: string } {
-  if (r.went_through || r.outcome === 'went_through' || r.rate_written_at) return { label: went, cls: 'pill-ok' };
-  if (r.loss_open) return { label: pending, cls: 'pill-alert' };
+function historyStatus(r: RequestRow, went: string, missed: string, pending: string, open: string, approved: string): { label: string; cls: string } {
+  if (r.went_through || r.outcome === 'went_through' || r.rate_written_at || r.payment_confirmed_at) return { label: went, cls: 'pill-ok' };
+  if (r.loss_approved_at && r.source !== 'import') return { label: approved, cls: 'pill-wait' };
+  if (isPendingLoss(r)) return { label: pending, cls: 'pill-alert' };
   if (r.outcome === 'did_not_go_through') return { label: missed, cls: 'pill-alert' };
   return { label: open, cls: 'pill-wait' };
 }
@@ -593,13 +594,14 @@ export default function Requests() {
           const chatText = r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = bookedLine(r);
           const offerText = !chatText && r.rate != null && (st === 'quoted' || st === 'expired') ? clientOffer(r.rate, r.rate_valid_until) : null;
-          const canAnswer = st === 'quoted' && !r.client_reply;
+          const lostPending = isPendingLoss(r);
+          const canAnswer = !lostPending && st === 'quoted' && !r.client_reply;
           const replyOpen = canAnswer && reply?.id === r.id ? reply.kind : null;
           const parsedReply = readRate(replyRate);
           const replyRateOk = parsedReply.ok && parsedReply.value != null;
           const replyReasonOk = replyReason.trim().length >= 2;
           const own = canChange(r);
-          const canAskAgain = (st === 'expired' || st === 'declined')
+          const canAskAgain = !lostPending && (st === 'expired' || st === 'declined')
             && r.client_reply !== 'approved'
             && !(r.client_reply === 'better' && !r.better_decision);
           return (
@@ -618,6 +620,12 @@ export default function Requests() {
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
+                {lostPending && (
+                  <div className="tiny muted">
+                    {t('მიზეზი', 'Reason')}: {lossReasonLabel(r.loss_reason, lang)}
+                    {r.loss_reason_note ? ` — ${r.loss_reason_note}` : ''}
+                  </div>
+                )}
                 {answer
                   ? <div className="tiny muted">{answer}</div>
                   : (
@@ -629,10 +637,11 @@ export default function Requests() {
                     </div>
                   )}
               </div>
-              {st === 'asking' && <span className="pill pill-wait"><IconClock />{t('ხაზინას ელოდება', 'Waiting on treasury')}</span>}
-              {st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
-              {st === 'expired' && <span className="pill pill-wait">{t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
-              {st === 'declined' && <span className="pill pill-alert">{t('ხაზინა', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
+              {lostPending && <span className="pill pill-alert">{t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury')}</span>}
+              {!lostPending && st === 'asking' && <span className="pill pill-wait"><IconClock />{t('ხაზინას ელოდება', 'Waiting on treasury')}</span>}
+              {!lostPending && st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
+              {!lostPending && st === 'expired' && <span className="pill pill-wait">{t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
+              {!lostPending && st === 'declined' && <span className="pill pill-alert">{t('ხაზინა', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
               <div className="actions">
                 {canAnswer && (
                   <>
@@ -787,7 +796,14 @@ export default function Requests() {
           </p>
         )}
         {histLoaded && history.map((r) => {
-          const st = historyStatus(r, t('გავიდა', 'Went through'), t('არ გავიდა', 'Did not go through'), t('არ გავიდა, ხაზინას ელოდება', 'Did not go through, waiting on treasury'), t('ჯერ ღიაა', 'Still open'));
+          const st = historyStatus(
+            r,
+            t('გავიდა', 'Went through'),
+            t('არ გავიდა', 'Did not go through'),
+            t('არ გავიდა, ხაზინას ელოდება', 'Did not go through, waiting on treasury'),
+            t('ჯერ ღიაა', 'Still open'),
+            t('დანაკარგი დადასტურებულია', 'Loss approved'),
+          );
           const chatText = isKam && r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = isKam ? bookedLine(r) : null;
           return (

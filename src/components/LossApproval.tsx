@@ -1,25 +1,23 @@
 import { useState, type FormEvent } from 'react';
 import { rpc } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
+import { isPendingLoss } from '../lib/requestStatus';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 
 /** Fields the existing loss approval uses. A full request row satisfies this. */
 export interface LossApprovalRow {
   id: number;
+  source?: string | null;
+  outcome?: string | null;
   loss_open?: boolean | null;
+  loss_reason?: string | null;
+  loss_approved_at?: string | null;
   went_through?: boolean | null;
   rate_written_at?: string | null;
   payment_confirmed_at?: string | null;
   loss_approval_comment?: string | null;
   loss_approver_name?: string | null;
-}
-
-function pendingLoss(row: LossApprovalRow): boolean {
-  return row.loss_open === true
-    && !row.went_through
-    && !row.rate_written_at
-    && !row.payment_confirmed_at;
 }
 
 /** Treasury explanation on a lost request, and the approval box for treasury or an admin. */
@@ -29,7 +27,7 @@ export default function LossApproval({ row, onDone }: { row: LossApprovalRow; on
   const toast = useToast();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const pending = pendingLoss(row);
+  const pending = isPendingLoss(row);
   const comment = (!row.went_through && !row.rate_written_at && !row.payment_confirmed_at
     ? row.loss_approval_comment
     : '')?.trim() ?? '';

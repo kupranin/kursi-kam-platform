@@ -7,7 +7,7 @@ import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
-import { dealLeftOpen, hideEarlierDeals, treasuryReason } from '../lib/requestStatus';
+import { dealLeftOpen, hideEarlierDeals, isPendingLoss, treasuryReason } from '../lib/requestStatus';
 import { bankList, type LossReason, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LossApproval from '../components/LossApproval';
@@ -248,9 +248,8 @@ function lossDetail(row: DeskDayRow, reasons: LossReason[], lang: 'ka' | 'en'): 
 
 /** A KAM loss (დაიკარგა) stays a loss even while the quote is still on the row. */
 function isDeskLoss(row: DeskDayRow): boolean {
-  if (row.rate_written_at || row.went_through) return false;
-  if (row.loss_open) return true;
-  return row.outcome === 'did_not_go_through' && !!row.loss_reason;
+  if (row.rate_written_at || row.payment_confirmed_at || row.went_through) return false;
+  return isPendingLoss(row) || !!row.loss_approved_at;
 }
 
 function dayStatus(
@@ -270,7 +269,7 @@ function dayStatus(
     };
   }
   if (isDeskLoss(row)) {
-    const approved = !row.loss_open && !!row.loss_approved_at;
+    const approved = !!row.loss_approved_at;
     return {
       label: approved ? t('დანაკარგი დადასტურებულია', 'Loss approved') : t('დაიკარგა', 'Lost'),
       cls: approved ? 'pill-wait' : 'pill-alert',
@@ -349,7 +348,7 @@ async function closedIds(ids: number[]): Promise<Set<number>> {
   const closed = new Set<number>();
   if (!ids.length) return closed;
   const full = await supabase.from('request_outcomes')
-    .select('id, rate_written_at, payment_confirmed_at, went_through, loss_open, outcome')
+    .select('id, rate_written_at, payment_confirmed_at, went_through, loss_open, loss_reason, loss_approved_at, outcome')
     .in('id', ids);
   const marks = full.error
     ? await supabase.from('requests').select('id, rate_written_at').in('id', ids)
@@ -361,6 +360,8 @@ async function closedIds(ids: number[]): Promise<Set<number>> {
     payment_confirmed_at?: string | null;
     went_through?: boolean | null;
     loss_open?: boolean | null;
+    loss_reason?: string | null;
+    loss_approved_at?: string | null;
     outcome?: string | null;
   }[]) {
     if (dealLeftOpen(row)) closed.add(row.id);
@@ -593,7 +594,7 @@ export default function RateDesk() {
     })();
     (async () => {
       const full = await supabase.from('request_outcomes')
-        .select('id, went_through, rate_written_at, payment_confirmed_at, loss_open, outcome, quote_status, client_reply')
+        .select('id, went_through, rate_written_at, payment_confirmed_at, loss_open, loss_reason, loss_approved_at, outcome, quote_status, client_reply')
         .in('id', ids);
       const res = full.error
         ? await supabase.from('request_outcomes')
@@ -608,6 +609,8 @@ export default function RateDesk() {
         rate_written_at?: string | null;
         payment_confirmed_at?: string | null;
         loss_open?: boolean | null;
+        loss_reason?: string | null;
+        loss_approved_at?: string | null;
         outcome?: string | null;
         quote_status?: string | null;
         client_reply?: string | null;
@@ -920,10 +923,7 @@ export default function RateDesk() {
                         const st = dayStatus(row, t, lang, lossReasons);
                         const rate = deskRate(row);
                         const seen = deskSeenAt(row);
-                        const awaitingLoss = row.loss_open === true
-                          && !row.went_through
-                          && !row.rate_written_at
-                          && !row.payment_confirmed_at;
+                        const awaitingLoss = isPendingLoss(row);
                         const savedLossNote = !row.went_through && !row.rate_written_at && !row.payment_confirmed_at
                           ? row.loss_approval_comment?.trim() ?? ''
                           : '';

@@ -5,7 +5,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDay, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import { isWrittenHistory, treasuryReason } from '../lib/requestStatus';
+import { isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import type { LossReason, RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
@@ -26,15 +26,8 @@ function declineLabel(reason: string, lang: 'ka' | 'en'): string {
 
 function reasonLabel(reasons: LossReason[], code: string, lang: 'ka' | 'en'): string {
   const reason = reasons.find((x) => x.code === code);
-  if (!reason) return code;
+  if (!reason) return lossReasonLabel(code, lang);
   return (lang === 'en' ? reason.label_en : reason.label_ka).trim() || reason.label_en || reason.label_ka;
-}
-
-function stillOpenLoss(row: RequestRow): boolean {
-  return row.loss_open === true
-    && !row.went_through
-    && !row.rate_written_at
-    && !row.payment_confirmed_at;
 }
 
 /** Every app loss treasury or an admin still has to approve. */
@@ -59,7 +52,12 @@ export default function LostRequests() {
         supabase
           .from('request_outcomes')
           .select('*', { count: 'exact' })
-          .eq('loss_open', true)
+          .eq('source', 'app')
+          .eq('went_through', false)
+          .is('rate_written_at', null)
+          .is('payment_confirmed_at', null)
+          .is('loss_approved_at', null)
+          .or('loss_open.eq.true,loss_reason.not.is.null')
           .order('request_date', { ascending: false })
           .order('id', { ascending: false })
           .range(0, shown - 1),
@@ -73,7 +71,7 @@ export default function LostRequests() {
         setHasMore(false);
         setError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
       } else {
-        const raw = ((data ?? []) as RequestRow[]).filter(stillOpenLoss);
+        const raw = ((data ?? []) as RequestRow[]).filter(isPendingLoss);
         const page = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
         setRows(page);
         setTotal(count ?? page.length);
