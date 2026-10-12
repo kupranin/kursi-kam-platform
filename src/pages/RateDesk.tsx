@@ -770,93 +770,6 @@ export default function RateDesk() {
 
       <div className="cols">
         <div className="col-main">
-          {seeDay && (
-            <section className="card flush desk-day" aria-labelledby="day-desk-title">
-              <div className="card-head" style={{ display: 'block' }}>
-                <div className="row-between" style={{ gap: 12 }}>
-                  <h2 id="day-desk-title" style={{ fontSize: 22 }}>{t('დღევანდელი გარიგებები', "Today's deals")}</h2>
-                  {loaded && !dayNote && <span className="strong" style={{ fontSize: 22 }}>{dayDeals.length}</span>}
-                </div>
-                <p className="small" style={{ color: 'var(--ink-2)', marginTop: 6 }}>{t(
-                  'ყველა გარიგება, რომელიც დღეს კურსის მაგიდაზე იყო: გაცემული კურსი, რომელიც KAM-ის ღია მოთხოვნაზეა დარჩენილი, გაწერილი, უარყოფილი და დაკარგული. შუაღამეს, თბილისის დროით, სია ახალ დღეზე გადადის. ძველი გარიგებები ისტორიაში რჩება.',
-                  'Every deal that was on the rate desk today: a rate already given that is still on the KAM open list, a written rate, a rejected one, and a lost one. At midnight, Tbilisi time, the list moves on to the new day. Older deals stay in History.',
-                )}</p>
-              </div>
-              {!loaded && !dayNote && <LoadingLine />}
-              {dayNote && <p className="empty">{dayNote}</p>}
-              {loaded && !dayNote && !dayDeals.length && <p className="empty">{t('დღეს ჯერ არაფერი ყოფილა კურსის მაგიდაზე.', 'Nothing has been on the rate desk today.')}</p>}
-              {loaded && !dayNote && dayDeals.length > 0 && (
-                <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>{t('დრო', 'Time')}</th>
-                        <th>{t('კლიენტი', 'Client')}</th>
-                        <th>KAM</th>
-                        <th>{t('თანხები', 'Amounts')}</th>
-                        <th className="num">{t('კურსი', 'Rate')}</th>
-                        <th>{t('სტატუსი', 'Status')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dayDeals.map((row) => {
-                        const st = dayStatus(row, t, lang, lossReasons);
-                        const rate = deskRate(row);
-                        const seen = deskSeenAt(row);
-                        const awaitingLoss = row.loss_open === true
-                          && !row.went_through
-                          && !row.rate_written_at
-                          && !row.payment_confirmed_at;
-                        const savedLossNote = !row.went_through && !row.rate_written_at && !row.payment_confirmed_at
-                          ? row.loss_approval_comment?.trim() ?? ''
-                          : '';
-                        return (
-                          <Fragment key={row.id}>
-                          <tr>
-                            <td className="nowrap">{fmtDateTime(seen)}</td>
-                            <td>
-                              <div className="strong">{row.client_name ?? row.client_id}</div>
-                              <div className="tiny muted">ID {row.client_id}</div>
-                              {row.bank && <div className="tiny muted">{row.bank}</div>}
-                            </td>
-                            <td>{row.kam_name}</td>
-                            <td>
-                              <div>{t('ყიდის', 'Sells')} {sideAmount(row.sells_currency, row.amount)}</div>
-                              <div>{t('იღებს', 'Gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
-                              {row.note && <div className="tiny muted" style={{ overflowWrap: 'anywhere' }}>{t('კომენტარი', 'Comment')}: {row.note}</div>}
-                            </td>
-                            <td className="num strong">
-                              {rate != null ? fmtRate(rate) : ''}
-                              {row.rate != null && rate != null && Number(row.rate) !== Number(rate) && (
-                                <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(row.rate)}</div>
-                              )}
-                              {row.client_rate != null && (
-                                <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(row.client_rate)}</div>
-                              )}
-                              <RatePeople quoted={row.quoted_by_name} written={row.written_by_name} />
-                            </td>
-                            <td>
-                              <span className={'pill ' + st.cls}>{st.label}</span>
-                              {st.detail && <div className="tiny muted">{st.detail}</div>}
-                            </td>
-                          </tr>
-                          {(awaitingLoss || savedLossNote) && (
-                            <tr>
-                              <td colSpan={6} style={{ minWidth: 0 }}>
-                                <LossApproval row={row} onDone={load} />
-                              </td>
-                            </tr>
-                          )}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          )}
-
           <section aria-labelledby="queue-title">
             <div className="row-between" style={{ marginBottom: 12 }}>
               <h2 id="queue-title" style={{ fontSize: 22 }}>{t('კურსს ელოდება', 'Waiting for a rate')}</h2>
@@ -973,6 +886,93 @@ export default function RateDesk() {
               })}
             </div>
           </section>
+
+          {seeDay && (
+            <section className="card flush desk-day" aria-labelledby="day-desk-title">
+              <div className="card-head" style={{ display: 'block' }}>
+                <div className="row-between" style={{ gap: 12 }}>
+                  <h2 id="day-desk-title" style={{ fontSize: 22 }}>{t('დღევანდელი გარიგებები', "Today's deals")}</h2>
+                  {loaded && !dayNote && <span className="strong" style={{ fontSize: 22 }}>{dayDeals.length}</span>}
+                </div>
+                <p className="small" style={{ color: 'var(--ink-2)', marginTop: 6 }}>{t(
+                  'ყველა გარიგება, რომელიც დღეს კურსის მაგიდაზე იყო: გაცემული კურსი, რომელიც KAM-ის ღია მოთხოვნაზეა დარჩენილი, გაწერილი, უარყოფილი და დაკარგული. შუაღამეს, თბილისის დროით, სია ახალ დღეზე გადადის. ძველი გარიგებები ისტორიაში რჩება.',
+                  'Every deal that was on the rate desk today: a rate already given that is still on the KAM open list, a written rate, a rejected one, and a lost one. At midnight, Tbilisi time, the list moves on to the new day. Older deals stay in History.',
+                )}</p>
+              </div>
+              {!loaded && !dayNote && <LoadingLine />}
+              {dayNote && <p className="empty">{dayNote}</p>}
+              {loaded && !dayNote && !dayDeals.length && <p className="empty">{t('დღეს ჯერ არაფერი ყოფილა კურსის მაგიდაზე.', 'Nothing has been on the rate desk today.')}</p>}
+              {loaded && !dayNote && dayDeals.length > 0 && (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>{t('დრო', 'Time')}</th>
+                        <th>{t('კლიენტი', 'Client')}</th>
+                        <th>KAM</th>
+                        <th>{t('თანხები', 'Amounts')}</th>
+                        <th className="num">{t('კურსი', 'Rate')}</th>
+                        <th>{t('სტატუსი', 'Status')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dayDeals.map((row) => {
+                        const st = dayStatus(row, t, lang, lossReasons);
+                        const rate = deskRate(row);
+                        const seen = deskSeenAt(row);
+                        const awaitingLoss = row.loss_open === true
+                          && !row.went_through
+                          && !row.rate_written_at
+                          && !row.payment_confirmed_at;
+                        const savedLossNote = !row.went_through && !row.rate_written_at && !row.payment_confirmed_at
+                          ? row.loss_approval_comment?.trim() ?? ''
+                          : '';
+                        return (
+                          <Fragment key={row.id}>
+                          <tr>
+                            <td className="nowrap">{fmtDateTime(seen)}</td>
+                            <td>
+                              <div className="strong">{row.client_name ?? row.client_id}</div>
+                              <div className="tiny muted">ID {row.client_id}</div>
+                              {row.bank && <div className="tiny muted">{row.bank}</div>}
+                            </td>
+                            <td>{row.kam_name}</td>
+                            <td>
+                              <div>{t('ყიდის', 'Sells')} {sideAmount(row.sells_currency, row.amount)}</div>
+                              <div>{t('იღებს', 'Gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
+                              {row.note && <div className="tiny muted" style={{ overflowWrap: 'anywhere' }}>{t('კომენტარი', 'Comment')}: {row.note}</div>}
+                            </td>
+                            <td className="num strong">
+                              {rate != null ? fmtRate(rate) : ''}
+                              {row.rate != null && rate != null && Number(row.rate) !== Number(rate) && (
+                                <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(row.rate)}</div>
+                              )}
+                              {row.client_rate != null && (
+                                <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(row.client_rate)}</div>
+                              )}
+                              <RatePeople quoted={row.quoted_by_name} written={row.written_by_name} />
+                            </td>
+                            <td>
+                              <span className={'pill ' + st.cls}>{st.label}</span>
+                              {st.detail && <div className="tiny muted">{st.detail}</div>}
+                            </td>
+                          </tr>
+                          {(awaitingLoss || savedLossNote) && (
+                            <tr>
+                              <td colSpan={6} style={{ minWidth: 0 }}>
+                                <LossApproval row={row} onDone={load} />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
 
           <section aria-labelledby="better-title">
             <div className="row-between" style={{ margin: '28px 0 12px' }}>
