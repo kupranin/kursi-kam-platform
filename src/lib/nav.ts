@@ -16,7 +16,7 @@ export const PAGES: Record<Role, string[]> = {
   analyst: ['/analysis', '/analytics'],
 };
 
-export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' }[]> = {
+export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' | 'chat' }[]> = {
   kam: [
     { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
     { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups', badge: 'followups' },
@@ -24,7 +24,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/team', ka: 'ჩემი ციფრები', en: 'My numbers' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
-    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
   ],
   treasury: [
     { to: '/rate-desk', ka: 'კურსის მაგიდა', en: 'Rate desk', badge: 'queue' },
@@ -34,7 +34,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
-    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
   ],
   admin: [
     { to: '/team', ka: 'გუნდი', en: 'Team' },
@@ -50,7 +50,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/kpis', ka: 'KPI', en: 'KPI' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
-    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
     { to: '/admin', ka: 'ადმინი', en: 'Admin' },
   ],
   manager: [
@@ -63,7 +63,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/kpis', ka: 'KPI', en: 'KPI' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
-    { to: '/chat', ka: 'ჩატი', en: 'Chat' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
   ],
   analyst: [
     { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },

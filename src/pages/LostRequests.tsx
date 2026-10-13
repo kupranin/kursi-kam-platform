@@ -8,7 +8,6 @@ import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { loadPendingLossPage } from '../lib/pendingLoss';
 import { isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import type { LossReason, RequestRow } from '../lib/types';
-import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import LossApproval from '../components/LossApproval';
@@ -76,7 +75,6 @@ export default function LostRequests() {
   }, [shown, reloadKey, t]);
 
   useLive(['requests'], reload, 15000);
-  const { blocked, toggle } = useClientBlocked(rows.map((row) => row.client_id));
 
   return (
     <>
@@ -127,7 +125,12 @@ export default function LostRequests() {
                 {r.quote_status === 'declined' && r.decline_reason && (
                   <p className="note-box">{t('ხაზინამ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>
                 )}
-                <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
+                {!r.loss_reason && r.client_reply === 'declined' && (
+                  <p className="note-box">{t(
+                    'კლიენტმა უარი თქვა კურსზე და KAM-ს დანაკარგის მიზეზი არ აურჩევია. ამიტომ ღია მოთხოვნიდან გავიდა და აქ დგას, სანამ „დანაკარგის დადასტურება“ არ დააჭერთ.',
+                    'The client declined the rate, and the KAM did not choose a loss reason. It left the open list for that reason and stays here until you press Approve the loss.',
+                  )}</p>
+                )}
               </div>
               {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
             </div>

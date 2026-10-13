@@ -4,7 +4,6 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { fmtDay } from '../lib/format';
 import type { ClientMatch } from '../lib/types';
-import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import LoadingLine from '../components/LoadingLine';
 
 export default function Clients() {
@@ -28,7 +27,6 @@ export default function Clients() {
 
   const { t } = useI18n();
   const mine = role === 'kam';
-  const { blocked, toggle } = useClientBlocked(rows.map((row) => row.client_id));
   return (
     <>
       <div className="page-head">
@@ -51,10 +49,7 @@ export default function Clients() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.client_id}>
-                    <td className="strong">
-                      {r.name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}
-                      <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
-                    </td>
+                    <td className="strong">{r.name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</td>
                     <td>{r.client_id}</td>
                     <td>{r.kind === 'company' ? t('კომპანია', 'Company') : t('ფიზიკური პირი', 'Person')}</td>
                     <td>{r.last_request_date ? fmtDay(r.last_request_date) : ''}</td>

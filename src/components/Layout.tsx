@@ -4,8 +4,17 @@ import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { NAV } from '../lib/nav';
 import { countPendingLosses } from '../lib/pendingLoss';
+import {
+  loadChatNames,
+  loadIncomingChats,
+  onChatOpen,
+  onChatRead,
+  openChatPartner,
+  readChatMarks,
+} from '../lib/chatNotice';
 import { rpc, supabase } from '../lib/supabase';
 import { fmtDateTime, todayTbilisi } from '../lib/format';
+import { useToast } from '../lib/toast';
 import { useLive } from '../lib/useLive';
 import { useViewAs } from '../lib/viewAs';
 import LangSwitch from './LangSwitch';
@@ -16,8 +25,12 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { profile, signOut } = useAuth();
   const { role, realRole } = useViewAs();
   const { t, roleName } = useI18n();
+  const toast = useToast();
   const [fresh, setFresh] = useState<string | null>(null);
-  const [counts, setCounts] = useState<{ followups: number; queue: number; losses: number }>({ followups: 0, queue: 0, losses: 0 });
+  const [counts, setCounts] = useState<{ followups: number; queue: number; losses: number; chat: number }>({ followups: 0, queue: 0, losses: 0, chat: 0 });
+  const chatReady = useRef(false);
+  const toasted = useRef<Set<number>>(new Set());
+  const chatNames = useRef<Map<string, string>>(new Map());
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const items = NAV[role];
@@ -56,10 +69,49 @@ export default function Layout({ children }: { children: ReactNode }) {
     }
   }, [items, profile]);
 
+  const loadChat = useCallback(async () => {
+    if (!profile || !items.some((item) => item.badge === 'chat')) return;
+    try {
+      const incoming = await loadIncomingChats(profile.id);
+      if (chatNames.current.size === 0) {
+        try { chatNames.current = await loadChatNames(); } catch { /* the toast can say “a colleague” */ }
+      }
+      const marks = readChatMarks(profile.id);
+      const open = openChatPartner();
+      const unread = incoming.filter((message) => {
+        if (open && message.sender_id === open) return false;
+        return message.id > (marks[message.sender_id] ?? 0);
+      });
+      setCounts((current) => ({ ...current, chat: unread.length }));
+      if (!chatReady.current) {
+        incoming.forEach((message) => toasted.current.add(message.id));
+        chatReady.current = true;
+        return;
+      }
+      const freshMessages = unread.filter((message) => !toasted.current.has(message.id));
+      freshMessages.forEach((message) => toasted.current.add(message.id));
+      if (freshMessages.length === 1) {
+        const message = freshMessages[0];
+        const who = chatNames.current.get(message.sender_id) ?? t('კოლეგა', 'A colleague');
+        const text = message.body.replace(/\s+/g, ' ').trim();
+        const preview = text.length > 80 ? text.slice(0, 79) + '…' : text;
+        toast(t('{name} გწერთ: {text}', '{name} wrote to you: {text}', { name: who, text: preview }));
+      } else if (freshMessages.length > 1) {
+        toast(t('{n} ახალი შეტყობინება ჩატში', '{n} new chat messages', { n: freshMessages.length }));
+      }
+    } catch {
+      /* the chat badge keeps its last count */
+    }
+  }, [items, profile, t, toast]);
+
   useEffect(() => { loadCounts(); }, [loadCounts]);
+  useEffect(() => { loadChat(); }, [loadChat]);
+  useEffect(() => onChatRead(() => { void loadChat(); }), [loadChat]);
+  useEffect(() => onChatOpen(() => { void loadChat(); }), [loadChat]);
   // Badge counts stay on a slow poll. They do not run on every requests change.
   // The waiting list itself stays on the rate desk's own 3-second check.
   useLive(['requests'], loadCounts, 60000, { realtime: false });
+  useLive(['staff_messages'], loadChat, 10000);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {

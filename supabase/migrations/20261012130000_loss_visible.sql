@@ -366,7 +366,8 @@ select
   d.quoted_by_name,
   d.treasury_comment,
   d.deal_comment,
-  d.loss_phase
+  d.loss_phase,
+  d.bank
 from (
   select
     r.id,
@@ -409,7 +410,7 @@ from (
       when r.marked_lost_at is not null
         or nullif(btrim(coalesce(r.loss_reason, '')), '') is not null then 'lost'
       when r.client_reply = 'better' and r.better_decision is null then 'open'
-      when lc.loss_candidate and r.loss_approved_at is null then 'open'
+      when lc.loss_candidate and r.loss_approved_at is null then 'lost'
       when lc.loss_candidate then 'lost'
       when w.file_lost then 'lost'
       when w.file_open then 'open'
@@ -431,11 +432,24 @@ from (
     case
       when r.rate_written_at is not null or r.payment_confirmed_at is not null then null
       when w.tx_hit or w.file_won then null
+      when lc.loss_candidate and r.loss_approved_at is null then 'waiting'
+      when lc.loss_candidate then 'approved'
       when r.marked_lost_at is null
        and nullif(btrim(coalesce(r.loss_reason, '')), '') is null then null
       when r.loss_approved_at is null then 'waiting'
       else 'approved'
-    end as loss_phase
+    end as loss_phase,
+    case
+      when r.banks is not null and cardinality(r.banks) > 0 then (
+        select string_agg(x, ', ' order by array_position(array['TBC', 'BOG', 'Liberty']::text[], x))
+        from (
+          select distinct btrim(u.x) as x
+          from unnest(r.banks) as u(x)
+        ) s
+        where x in ('TBC', 'BOG', 'Liberty')
+      )
+      else nullif(btrim(r.bank), '')
+    end as bank
   from public.requests r
   join public.clients cl on cl.client_id = r.client_id
   left join public.profiles p on p.id = r.kam_id

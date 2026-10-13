@@ -44,46 +44,37 @@ export function useClientBlocked(clientIds: readonly string[]) {
 }
 
 /**
- * On a written rate, treasury or an admin can switch the client blocked flag.
- * Everyone else who can see the deal sees the on state, and cannot switch it.
+ * The blocked switch lives only on the rate-to-write card.
+ * Treasury or an admin can turn it on and off. It is not shown anywhere else.
  */
 export default function ClientBlocked({
   clientId,
   blocked,
-  written,
-  canSwitch,
   onToggle,
 }: {
   clientId: string;
   blocked: boolean;
-  written: boolean;
-  canSwitch: boolean;
   onToggle: (clientId: string, next: boolean) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const label = t('კლიენტი დაბლოკილია', 'Client is blocked');
 
-  if (written && canSwitch) {
-    return (
-      <span className="client-blocked">
-        <button
-          type="button"
-          className={'btn' + (blocked ? ' is-on' : '')}
-          aria-pressed={blocked}
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try { await onToggle(clientId, !blocked); }
-            finally { setBusy(false); }
-          }}
-        >
-          {busy ? t('ინახება…', 'Saving…') : label}
-        </button>
-      </span>
-    );
-  }
-
-  if (!blocked) return null;
-  return <span className="pill pill-alert client-blocked">{label}</span>;
+  return (
+    <span className="client-blocked">
+      <button
+        type="button"
+        className={'btn' + (blocked ? ' is-on' : '')}
+        aria-pressed={blocked}
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try { await onToggle(clientId, !blocked); }
+          finally { setBusy(false); }
+        }}
+      >
+        {busy ? t('ინახება…', 'Saving…') : label}
+      </button>
+    </span>
+  );
 }

@@ -912,12 +912,7 @@ export default function RateDesk() {
   const dayDeals = seeDay
     ? dayRows.filter((row) => onDeskToday(row, today)).sort((a, b) => deskSeenMs(b) - deskSeenMs(a))
     : [];
-  const { blocked, toggle } = useClientBlocked([
-    ...dayDeals.map((row) => row.client_id),
-    ...queue.map((row) => row.client_id),
-    ...replies.map((row) => row.client_id),
-    ...extraAgreed.map((row) => row.client_id),
-  ]);
+  const { blocked, toggle } = useClientBlocked(approvedReplies.map((row) => row.client_id));
   const canSwitchBlocked = realRole === 'treasury' || realRole === 'admin';
 
   return (
@@ -981,7 +976,6 @@ export default function RateDesk() {
                           </div>
                         </div>
                         <div className="small muted" style={{ marginTop: 6 }}>{r.client_name ?? 'სახელი არ არის'}, ID {r.client_id}</div>
-                        <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                         <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
@@ -1115,13 +1109,6 @@ export default function RateDesk() {
                             <td>
                               <span className={'pill ' + st.cls}>{st.label}</span>
                               {st.detail && <div className="tiny muted">{st.detail}</div>}
-                              <ClientBlocked
-                                clientId={row.client_id}
-                                blocked={blocked.has(row.client_id)}
-                                written={!!row.rate_written_at}
-                                canSwitch={canSwitchBlocked}
-                                onToggle={toggle}
-                              />
                             </td>
                           </tr>
                           {awaitingLoss && (
@@ -1171,7 +1158,6 @@ export default function RateDesk() {
                     </div>
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? t('სახელი არ არის', 'No name')}</div>
                     <div className="tiny muted">ID {r.client_id}</div>
-                    <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                     <p className="note-box">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
                     <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
@@ -1252,7 +1238,6 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">ID {r.client_id}</div>
-                  <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                   <div className="tiny muted">{r.kam_name}</div>
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>
@@ -1269,6 +1254,9 @@ export default function RateDesk() {
                   <button type="button" className="btn btn-primary" disabled={writingId === r.request_id} onClick={() => markWritten(r)}>
                     {writingId === r.request_id ? t('ინახება…', 'Saving…') : t('კურსი გაწერილია', 'Rate is written')}
                   </button>
+                  {canSwitchBlocked && (
+                    <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} onToggle={toggle} />
+                  )}
                   {adminDelete(r.request_id)}
                 </div>
                 <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />

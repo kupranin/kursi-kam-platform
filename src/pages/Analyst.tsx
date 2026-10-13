@@ -5,7 +5,7 @@ import { useToast } from '../lib/toast';
 import { useViewAs } from '../lib/viewAs';
 import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, parseRate, todayTbilisi } from '../lib/format';
 import { loadRatePeople } from '../lib/ratePeople';
-import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
+import { formatBanks } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
 
 type Status = 'success' | 'lost' | 'open';
@@ -35,6 +35,7 @@ interface Deal {
   rate_write_minutes: number | null;
   quoted_by_name: string | null;
   written_by_name: string | null;
+  bank?: string | null;
 }
 
 const PAGE = 100;
@@ -42,7 +43,22 @@ const COMMENT_MAX = 500;
 
 async function withWriters(page: Deal[]): Promise<Deal[]> {
   const people = await loadRatePeople(page.map((row) => row.id));
-  return page.map((row) => ({ ...row, written_by_name: people.get(row.id)?.written_by_name ?? null }));
+  const named = page.map((row) => ({ ...row, written_by_name: people.get(row.id)?.written_by_name ?? null }));
+  return attachBanks(named);
+}
+
+/** Bank on the request. The analysis view has it after 32 is pasted; until then treasury and admin read it from the request. */
+async function attachBanks(page: Deal[]): Promise<Deal[]> {
+  const missing = page.filter((row) => !row.bank?.trim()).map((row) => row.id);
+  if (!missing.length) return page;
+  const { data, error } = await supabase.from('requests').select('id, bank, banks').in('id', missing);
+  if (error || !data) return page;
+  const labels = new Map<number, string>();
+  for (const row of data as { id: number; bank: string | null; banks: string[] | null }[]) {
+    const label = formatBanks(row.banks?.length ? row.banks : row.bank);
+    if (label) labels.set(row.id, label);
+  }
+  return page.map((row) => (row.bank?.trim() ? row : { ...row, bank: labels.get(row.id) ?? null }));
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -295,6 +311,7 @@ export default function Analyst() {
         'KAM',
         t('კლიენტი', 'Client'),
         'ID',
+        t('ბანკი', 'Bank'),
         t('ყიდის', 'Sells'),
         t('მოთხოვნილი თანხა', 'Amount asked'),
         t('იღებს', 'Gets'),
@@ -317,6 +334,7 @@ export default function Analyst() {
           r.kam_name,
           r.client_name ?? '',
           r.client_id,
+          r.bank ?? '',
           r.sells_currency,
           r.sell_amount,
           r.gets_currency,
@@ -346,7 +364,6 @@ export default function Analyst() {
   ];
 
   const rangeMessage = t('თარიღიდან თარიღამდეზე გვიანაა.', 'From is after To.');
-  const { blocked, toggle: toggleBlocked } = useClientBlocked(rows.map((row) => row.client_id));
 
   return (
     <>
@@ -405,6 +422,7 @@ export default function Analyst() {
                   <th>KAM</th>
                   <th>{t('კლიენტი', 'Client')}</th>
                   <th>ID</th>
+                  <th>{t('ბანკი', 'Bank')}</th>
                   <th>{t('ყიდის', 'Sells')}</th>
                   <th className="num">{t('მოთხოვნილი თანხა', 'Amount asked')}</th>
                   <th>{t('იღებს', 'Gets')}</th>
@@ -434,11 +452,9 @@ export default function Analyst() {
                     <td className="num">{fmtMinutes(r.first_response_minutes)}</td>
                     <td className="num">{fmtMinutes(r.rate_write_minutes)}</td>
                     <td>{r.kam_name}</td>
-                    <td className="strong">
-                      {r.client_name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}
-                      <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggleBlocked} />
-                    </td>
+                    <td className="strong">{r.client_name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</td>
                     <td className="nowrap">{r.client_id}</td>
+                    <td>{r.bank ?? ''}</td>
                     <td>{r.sells_currency}</td>
                     <td className="num">
                       {open ? (

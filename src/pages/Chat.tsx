@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
+import { markChatRead, onChatRead, readChatMarks, setOpenChatPartner } from '../lib/chatNotice';
 import { fmtDateTime } from '../lib/format';
 import type { StaffMessage, StaffPerson } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
@@ -34,6 +35,7 @@ export default function Chat() {
   const [loaded, setLoaded] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   const seen = useRef(false);
+  const [marks, setMarks] = useState<Record<string, number>>(() => readChatMarks(me));
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +58,7 @@ export default function Chat() {
 
   useEffect(() => { load(); }, [load]);
   useLive(['staff_messages'], load);
+  useEffect(() => onChatRead(() => setMarks(readChatMarks(me))), [me]);
 
   const byId = useMemo(() => {
     const map = new Map<string, StaffPerson>();
@@ -106,6 +109,16 @@ export default function Chat() {
   }, [messages, selected, showingLog, me]);
 
   const threadEnd = thread.length ? thread[thread.length - 1].id : 0;
+  useEffect(() => () => setOpenChatPartner(null), []);
+  useEffect(() => {
+    if (showingLog || !selected) {
+      setOpenChatPartner(null);
+      return;
+    }
+    setOpenChatPartner(selected);
+    const latest = [...thread].reverse().find((message) => message.sender_id === selected);
+    if (latest) markChatRead(me, selected, latest.id);
+  }, [showingLog, selected, thread, me]);
   useEffect(() => {
     const el = streamRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -255,7 +268,12 @@ export default function Chat() {
                   aria-pressed={selected === id}
                   onClick={() => openChat(id)}
                 >
-                  <span className="strong">{nameOf(id)}</span>
+                  <span className="strong">
+                    {nameOf(id)}
+                    {messages.some((message) => message.sender_id === id && message.recipient_id === me && message.id > (marks[id] ?? 0)) && (
+                      <span className="badge" style={{ marginLeft: 8 }}>{messages.filter((message) => message.sender_id === id && message.recipient_id === me && message.id > (marks[id] ?? 0)).length}</span>
+                    )}
+                  </span>
                   <span className="chat-preview">{preview(last.body)}</span>
                   <time className="tiny muted" dateTime={last.created_at}>{fmtDateTime(last.created_at)}</time>
                 </button>
