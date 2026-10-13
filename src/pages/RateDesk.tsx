@@ -442,36 +442,48 @@ export default function RateDesk() {
   const [loaded, setLoaded] = useState(false);
   const firstSeen = useRef<Map<number, number>>(new Map());
   const initial = useRef(true);
+  // A slower refresh must not paint an older waiting list over a newer one.
+  const queueGen = useRef(0);
   // Latest digits in the rate box, updated as they are typed. Send uses this,
   // so a later click (such as 30 minutes) cannot put an older rate back.
   const draftRate = useRef<Record<number, string>>({});
 
-  const load = useCallback(async () => {
-    let quotedTodayIds: number[] = [];
+  const refreshQueue = useCallback(async () => {
+    const gen = ++queueGen.current;
     try {
-      const [q, quoted] = await Promise.all([
-        rpc<QueueRow[]>('treasury_queue'),
-        rpc<QuoteToday[]>('treasury_quotes_today'),
-      ]);
+      const q = await rpc<QueueRow[]>('treasury_queue');
+      if (gen !== queueGen.current) return;
+      const queueRows = q ?? [];
+      const closed = await closedIds(queueRows.map((r) => r.request_id));
+      if (gen !== queueGen.current) return;
+      const open = queueRows.filter((r) => !closed.has(r.request_id));
       const now = Date.now();
-      for (const r of q ?? []) {
+      for (const r of open) {
         if (!firstSeen.current.has(r.request_id)) firstSeen.current.set(r.request_id, initial.current ? 0 : now);
       }
-      if (!initial.current && (q ?? []).some((r) => firstSeen.current.get(r.request_id) === now)) {
-        const fresh = (q ?? []).filter((r) => firstSeen.current.get(r.request_id) === now);
+      if (!initial.current && open.some((r) => firstSeen.current.get(r.request_id) === now)) {
+        const fresh = open.filter((r) => firstSeen.current.get(r.request_id) === now);
         toast(fresh.length === 1
           ? t('ახალი მოთხოვნა {name}-ისგან: {client}', 'New request from {name}: {client}', { name: fresh[0].kam_name, client: fresh[0].client_name ?? fresh[0].client_id })
           : t('{n} ახალი მოთხოვნა', '{n} new requests', { n: fresh.length }));
       }
       initial.current = false;
-      const queueRows = q ?? [];
+      setQueue(open);
+    } catch (err) {
+      if (gen === queueGen.current) toast((err as Error).message, 'error');
+    }
+  }, [toast, t]);
+
+  const load = useCallback(async () => {
+    void refreshQueue();
+    let quotedTodayIds: number[] = [];
+    try {
+      const quoted = await rpc<QuoteToday[]>('treasury_quotes_today');
       const quoteRows = quoted ?? [];
       quotedTodayIds = quoteRows.map((r) => r.request_id);
-      const watchIds = [...queueRows.map((r) => r.request_id), ...quoteRows.map((r) => r.request_id)];
-      const closed = await closedIds(watchIds);
+      const closed = await closedIds(quoteRows.map((r) => r.request_id));
       const openQuotes = quoteRows.filter((r) => !closed.has(r.request_id));
       const quotePeople = await loadRatePeople(openQuotes.map((r) => r.request_id));
-      setQueue(queueRows.filter((r) => !closed.has(r.request_id)));
       setQuotes(openQuotes.map((r) => ({ ...r, ...ratePeopleFor(quotePeople, r.request_id) })));
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -544,7 +556,7 @@ export default function RateDesk() {
       setDayNote('');
     }
     setLoaded(true);
-  }, [toast, t, seeDay]);
+  }, [toast, t, seeDay, refreshQueue]);
 
   useEffect(() => {
     load();
@@ -569,6 +581,12 @@ export default function RateDesk() {
     };
   }, []);
   useLive(['requests'], load, 15000);
+  // The waiting list is the handoff. Check it on its own every few seconds.
+  // The rest of the desk (quoted rates, replies, today) stays on the slower reload.
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refreshQueue(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [refreshQueue]);
 
   useEffect(() => {
     const ids = Array.from(new Set([
