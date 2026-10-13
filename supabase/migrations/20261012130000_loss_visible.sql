@@ -261,9 +261,8 @@ as $$
 declare
   v_me      uuid := private.my_profile_id();
   v_req     public.requests%rowtype;
-  v_state   record;
   v_comment text := nullif(btrim(coalesce(p_comment, '')), '');
-  v_marked  boolean;
+  v_loss    boolean;
 begin
   if v_me is null or private.my_role() not in ('treasury', 'admin') then
     raise exception 'მხოლოდ ხაზინას შეუძლია დანაკარგის დადასტურება' using errcode = '42501';
@@ -305,13 +304,20 @@ begin
     raise exception 'ეს მოთხოვნა უკვე გავიდა' using errcode = '22023';
   end if;
 
-  v_marked := v_req.marked_lost_at is not null
-    or nullif(btrim(coalesce(v_req.loss_reason, '')), '') is not null;
+  -- A KAM reason, a client decline, or a treasury decline is enough.
+  -- A better rate that treasury has not answered yet is not a loss.
+  v_loss := v_req.marked_lost_at is not null
+    or nullif(btrim(coalesce(v_req.loss_reason, '')), '') is not null
+    or (
+      not (v_req.client_reply = 'better' and v_req.better_decision is null)
+      and (
+        v_req.client_reply = 'declined'
+        or v_req.quote_status = 'declined'
+        or v_req.request_date < coalesce(private.freshness_date(), v_req.request_date)
+      )
+    );
 
-  select s.loss_candidate, s.loss_open into v_state
-  from private.request_loss_state(p_request_id) s;
-
-  if not v_marked and coalesce(v_state.loss_candidate, false) is not true then
+  if not v_loss then
     raise exception 'ეს მოთხოვნა დაკარგული არ არის' using errcode = '22023';
   end if;
 
@@ -367,7 +373,8 @@ select
   d.treasury_comment,
   d.deal_comment,
   d.loss_phase,
-  d.bank
+  d.bank,
+  d.kam_note
 from (
   select
     r.id,
@@ -449,7 +456,8 @@ from (
         where x in ('TBC', 'BOG', 'Liberty')
       )
       else nullif(btrim(r.bank), '')
-    end as bank
+    end as bank,
+    nullif(btrim(r.note), '') as kam_note
   from public.requests r
   join public.clients cl on cl.client_id = r.client_id
   left join public.profiles p on p.id = r.kam_id
@@ -511,7 +519,7 @@ from (
 where private.my_role() in ('analyst', 'admin', 'treasury');
 
 comment on view public.analyst_deals is
-  'Every request for an analyst, an admin, or treasury. The analyst only reads this list. A written rate is success. A KAM or admin confirmation that the payment went through is success too. A mark already stored as marked_lost_at or loss_reason is status lost on the Asia/Tbilisi day it was marked. loss_phase is waiting until treasury approves it, then approved. treasury_comment is the optional note treasury or an admin wrote when approving a loss. deal_comment is the per-row note treasury or an admin writes on this list. An analyst can read both and cannot change them.';
+  'Every request for an analyst, an admin, or treasury. The analyst only reads this list. A written rate is success. A KAM or admin confirmation that the payment went through is success too. A mark already stored as marked_lost_at or loss_reason is status lost on the Asia/Tbilisi day it was marked. loss_phase is waiting until treasury approves it, then approved. treasury_comment is the optional note treasury or an admin wrote when approving a loss. kam_note is the comment the KAM wrote on the request. deal_comment is the older per-row note and is not the treasury column.';
 
 revoke all on public.analyst_deals from public, anon;
 grant select on public.analyst_deals to authenticated;

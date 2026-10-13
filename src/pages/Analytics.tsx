@@ -4,6 +4,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
 import { fmtMinutes, fmtShort, fmtWhole, monthOptions } from '../lib/format';
+import { loadKamDeals, summarizeKamDeals, type KamBreakdown } from '../lib/kamBreakdown';
 import { readTransactionFile, TransactionFileError } from '../lib/transactionFile';
 import LoadingLine from '../components/LoadingLine';
 
@@ -148,6 +149,9 @@ export default function Analytics() {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState('');
+  const [kamStats, setKamStats] = useState<KamBreakdown | null>(null);
+  const [kamLoading, setKamLoading] = useState(true);
+  const [kamError, setKamError] = useState('');
 
   const load = useCallback(async (which: string) => {
     setLoading(true);
@@ -174,6 +178,22 @@ export default function Analytics() {
   }, [seeTransactions]);
 
   useEffect(() => { load(month); }, [load, month]);
+
+  useEffect(() => {
+    let gone = false;
+    setKamLoading(true);
+    setKamError('');
+    loadKamDeals(month)
+      .then((rows) => { if (!gone) setKamStats(summarizeKamDeals(rows)); })
+      .catch((err: unknown) => {
+        if (!gone) {
+          setKamStats(null);
+          setKamError(err instanceof Error ? err.message : String(err));
+        }
+      })
+      .finally(() => { if (!gone) setKamLoading(false); });
+    return () => { gone = true; };
+  }, [month]);
 
   async function onFile(file: File | undefined) {
     if (!file) return;
@@ -314,7 +334,10 @@ export default function Analytics() {
               'წარმატებული გადახდა ბრუნვაში ითვლება, როცა იმ კლიენტს იმავე თვეში მოთხოვნა აქვს. თანხა არის abs_gel + cross_gel. ერთ მოთხოვნაზე ზუსტი დამთხვევა საჭირო არ არის. შემოსავალი იმავე სტრიქონების საკომისიოა. ქვემოთ ხაზინის დროცაა.',
               'A successful payment counts when that client requested in the same month. The amount is abs_gel + cross_gel. It does not have to match one request. The fee is total_income on those same rows. Treasury time is below.',
             )
-            : t('ხაზინის პასუხისა და კურსის გაწერის დრო.', 'How long treasury takes to answer, and to write the rate.')}</p>
+            : t(
+              'მოთხოვნები KAM-ების მიხედვით: წარმატებული, დაკარგული, მიზეზები და ლარის ბრუნვა. ქვემოთ ხაზინის დროცაა.',
+              'Requests by KAM: successful, lost, reasons, and lari turnover. Treasury time is below.',
+            )}</p>
         </div>
         <div className="row">
           <label className="sr-only" htmlFor="analytics-month">პერიოდი</label>
@@ -326,6 +349,105 @@ export default function Analytics() {
           </select>
         </div>
       </div>
+
+      <section className="card" aria-labelledby="kam-requests-title">
+        <h2 id="kam-requests-title">{t('მოთხოვნები KAM-ების მიხედვით', 'Requests by KAM')}</h2>
+        <p className="small" style={{ margin: '6px 0 16px', color: 'var(--ink-2)' }}>
+          {t(
+            'სულ მოთხოვნა, მათ შორის წარმატებული და დაკარგული. ბრუნვა GEL არის წარმატებული მოთხოვნის ლარის თანხა. ცარიელი ლარი არ ემატება. დაკარგვის მიზეზები იმ სტრიქონებისაა, რომლებიც დაკარგულია.',
+            'Total requests, including successful and lost. GEL turnover is the lari amount on successful requests. A blank lari figure is not added. Lost reasons are counted on rows that are lost.',
+          )}
+          {seeTransactions && <> {t(
+            'ეს არ არის ბანკის ფაილის ბრუნვა.',
+            'This is not the bank-file turnover.',
+          )}</>}
+        </p>
+        {kamError && <p className="alert-box" role="alert">{kamError}</p>}
+        {kamLoading && !kamError && <LoadingLine />}
+        {!kamLoading && !kamError && kamStats && (
+          <>
+            <div className="stats">
+              <div className="stat">
+                <div className="label">{t('სულ მოთხოვნა', 'Total requests')}</div>
+                <div className="value">{fmtWhole(kamStats.total)}</div>
+                {kamStats.open > 0 && <div className="small muted">{t('ღია', 'Open')} {fmtWhole(kamStats.open)}</div>}
+              </div>
+              <div className="stat">
+                <div className="label">{t('წარმატებული', 'Successful')}</div>
+                <div className="value">{fmtWhole(kamStats.success)}</div>
+              </div>
+              <div className="stat">
+                <div className="label">{t('დაკარგული', 'Lost')}</div>
+                <div className="value">{fmtWhole(kamStats.lost)}</div>
+              </div>
+              <div className="stat">
+                <div className="label">{t('ბრუნვა GEL', 'GEL turnover')}</div>
+                <div className="value">GEL {fmtShort(kamStats.gel)}</div>
+              </div>
+            </div>
+            <h3 style={{ fontSize: 18, margin: '22px 0 8px' }}>{t('დაკარგვის მიზეზები', 'Lost reasons')}</h3>
+            {!kamStats.reasons.length && <p className="empty">{t('დაკარგული მოთხოვნა არ არის.', 'No lost request.')}</p>}
+            {kamStats.reasons.length > 0 && (
+              <div className="table-wrap">
+                <table className="table" style={{ minWidth: 420 }}>
+                  <thead>
+                    <tr>
+                      <th>{t('მიზეზი', 'Reason')}</th>
+                      <th className="num">{t('რაოდენობა', 'Count')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kamStats.reasons.map((reason) => (
+                      <tr key={reason.label || 'none'}>
+                        <th scope="row">{reason.label || t('მიზეზი არ არის', 'No reason')}</th>
+                        <td className="num">{fmtWhole(reason.count)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {!kamLoading && !kamError && kamStats && kamStats.kams.length > 0 && (
+        <section className="card flush" aria-labelledby="kam-table-title">
+          <div className="card-head">
+            <h2 id="kam-table-title">{t('თითო KAM', 'Each KAM')}</h2>
+          </div>
+          <div className="table-wrap">
+            <table className="table" style={{ minWidth: 880 }}>
+              <thead>
+                <tr>
+                  <th>KAM</th>
+                  <th className="num">{t('მოთხოვნები', 'Requests')}</th>
+                  <th className="num">{t('წარმატებული', 'Successful')}</th>
+                  <th className="num">{t('დაკარგული', 'Lost')}</th>
+                  <th className="num">{t('ბრუნვა GEL', 'GEL turnover')}</th>
+                  <th>{t('დაკარგვის მიზეზები', 'Lost reasons')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kamStats.kams.map((kam) => (
+                  <tr key={kam.name}>
+                    <th scope="row">{kam.name}</th>
+                    <td className="num">{fmtWhole(kam.total)}</td>
+                    <td className="num">{fmtWhole(kam.success)}</td>
+                    <td className="num">{fmtWhole(kam.lost)}</td>
+                    <td className="num">GEL {fmtShort(kam.gel)}</td>
+                    <td>
+                      {kam.reasons.length
+                        ? kam.reasons.map((reason) => `${reason.label || t('მიზეზი არ არის', 'No reason')} ${fmtWhole(reason.count)}`).join(', ')
+                        : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="card" aria-labelledby="times-title">
         <h2 id="times-title">{t('ხაზინის დრო', 'Treasury time')}</h2>

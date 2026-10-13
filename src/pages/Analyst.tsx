@@ -36,29 +36,37 @@ interface Deal {
   quoted_by_name: string | null;
   written_by_name: string | null;
   bank?: string | null;
+  /** Comment the KAM wrote on the request. */
+  kam_note?: string | null;
 }
 
 const PAGE = 100;
-const COMMENT_MAX = 500;
 
 async function withWriters(page: Deal[]): Promise<Deal[]> {
   const people = await loadRatePeople(page.map((row) => row.id));
   const named = page.map((row) => ({ ...row, written_by_name: people.get(row.id)?.written_by_name ?? null }));
-  return attachBanks(named);
+  return attachRequestFields(named);
 }
 
-/** Bank on the request. The analysis view has it after 32 is pasted; until then treasury and admin read it from the request. */
-async function attachBanks(page: Deal[]): Promise<Deal[]> {
-  const missing = page.filter((row) => !row.bank?.trim()).map((row) => row.id);
+/** Bank and the KAM note. The analysis view has them after 32 is pasted; until then treasury and admin read them from the request. */
+async function attachRequestFields(page: Deal[]): Promise<Deal[]> {
+  const missing = page.filter((row) => !row.bank?.trim() || !row.kam_note?.trim()).map((row) => row.id);
   if (!missing.length) return page;
-  const { data, error } = await supabase.from('requests').select('id, bank, banks').in('id', missing);
+  const { data, error } = await supabase.from('requests').select('id, bank, banks, note').in('id', missing);
   if (error || !data) return page;
-  const labels = new Map<number, string>();
-  for (const row of data as { id: number; bank: string | null; banks: string[] | null }[]) {
+  const banks = new Map<number, string>();
+  const notes = new Map<number, string>();
+  for (const row of data as { id: number; bank: string | null; banks: string[] | null; note: string | null }[]) {
     const label = formatBanks(row.banks?.length ? row.banks : row.bank);
-    if (label) labels.set(row.id, label);
+    const note = row.note?.trim();
+    if (label) banks.set(row.id, label);
+    if (note) notes.set(row.id, note);
   }
-  return page.map((row) => (row.bank?.trim() ? row : { ...row, bank: labels.get(row.id) ?? null }));
+  return page.map((row) => ({
+    ...row,
+    bank: row.bank?.trim() ? row.bank : banks.get(row.id) ?? null,
+    kam_note: row.kam_note?.trim() ? row.kam_note : notes.get(row.id) ?? null,
+  }));
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -100,6 +108,7 @@ function asDeal(row: Deal): Deal {
     written_by_name: row.written_by_name ?? null,
     deal_comment: row.deal_comment ?? null,
     treasury_comment: row.treasury_comment ?? null,
+    kam_note: row.kam_note ?? null,
   };
 }
 
@@ -108,7 +117,6 @@ export default function Analyst() {
   const toast = useToast();
   const { role, realRole } = useViewAs();
   const canEdit = realRole === 'admin' && role === 'admin';
-  const canComment = (realRole === 'treasury' && role === 'treasury') || canEdit;
   const [status, setStatus] = useState<StatusFilter>('all');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -121,8 +129,6 @@ export default function Analyst() {
   const [draft, setDraft] = useState<Draft>({ sell: '', gets: '', rate: '', gel: '', gelTouched: false });
   const [tried, setTried] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
-  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
-  const [commentSaving, setCommentSaving] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const from = isoDate(fromDate);
@@ -204,15 +210,6 @@ export default function Analyst() {
     return t('ღია', 'Open');
   }
 
-  function commentText(r: Deal): string {
-    const draftValue = commentDrafts[r.id];
-    return draftValue !== undefined ? draftValue : (r.deal_comment ?? '');
-  }
-
-  function commentDirty(r: Deal): boolean {
-    return commentText(r).trim() !== (r.deal_comment ?? '').trim();
-  }
-
   function startEdit(r: Deal) {
     setTried(false);
     setEditing(r.id);
@@ -252,32 +249,6 @@ export default function Analyst() {
       toast((err as Error).message, 'error');
     } finally {
       setSavingId(null);
-    }
-  }
-
-  async function saveComment(r: Deal) {
-    const text = commentText(r).trim();
-    if (text.length > COMMENT_MAX) {
-      toast(t('კომენტარი ძალიან გრძელია.', 'The comment is too long.'), 'error');
-      return;
-    }
-    setCommentSaving(r.id);
-    try {
-      await rpc('set_deal_comment', {
-        p_request_id: r.id,
-        p_comment: text || null,
-      });
-      setRows((prev) => prev.map((row) => row.id === r.id ? { ...row, deal_comment: text || null } : row));
-      setCommentDrafts((prev) => {
-        const next = { ...prev };
-        delete next[r.id];
-        return next;
-      });
-      toast(t('შენახულია.', 'Saved.'));
-    } catch (err) {
-      toast((err as Error).message, 'error');
-    } finally {
-      setCommentSaving(null);
     }
   }
 
@@ -322,7 +293,7 @@ export default function Analyst() {
         t('თანხა GEL', 'Amount GEL'),
         t('სტატუსი', 'Status'),
         t('მიზეზი', 'Reason'),
-        t('დანაკარგის კომენტარი', 'Loss comment'),
+        t('KAM-ის კომენტარი', 'KAM comment'),
         t('ხაზინის კომენტარი', 'Treasury comment'),
       ];
       downloadCsv(`kursi-requests-${todayTbilisi()}.csv`, [
@@ -345,8 +316,8 @@ export default function Analyst() {
           r.amount_gel,
           statusText(r),
           r.loss_reason ?? '',
+          r.kam_note ?? '',
           r.treasury_comment ?? '',
-          r.deal_comment ?? '',
         ]),
       ]);
     } catch (err) {
@@ -402,7 +373,11 @@ export default function Analyst() {
           'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. Download includes every row in this filter. Leave From and To empty to include every date.',
         )}
         {canEdit && <> {t('ადმინს შეუძლია კურსის და თანხების გასწორება.', 'An admin can correct the rate and the amounts.')}</>}
-        {canComment && <> {t('ხაზინის კომენტარს ხაზინა ან ადმინი წერს. ანალიტიკოსი მხოლოდ კითხულობს.', 'Treasury or an admin writes the treasury comment. An analyst only reads it.')}</>}
+        {' '}
+        {t(
+          'KAM-ის კომენტარი ის ტექსტია, რაც KAM-მა მოთხოვნაზე დაწერა. ხაზინის კომენტარი ის ტექსტია, რაც ხაზინამ დანაკარგის დადასტურებისას დაწერა.',
+          'The KAM comment is the text the KAM wrote on the request. The treasury comment is the text treasury wrote when approving the loss.',
+        )}
       </p>
 
       {rangeInvalid && <p className="alert-box" role="alert">{rangeMessage}</p>}
@@ -413,7 +388,7 @@ export default function Analyst() {
         {loaded && !rangeInvalid && !error && !rows.length && <p className="empty">{t('ამ ფილტრში მოთხოვნა არ არის.', 'No requests in this filter.')}</p>}
         {loaded && rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: canEdit ? 2280 : canComment ? 2100 : 1960 }}>
+            <table className="table" style={{ minWidth: canEdit ? 2200 : 1960 }}>
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
@@ -433,7 +408,7 @@ export default function Analyst() {
                   <th className="num">{t('თანხა GEL', 'Amount GEL')}</th>
                   <th>{t('სტატუსი', 'Status')}</th>
                   <th>{t('მიზეზი', 'Reason')}</th>
-                  <th>{t('დანაკარგის კომენტარი', 'Loss comment')}</th>
+                  <th>{t('KAM-ის კომენტარი', 'KAM comment')}</th>
                   <th>{t('ხაზინის კომენტარი', 'Treasury comment')}</th>
                   {canEdit && <th>{t('შესწორება', 'Edit')}</th>}
                 </tr>
@@ -445,7 +420,6 @@ export default function Analyst() {
                   const getsP = open ? parseRate(draft.gets) : null;
                   const rateP = open ? parseRate(draft.rate) : null;
                   const gelP = open ? parseRate(draft.gel) : null;
-                  const note = commentText(r);
                   return (
                   <tr key={r.id}>
                     <td className="nowrap">{r.request_date}</td>
@@ -485,26 +459,8 @@ export default function Analyst() {
                       </span>
                     </td>
                     <td>{r.loss_reason ?? ''}</td>
+                    <td className="deal-comment">{r.kam_note ?? ''}</td>
                     <td className="deal-comment">{r.treasury_comment ?? ''}</td>
-                    <td>
-                      {canComment ? (
-                        <div className="comment-edit">
-                          <textarea
-                            className="input"
-                            maxLength={COMMENT_MAX}
-                            rows={2}
-                            aria-label={t('ხაზინის კომენტარი', 'Treasury comment')}
-                            value={note}
-                            onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                          />
-                          <button type="button" className="btn btn-primary" disabled={!commentDirty(r) || commentSaving === r.id} onClick={() => saveComment(r)}>
-                            {commentSaving === r.id ? t('ინახება', 'Saving') : t('შენახვა', 'Save')}
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="deal-comment">{r.deal_comment ?? ''}</span>
-                      )}
-                    </td>
                     {canEdit && (
                       <td className="nowrap">
                         {open ? (
