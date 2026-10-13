@@ -9,13 +9,12 @@ import LoadingLine from '../components/LoadingLine';
 import RateCompareCharts from '../components/RateCompareCharts';
 import { loadRateHours } from '../lib/marketBoard';
 import {
-  boardForHour,
   buildCurrentBoard,
   buildStoredHourGrid,
   historySheet,
-  storedHours,
   type CurrentBoard,
   type HourlySnap,
+  type RateGrid,
   type RateQuote,
 } from '../lib/rateGrid';
 
@@ -121,7 +120,7 @@ export default function MarketRates() {
   }
 
   const updated = board.updatedAt ? fmtDateTime(board.updatedAt) : '';
-  const hours = storedHours(snaps, day).filter((hour) => boardForHour(snaps, day, hour).rows.length > 0);
+  const grid = buildStoredHourGrid(snaps.filter((snap) => snap.day === day));
 
   return (
     <>
@@ -130,7 +129,7 @@ export default function MarketRates() {
           <h1>{t('კურსები', 'Rates')}</h1>
           <p>
             {t('ბოლო ყიდვა და გაყიდვა USD, EUR, RUB და CNY GEL-ის მიმართ, შემდეგ კროსები, მაგალითად EUR/USD.', 'Latest buy and sell for USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.')}
-            {updated ? ' ' + t('განახლდა {when}.', 'Updated {when}.', { when: updated }) : ''} {t('ცხრილი დღევანდელ შენახულ საათებს აჩვენებს, თბილისის დროით. ჩამოტვირთვაში აირჩიეთ თარიღი ან პერიოდი.', 'The table shows the hours stored today, Tbilisi time. Choose a date or a range for the download.')}
+            {updated ? ' ' + t('განახლდა {when}.', 'Updated {when}.', { when: updated }) : ''} {t('თითო წყვილს თავისი ცხრილი აქვს, საათები სვეტებშია, თბილისის დროით. ჩამოტვირთვაში აირჩიეთ თარიღი ან პერიოდი.', 'Each pair has its own table, with hours in the columns, Tbilisi time. Choose a date or a range for the download.')}
           </p>
         </div>
         <div className="date-range">
@@ -156,46 +155,49 @@ export default function MarketRates() {
       {!loaded && <LoadingLine />}
       {loaded && !board.rows.length && <p className="empty">{t('დღეს შენახული კურსი ჯერ არ არის. ადმინს ან ხაზინას შეუძლია განახლება.', 'No rate is stored today yet. An admin or treasury can refresh.')}</p>}
       {board.rows.length > 0 && <RateCompareCharts board={board} />}
-      {hours.map((hour) => (
-        <section key={hour} className="rate-hour" aria-label={padHour(hour)}>
-          <h2 className="rate-hour-title">{padHour(hour)} <span className="tiny muted">{t('თბილისის დრო', 'Tbilisi time')}</span></h2>
-          <CurrentBoardTable board={boardForHour(snaps, day, hour)} />
-        </section>
+      {grid.blocks.map((block) => (
+        <PairHourTable key={block.id} grid={grid} block={block} />
       ))}
     </>
   );
 }
 
-function CurrentBoardTable({ board }: { board: CurrentBoard }) {
+function PairHourTable({ grid, block }: { grid: RateGrid; block: RateGrid['blocks'][number] }) {
   const { t } = useI18n();
+  const oneDay = new Set(grid.columns.map((col) => col.day)).size <= 1;
   return (
-    <section className="card flush" aria-label={t('მიმდინარე კურსები', 'Current rates')}>
-      <div className="table-wrap">
-        <table className="table rate-grid">
-          <thead>
-            <tr>
-              <th className="src" rowSpan={2} scope="col">{t('წყარო', 'Source')}</th>
-              {board.pairs.map((pair) => (
-                <th key={pair} className="num pair" colSpan={2} scope="colgroup">{pair}</th>
-              ))}
-            </tr>
-            <tr>
-              {board.pairs.map((pair) => (
-                <PairSides key={pair} />
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {board.rows.map((row) => (
-              <tr key={row.key}>
-                <th className="src" scope="row">{row.label}</th>
-                {row.quotes.map((quote, i) => (
-                  <QuoteCells key={board.pairs[i]} quote={quote} />
+    <section className="rate-hour" aria-label={block.pair}>
+      <h2 className="rate-hour-title">{block.pair}</h2>
+      <div className="card flush">
+        <div className="table-wrap">
+          <table className="table rate-grid">
+            <thead>
+              <tr>
+                <th className="src" rowSpan={2} scope="col">{t('წყარო', 'Source')}</th>
+                {grid.columns.map((col) => (
+                  <th key={col.day + col.slot} className="num pair" colSpan={2} scope="colgroup">
+                    {oneDay ? padHour(col.slot) : col.day + ' ' + padHour(col.slot)}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+              <tr>
+                {grid.columns.map((col) => (
+                  <PairSides key={col.day + '-' + col.slot} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row) => (
+                <tr key={row.key}>
+                  <th className="src" scope="row">{row.label}</th>
+                  {row.cells.map((quote, i) => (
+                    <QuoteCells key={grid.columns[i].day + grid.columns[i].slot} quote={quote} />
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );
