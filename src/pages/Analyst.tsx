@@ -5,6 +5,7 @@ import { useToast } from '../lib/toast';
 import { useViewAs } from '../lib/viewAs';
 import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, parseRate, todayTbilisi } from '../lib/format';
 import { loadRatePeople } from '../lib/ratePeople';
+import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import LoadingLine from '../components/LoadingLine';
 
 type Status = 'success' | 'lost' | 'open';
@@ -345,6 +346,7 @@ export default function Analyst() {
   ];
 
   const rangeMessage = t('თარიღიდან თარიღამდეზე გვიანაა.', 'From is after To.');
+  const { blocked, toggle: toggleBlocked } = useClientBlocked(rows.map((row) => row.client_id));
 
   return (
     <>
@@ -432,7 +434,10 @@ export default function Analyst() {
                     <td className="num">{fmtMinutes(r.first_response_minutes)}</td>
                     <td className="num">{fmtMinutes(r.rate_write_minutes)}</td>
                     <td>{r.kam_name}</td>
-                    <td className="strong">{r.client_name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</td>
+                    <td className="strong">
+                      {r.client_name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}
+                      <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggleBlocked} />
+                    </td>
                     <td className="nowrap">{r.client_id}</td>
                     <td>{r.sells_currency}</td>
                     <td className="num">

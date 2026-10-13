@@ -7,19 +7,22 @@ import { downloadCsv, fmtDateTime, fmtRate, todayTbilisi } from '../lib/format';
 import { IconDownload } from '../components/Icons';
 import LoadingLine from '../components/LoadingLine';
 import RateCompareCharts from '../components/RateCompareCharts';
-import { loadMarketRateData } from '../lib/marketBoard';
+import { loadRateHours } from '../lib/marketBoard';
 import {
+  boardForHour,
+  buildCurrentBoard,
+  buildStoredHourGrid,
   historySheet,
+  storedHours,
   type CurrentBoard,
-  type RateGrid,
+  type HourlySnap,
   type RateQuote,
 } from '../lib/rateGrid';
 
-const EMPTY_GRID: RateGrid = { columns: [], blocks: [], updatedAt: null };
 const EMPTY_BOARD: CurrentBoard = { pairs: [], rows: [], updatedAt: null };
 
-function downloadGrid(grid: RateGrid) {
-  downloadCsv(`kursi-rates-${todayTbilisi()}.csv`, historySheet(grid));
+function padHour(hour: number): string {
+  return String(hour).padStart(2, '0') + ':00';
 }
 
 export default function MarketRates() {
@@ -27,18 +30,24 @@ export default function MarketRates() {
   const { t } = useI18n();
   const { role } = useViewAs();
   const canRefresh = role === 'admin' || role === 'treasury';
-  const [grid, setGrid] = useState<RateGrid>(EMPTY_GRID);
+  const [snaps, setSnaps] = useState<HourlySnap[]>([]);
   const [board, setBoard] = useState<CurrentBoard>(EMPTY_BOARD);
+  const [day, setDay] = useState(() => todayTbilisi());
+  const [fromDay, setFromDay] = useState(() => todayTbilisi());
+  const [toDay, setToDay] = useState(() => todayTbilisi());
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
-    const view = await loadMarketRateData();
+    const today = todayTbilisi();
+    const rows = await loadRateHours(today, today);
     if (seq !== loadSeq.current) return;
-    setGrid(view.grid);
-    setBoard(view.board);
+    setDay(today);
+    setSnaps(rows);
+    setBoard(buildCurrentBoard(rows));
   }, []);
 
   useEffect(() => {
@@ -49,8 +58,8 @@ export default function MarketRates() {
         .catch((err: Error) => { if (live && announce) toast(err.message, 'error'); });
     };
     run(true);
-    // The 30-minute job writes in the database. Reload the board and the
-    // download from those stored rows so an open page picks them up.
+    // A later hour is written when rates are saved. Reload the same today
+    // read so an open page picks it up. Chart tabs do not call this.
     const timer = window.setInterval(() => run(false), 5 * 60 * 1000);
     return () => {
       live = false;
@@ -84,7 +93,35 @@ export default function MarketRates() {
     }
   }
 
+  async function downloadRange() {
+    if (!fromDay || !toDay || fromDay > toDay) {
+      toast(t('აირჩიეთ თარიღი ან პერიოდი.', 'Choose a date or a date range.'), 'error');
+      return;
+    }
+    const span = Math.round((Date.parse(toDay + 'T00:00:00Z') - Date.parse(fromDay + 'T00:00:00Z')) / 86_400_000) + 1;
+    if (span > 62) {
+      toast(t('პერიოდი 62 დღეზე გრძელია.', 'The range is longer than 62 days.'), 'error');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const rows = fromDay === day && toDay === day ? snaps : await loadRateHours(fromDay, toDay);
+      const grid = buildStoredHourGrid(rows);
+      if (!grid.blocks.length) {
+        toast(t('ამ თარიღებში შენახული კურსი არ არის.', 'No stored rate in those dates.'), 'error');
+        return;
+      }
+      const name = fromDay === toDay ? `kursi-rates-${fromDay}.csv` : `kursi-rates-${fromDay}_${toDay}.csv`;
+      downloadCsv(name, historySheet(grid));
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   const updated = board.updatedAt ? fmtDateTime(board.updatedAt) : '';
+  const hours = storedHours(snaps, day).filter((hour) => boardForHour(snaps, day, hour).rows.length > 0);
 
   return (
     <>
@@ -93,12 +130,20 @@ export default function MarketRates() {
           <h1>{t('კურსები', 'Rates')}</h1>
           <p>
             {t('ბოლო ყიდვა და გაყიდვა USD, EUR, RUB და CNY GEL-ის მიმართ, შემდეგ კროსები, მაგალითად EUR/USD.', 'Latest buy and sell for USD, EUR, RUB and CNY against GEL, then crosses such as EUR/USD.')}
-            {updated ? ' ' + t('განახლდა {when}.', 'Updated {when}.', { when: updated }) : ''} {t('კურსები თავისით ახლდება ყოველ 30 წუთში. ჩამოტვირთეთ კურსები 11:00–19:00 ისტორიისთვის.', 'Rates refresh on their own every 30 minutes. Download them for the 11:00–19:00 history.')}
+            {updated ? ' ' + t('განახლდა {when}.', 'Updated {when}.', { when: updated }) : ''} {t('ცხრილი დღევანდელ შენახულ საათებს აჩვენებს, თბილისის დროით. ჩამოტვირთვაში აირჩიეთ თარიღი ან პერიოდი.', 'The table shows the hours stored today, Tbilisi time. Choose a date or a range for the download.')}
           </p>
         </div>
-        <div className="row">
-          <button type="button" className="btn" disabled={!grid.blocks.length} onClick={() => downloadGrid(grid)}>
-            <IconDownload />{t('კურსების ჩამოტვირთვა', 'Download rates')}
+        <div className="date-range">
+          <div className="field">
+            <label htmlFor="rates-from">{t('თარიღიდან', 'From')}</label>
+            <input id="rates-from" type="date" className="input" value={fromDay} onChange={(e) => setFromDay(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="rates-to">{t('თარიღამდე', 'To')}</label>
+            <input id="rates-to" type="date" className="input" value={toDay} onChange={(e) => setToDay(e.target.value)} />
+          </div>
+          <button type="button" className="btn" disabled={downloading} onClick={downloadRange}>
+            <IconDownload />{downloading ? t('იწერება…', 'Preparing…') : t('კურსების ჩამოტვირთვა', 'Download rates')}
           </button>
           {canRefresh && (
             <button type="button" className="btn btn-primary" disabled={refreshing} onClick={refresh}>
@@ -109,9 +154,14 @@ export default function MarketRates() {
       </div>
 
       {!loaded && <LoadingLine />}
-      {loaded && !board.rows.length && <p className="empty">{t('კურსი ჯერ არ არის შენახული. ადმინს ან ხაზინას შეუძლია განახლება.', 'No rate is saved yet. An admin or treasury can refresh.')}</p>}
+      {loaded && !board.rows.length && <p className="empty">{t('დღეს შენახული კურსი ჯერ არ არის. ადმინს ან ხაზინას შეუძლია განახლება.', 'No rate is stored today yet. An admin or treasury can refresh.')}</p>}
       {board.rows.length > 0 && <RateCompareCharts board={board} />}
-      {board.rows.length > 0 && <CurrentBoardTable board={board} />}
+      {hours.map((hour) => (
+        <section key={hour} className="rate-hour" aria-label={padHour(hour)}>
+          <h2 className="rate-hour-title">{padHour(hour)} <span className="tiny muted">{t('თბილისის დრო', 'Tbilisi time')}</span></h2>
+          <CurrentBoardTable board={boardForHour(snaps, day, hour)} />
+        </section>
+      ))}
     </>
   );
 }

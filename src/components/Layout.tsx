@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { NAV } from '../lib/nav';
+import { countPendingLosses } from '../lib/pendingLoss';
 import { rpc, supabase } from '../lib/supabase';
 import { fmtDateTime, todayTbilisi } from '../lib/format';
 import { useLive } from '../lib/useLive';
@@ -41,14 +42,8 @@ export default function Layout({ children }: { children: ReactNode }) {
         setCounts((c) => ({ ...c, queue: counted.count ?? 0 }));
       }
       if (items.some((i) => i.badge === 'losses')) {
-        const { count } = await supabase.from('request_outcomes').select('id', { count: 'exact', head: true })
-          .eq('source', 'app')
-          .eq('went_through', false)
-          .is('rate_written_at', null)
-          .is('payment_confirmed_at', null)
-          .is('loss_approved_at', null)
-          .or('loss_open.eq.true,loss_reason.not.is.null');
-        setCounts((c) => ({ ...c, losses: count ?? 0 }));
+        const losses = await countPendingLosses();
+        setCounts((c) => ({ ...c, losses }));
       }
       if (items.some((i) => i.badge === 'followups')) {
         const { count } = await supabase.from('request_outcomes').select('id', { count: 'exact', head: true })

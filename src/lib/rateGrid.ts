@@ -299,7 +299,63 @@ function pairList(have: Set<string>): { currency: string; quote: string }[] {
   return [...gel, ...crosses, ...extra];
 }
 
-export function buildRateGrid(slotted: SlottedRate[]): RateGrid {
+export interface HourlySnap extends RateSnapshot {
+  day: string;
+  hour: number;
+}
+
+/** Asia/Tbilisi calendar day and clock hour of a stored instant. */
+export function tbilisiHourOf(iso: string): { day: string; hour: number } | null {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const clock = tbilisiClock(iso);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clock.day)) return null;
+  return { day: clock.day, hour: Math.floor(clock.minutes / 60) };
+}
+
+/** One snapshot per source, venue, pair, and Tbilisi hour. The latest fetch in that hour wins. */
+export function bucketRateHours(rows: RateSnapshot[]): HourlySnap[] {
+  const best = new Map<string, HourlySnap>();
+  for (const raw of rows) {
+    const row = orientSnapshot(raw);
+    if (!pairAllowed(row.currency, row.quote_currency)) continue;
+    if (row.venue_kind === 'kiosk' || row.venue.endsWith(' app')) continue;
+    if (row.buy == null && row.sell == null) continue;
+    const clock = tbilisiHourOf(row.fetched_at);
+    if (!clock) continue;
+    const key = [row.source, row.venue, row.currency, row.quote_currency, clock.day, clock.hour].join('|');
+    const prev = best.get(key);
+    if (!prev || row.fetched_at >= prev.fetched_at) best.set(key, { ...row, day: clock.day, hour: clock.hour });
+  }
+  return [...best.values()];
+}
+
+/** Hours that have a stored snapshot on this Tbilisi day, earliest first. */
+export function storedHours(snaps: readonly HourlySnap[], day: string): number[] {
+  return [...new Set(snaps.filter((snap) => snap.day === day).map((snap) => snap.hour))].sort((a, b) => a - b);
+}
+
+/** The board interface for one stored hour. */
+export function boardForHour(snaps: readonly HourlySnap[], day: string, hour: number): CurrentBoard {
+  return buildCurrentBoard(snaps.filter((snap) => snap.day === day && snap.hour === hour));
+}
+
+function uniqueColumns(rows: readonly { day: string; slot: number }[]): RateColumn[] {
+  const seen = new Map<string, RateColumn>();
+  for (const row of rows) {
+    const key = row.day + '|' + row.slot;
+    if (!seen.has(key)) seen.set(key, { day: row.day, slot: row.slot });
+  }
+  return [...seen.values()].sort((a, b) => a.day.localeCompare(b.day) || a.slot - b.slot);
+}
+
+/** Download grid: only hours that were stored. Empty hours are not added. */
+export function buildStoredHourGrid(snaps: readonly HourlySnap[]): RateGrid {
+  return buildRateGrid(snaps.map((snap) => ({ ...snap, slot: snap.hour })), { hoursFromData: true });
+}
+
+export function buildRateGrid(slotted: SlottedRate[], options?: { hoursFromData?: boolean }): RateGrid {
   const shown = new Map<string, ShownRow>();
   let updatedAt: string | null = null;
   const visible: SlottedRate[] = [];
@@ -317,10 +373,15 @@ export function buildRateGrid(slotted: SlottedRate[]): RateGrid {
     else if (rank < prev.labelRank) shown.set(identity.key, { ...prev, label: identity.label, labelRank: rank });
   }
 
-  const days = [...new Set(visible.map((rate) => rate.day))].sort().slice(-RATE_DAY_LIMIT);
+  const hourMode = options?.hoursFromData === true;
+  const days = hourMode
+    ? [...new Set(visible.map((rate) => rate.day))].sort()
+    : [...new Set(visible.map((rate) => rate.day))].sort().slice(-RATE_DAY_LIMIT);
   const daySet = new Set(days);
-  const columns: RateColumn[] = days.flatMap((day) => RATE_SLOTS.map((slot) => ({ day, slot })));
   const inWindow = visible.filter((rate) => daySet.has(rate.day));
+  const columns: RateColumn[] = hourMode
+    ? uniqueColumns(inWindow)
+    : days.flatMap((day) => RATE_SLOTS.map((slot) => ({ day, slot })));
   const ordered = [...shown.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label) || a.key.localeCompare(b.key));
 
   const have = new Set(inWindow.filter((rate) => rate.buy != null || rate.sell != null).map((rate) => rate.currency + '/' + rate.quote_currency));

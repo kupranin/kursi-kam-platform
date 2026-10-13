@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
+import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtDay, fmtRate, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
+import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 
@@ -14,6 +16,8 @@ const PAGE = 100;
 /** Deals whose quoted rate was written in the core. They leave the rate desk. */
 export default function DeskHistory() {
   const { t } = useI18n();
+  const { realRole } = useViewAs();
+  const canSwitchBlocked = realRole === 'treasury' || realRole === 'admin';
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [total, setTotal] = useState(0);
   const [shown, setShown] = useState(PAGE);
@@ -55,6 +59,7 @@ export default function DeskHistory() {
   }, [shown, reloadKey, t]);
 
   useLive(['requests'], reload, 15000);
+  const { blocked, toggle } = useClientBlocked(rows.map((row) => row.client_id));
 
   return (
     <>
@@ -93,6 +98,7 @@ export default function DeskHistory() {
                   <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>
                 )}
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
+                <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written canSwitch={canSwitchBlocked} onToggle={toggle} />
                 {r.rate_written_at && <div className="tiny muted">{t('ჩაიწერა {when}', 'Written {when}', { when: fmtDateTime(r.rate_written_at) })}</div>}
               </div>
               <div className="actions">

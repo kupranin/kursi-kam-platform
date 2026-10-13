@@ -17,6 +17,7 @@ const FALLBACK_REASONS: LossReason[] = [
   { code: 'better_rate', label_en: 'Better rate elsewhere', label_ka: 'სხვაგან უკეთესი კურსი', sort_order: 10, active: true },
   { code: 'postponed', label_en: 'Postponed', label_ka: 'გადადო', sort_order: 20, active: true },
   { code: 'funds_not_received', label_en: 'Funds not received', label_ka: 'თანხა არ ჩაურიცხავს', sort_order: 30, active: true },
+  { code: 'liquidity', label_en: 'Liquidity problem', label_ka: 'ლიკვიდობის პრობლემა', sort_order: 40, active: true },
   { code: 'other', label_en: 'Other', label_ka: 'სხვა', sort_order: 90, active: true },
 ];
 

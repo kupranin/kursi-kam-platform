@@ -7,6 +7,7 @@ import { fmtRate, fmtTime, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { isQuotedProgress, isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
+import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
@@ -78,6 +79,7 @@ export default function QuoteProgress() {
   }, [shown, reloadKey, t]);
 
   useLive(['requests'], reload, 15000);
+  const { blocked, toggle } = useClientBlocked(rows.map((row) => row.client_id));
 
   return (
     <>
@@ -112,6 +114,7 @@ export default function QuoteProgress() {
                 <div>
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
+                  <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                   <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                   <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
                   {rate != null && <div className="small" style={{ marginTop: 6 }}>{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(rate)}</div>}

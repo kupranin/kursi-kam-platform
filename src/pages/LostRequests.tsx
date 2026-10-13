@@ -5,8 +5,10 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDay, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { loadPendingLossPage } from '../lib/pendingLoss';
 import { isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import type { LossReason, RequestRow } from '../lib/types';
+import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import LossApproval from '../components/LossApproval';
@@ -34,6 +36,7 @@ function reasonLabel(reasons: LossReason[], code: string, lang: 'ka' | 'en'): st
 export default function LostRequests() {
   const { t, lang } = useI18n();
   const { realRole } = useViewAs();
+  const canApprove = realRole === 'treasury' || realRole === 'admin';
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [reasons, setReasons] = useState<LossReason[]>([]);
   const [total, setTotal] = useState(0);
@@ -48,34 +51,23 @@ export default function LostRequests() {
   useEffect(() => {
     let gone = false;
     (async () => {
-      const [{ data, error: err, count }, reasonRes] = await Promise.all([
-        supabase
-          .from('request_outcomes')
-          .select('*', { count: 'exact' })
-          .eq('source', 'app')
-          .eq('went_through', false)
-          .is('rate_written_at', null)
-          .is('payment_confirmed_at', null)
-          .is('loss_approved_at', null)
-          .or('loss_open.eq.true,loss_reason.not.is.null')
-          .order('request_date', { ascending: false })
-          .order('id', { ascending: false })
-          .range(0, shown - 1),
+      const [pageRes, reasonRes] = await Promise.all([
+        loadPendingLossPage(shown),
         supabase.from('loss_reasons').select('*').eq('active', true).order('sort_order'),
       ]);
       if (!gone) setReasons((reasonRes.data ?? []) as LossReason[]);
       if (gone) return;
-      if (err) {
+      if ('error' in pageRes) {
         setRows([]);
         setTotal(0);
         setHasMore(false);
         setError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
       } else {
-        const raw = ((data ?? []) as RequestRow[]).filter(isPendingLoss);
+        const raw = pageRes.rows.filter(isPendingLoss);
         const page = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
         setRows(page);
-        setTotal(count ?? page.length);
-        setHasMore((count ?? 0) > shown);
+        setTotal(pageRes.total);
+        setHasMore(pageRes.total > shown);
         setError('');
       }
       setLoaded(true);
@@ -84,15 +76,19 @@ export default function LostRequests() {
   }, [shown, reloadKey, t]);
 
   useLive(['requests'], reload, 15000);
+  const { blocked, toggle } = useClientBlocked(rows.map((row) => row.client_id));
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>{t('დაკარგული მოთხოვნები', 'Lost requests')}</h1>
-          <p>{t(
-            'დაადასტურეთ თითო დანაკარგი. კომენტარი შეგიძლიათ ჩაწეროთ, ან დატოვოთ ცარიელი. გაწერილი კურსი და „ტრანზაქცია გავიდა“ აქ არ ჩანს.',
-            'Approve each loss. You can write a comment, or leave it empty. A written rate and “The transaction went through” do not appear here.',
+          <p>{canApprove ? t(
+            'დაადასტურეთ თითო დანაკარგი, მათ შორის 7 ოქტომბრიდან მოყოლებული. კომენტარი შეგიძლიათ ჩაწეროთ, ან დატოვოთ ცარიელი. დადასტურების შემდეგ სიიდან ქრება. გარიგება არ იშლება.',
+            'Approve each loss, including ones marked from 7 October onward. You can write a comment, or leave it empty. After approval it leaves this list. The deal is not deleted.',
+          ) : t(
+            'KAM-ის დანაკარგები, რომლებიც ხაზინის დადასტურებას ელოდება, მათ შორის 7 ოქტომბრიდან მოყოლებული. დადასტურება ხაზინას და ადმინს შეუძლია.',
+            'Losses a KAM marked that are waiting for treasury, including ones marked from 7 October onward. Treasury and an admin can approve them.',
           )}</p>
         </div>
         <div className="stats">
@@ -130,6 +126,7 @@ export default function LostRequests() {
                 {r.quote_status === 'declined' && r.decline_reason && (
                   <p className="note-box">{t('ხაზინამ უარი თქვა', 'Treasury declined')}: {declineLabel(r.decline_reason, lang)}</p>
                 )}
+                <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
               </div>
               {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
             </div>

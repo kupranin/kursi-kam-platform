@@ -250,11 +250,16 @@ assert(requestVisibleToRole('kam', 'kam-a', 'kam-a'), '13 KAM sees their own row
 assert(!requestVisibleToRole('kam', 'kam-a', 'kam-b'), '13 KAM does not see another KAM');
 assert(!requestVisibleToRole('analyst', 'an-1', 'kam-a'), '14 analyst sees no request row');
 
-const lostPage = readFileSync(resolve(root, 'src/pages/LostRequests.tsx'), 'utf8');
-assert(lostPage.includes(".eq('went_through', false)"), 'lost page still requires went_through false');
-assert(lostPage.includes(".is('loss_approved_at', null)"), 'approved losses stay off the lost action list');
-assert(lostPage.includes(".or('loss_open.eq.true,loss_reason.not.is.null')"), 'lost page still uses loss_open or loss_reason');
-assert(lostPage.includes(".from('request_outcomes')"), 'lost page stays on request_outcomes');
+const pendingLoss = readFileSync(resolve(root, 'src/lib/pendingLoss.ts'), 'utf8');
+assert(pendingLoss.includes(".is('loss_approved_at', null)"), 'approved losses stay off the lost action list');
+assert(pendingLoss.includes('marked_lost_at.not.is.null,loss_reason.not.is.null'), 'lost list is an unapproved KAM mark');
+assert(!pendingLoss.includes(".eq('went_through'"), 'a payment match does not hide an unapproved KAM loss');
+assert(!pendingLoss.includes(".eq('request_date'"), 'lost list is not limited to today');
+const navFile = readFileSync(resolve(root, 'src/lib/nav.ts'), 'utf8');
+assert(navFile.includes("'/lost-requests'"), 'lost page stays in navigation');
+assert(/manager: \[[^\]]*\/lost-requests/.test(navFile), 'managers get the lost list');
+assert(!/analyst: \[[^\]]*lost-requests/.test(navFile), 'analyst does not get the lost list');
+assert(!/kam: \[[^\]]*lost-requests/.test(navFile), 'a KAM does not get the lost approval list');
 
 const setup = readFileSync(resolve(root, 'supabase/setup/33_active_reads.sql'), 'utf8');
 const migration = readFileSync(resolve(root, 'supabase/migrations/20261013120000_active_reads.sql'), 'utf8');

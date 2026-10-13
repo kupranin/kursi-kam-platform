@@ -9,8 +9,9 @@ import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
-import { dealLeftOpen, hideEarlierDeals, isPendingLoss, treasuryReason } from '../lib/requestStatus';
+import { dealLeftOpen, hideEarlierDeals, isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { bankList, type LossReason, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
+import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LossApproval from '../components/LossApproval';
 import LoadingLine from '../components/LoadingLine';
@@ -203,21 +204,11 @@ function deskRate(row: DeskDayRow): number | null {
   return row.rate;
 }
 
-const LOSS_LABELS: Record<string, [string, string]> = {
-  better_rate: ['სხვაგან უკეთესი კურსი', 'Better rate elsewhere'],
-  postponed: ['გადადო', 'Postponed'],
-  funds_not_received: ['თანხა არ ჩაურიცხავს', 'Funds not received'],
-  other: ['სხვა', 'Other'],
-};
-
 function lossDetail(row: DeskDayRow, reasons: LossReason[], lang: 'ka' | 'en'): string {
   const fromTable = reasons.find((r) => r.code === row.loss_reason);
-  const pair = row.loss_reason ? LOSS_LABELS[row.loss_reason] : undefined;
   const label = fromTable
     ? ((lang === 'en' ? fromTable.label_en : fromTable.label_ka).trim() || fromTable.label_en || fromTable.label_ka)
-    : pair
-      ? (lang === 'en' ? pair[1] : pair[0])
-      : (row.loss_reason ?? '');
+    : lossReasonLabel(row.loss_reason, lang);
   const note = row.loss_reason_note?.trim() ?? '';
   if (label && note) return `${label} — ${note}`;
   if (label || note) return label || note;
@@ -921,6 +912,13 @@ export default function RateDesk() {
   const dayDeals = seeDay
     ? dayRows.filter((row) => onDeskToday(row, today)).sort((a, b) => deskSeenMs(b) - deskSeenMs(a))
     : [];
+  const { blocked, toggle } = useClientBlocked([
+    ...dayDeals.map((row) => row.client_id),
+    ...queue.map((row) => row.client_id),
+    ...replies.map((row) => row.client_id),
+    ...extraAgreed.map((row) => row.client_id),
+  ]);
+  const canSwitchBlocked = realRole === 'treasury' || realRole === 'admin';
 
   return (
     <>
@@ -983,6 +981,7 @@ export default function RateDesk() {
                           </div>
                         </div>
                         <div className="small muted" style={{ marginTop: 6 }}>{r.client_name ?? 'სახელი არ არის'}, ID {r.client_id}</div>
+                        <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                         <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
@@ -1116,6 +1115,13 @@ export default function RateDesk() {
                             <td>
                               <span className={'pill ' + st.cls}>{st.label}</span>
                               {st.detail && <div className="tiny muted">{st.detail}</div>}
+                              <ClientBlocked
+                                clientId={row.client_id}
+                                blocked={blocked.has(row.client_id)}
+                                written={!!row.rate_written_at}
+                                canSwitch={canSwitchBlocked}
+                                onToggle={toggle}
+                              />
                             </td>
                           </tr>
                           {awaitingLoss && (
@@ -1165,6 +1171,7 @@ export default function RateDesk() {
                     </div>
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? t('სახელი არ არის', 'No name')}</div>
                     <div className="tiny muted">ID {r.client_id}</div>
+                    <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                     <p className="note-box">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
                     <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
@@ -1245,6 +1252,7 @@ export default function RateDesk() {
                 <div className="who">
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">ID {r.client_id}</div>
+                  <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={false} canSwitch={false} onToggle={toggle} />
                   <div className="tiny muted">{r.kam_name}</div>
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                 </div>

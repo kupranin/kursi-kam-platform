@@ -64,6 +64,7 @@ insert into public.loss_reasons (code, label_en, label_ka, sort_order) values
   ('better_rate',        'Better rate elsewhere', 'სხვაგან უკეთესი კურსი', 10),
   ('postponed',          'Postponed',             'გადადო',                20),
   ('funds_not_received', 'Funds not received',    'თანხა არ ჩაურიცხავს',   30),
+  ('liquidity',          'Liquidity problem',     'ლიკვიდობის პრობლემა',   40),
   ('other',              'Other',                 'სხვა',                  90);
 
 -- ---------------------------------------------------------------------

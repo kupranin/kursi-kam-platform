@@ -6,7 +6,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtRate, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import { classifyRequest, isWrittenHistory, treasuryReason, type LogCode } from '../lib/requestStatus';
+import { classifyRequest, isWrittenHistory, lossReasonLabel, treasuryReason, type LogCode } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
 import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
@@ -106,7 +106,9 @@ export default function RequestLog() {
                   const rate = row.client_reply === 'approved' && row.approved_rate != null ? row.approved_rate : row.rate;
                   const reason = status.code === 'treasury_declined'
                     ? treasuryReason(status.reason, lang)
-                    : (status.reason ?? '');
+                    : status.code === 'did_not'
+                      ? lossReasonLabel(status.reason, lang)
+                      : (status.reason ?? '');
                   return (
                     <tr key={row.id}>
                       <td className="nowrap">{fmtDateTime(row.requested_at)}</td>

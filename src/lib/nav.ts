@@ -12,7 +12,7 @@ export const PAGES: Record<Role, string[]> = {
   kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat'],
   treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat'],
   admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
-  manager: ['/team', '/requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
+  manager: ['/team', '/requests', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
   analyst: ['/analysis', '/analytics'],
 };
 
@@ -56,6 +56,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
   manager: [
     { to: '/team', ka: 'გუნდი', en: 'Team' },
     { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/lost-requests', ka: 'დაკარგული მოთხოვნები', en: 'Lost requests', badge: 'losses' },
     { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups' },
     { to: '/clients', ka: 'კლიენტები', en: 'Clients' },
     { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },

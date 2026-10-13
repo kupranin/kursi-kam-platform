@@ -12,6 +12,7 @@ import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, month
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
+import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
@@ -554,6 +555,11 @@ export default function Requests() {
     r.quote_state === 'quoted' && r.rate_valid_until && new Date(r.rate_valid_until) < new Date() ? 'expired' : r.quote_state;
 
   const { open, done, todayCount } = splitKamRequests(rows, doneRows, today);
+  const { blocked, toggle } = useClientBlocked([
+    ...[...open, ...done, ...history, ...approvedRows].map((row) => row.client_id),
+    info?.id ?? '',
+  ]);
+  const canSwitchBlocked = realRole === 'treasury' || realRole === 'admin';
 
   return (
     <>
@@ -574,6 +580,7 @@ export default function Requests() {
         <form onSubmit={submit} noValidate>
           <div className="form-row">
             <ClientField key={clientForm} tried={tried} onInfo={onInfo} />
+            {info?.id && <ClientBlocked clientId={info.id} blocked={blocked.has(info.id)} written={false} canSwitch={false} onToggle={toggle} />}
             <div className="field" style={{ flex: '1 1 280px', minWidth: 220 }}>
               <span className="label" id="client-banks-label">{t('ბანკი, სადაც კლიენტი აგზავნის', 'Bank the client is sending to')}</span>
               <div className="seg" role="group" aria-labelledby="client-banks-label" aria-invalid={tried && chosenBanks.length < 1}>
@@ -672,6 +679,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
+                <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={isWrittenHistory(r)} canSwitch={canSwitchBlocked} onToggle={toggle} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
               </div>
               <div className="what">
@@ -757,7 +765,7 @@ export default function Requests() {
           return (
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
-            <span className="who strong">{r.client_name ?? r.client_id}</span>
+            <span className="who strong">{r.client_name ?? r.client_id}<ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={isWrittenHistory(r)} canSwitch={canSwitchBlocked} onToggle={toggle} /></span>
             <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} /></span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
             {canChange(r) && (
@@ -874,6 +882,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
+                <ClientBlocked clientId={r.client_id} blocked={blocked.has(r.client_id)} written={isWrittenHistory(r)} canSwitch={canSwitchBlocked} onToggle={toggle} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
                 {seeAll && <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>}
               </div>

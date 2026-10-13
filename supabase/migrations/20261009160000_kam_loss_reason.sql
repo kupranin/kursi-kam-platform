@@ -4,12 +4,13 @@
 --
 -- A KAM (own request) or an admin marks a request lost only with a reason.
 -- The request reaches treasury after that reason is saved. Other requires
--- a written comment. The four reasons below are inserted only when missing.
+-- a written comment. The reasons below are inserted only when missing.
 
 insert into public.loss_reasons (code, label_en, label_ka, sort_order) values
   ('better_rate',        'Better rate elsewhere', 'სხვაგან უკეთესი კურსი', 10),
   ('postponed',          'Postponed',             'გადადო',                20),
   ('funds_not_received', 'Funds not received',    'თანხა არ ჩაურიცხავს',   30),
+  ('liquidity',          'Liquidity problem',     'ლიკვიდობის პრობლემა',   40),
   ('other',              'Other',                 'სხვა',                  90)
 on conflict (code) do nothing;
 

@@ -141,6 +141,7 @@ const LOSS_LABELS: Record<string, [string, string]> = {
   better_rate: ['სხვაგან უკეთესი კურსი', 'Better rate elsewhere'],
   postponed: ['გადადო', 'Postponed'],
   funds_not_received: ['თანხა არ ჩაურიცხავს', 'Funds not received'],
+  liquidity: ['ლიკვიდობის პრობლემა', 'Liquidity problem'],
   other: ['სხვა', 'Other'],
 };
 

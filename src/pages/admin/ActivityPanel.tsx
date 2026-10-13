@@ -22,6 +22,7 @@ const LOSS_KA: Record<string, string> = {
   better_rate: 'სხვაგან უკეთესი კურსი',
   postponed: 'გადადო',
   funds_not_received: 'თანხა არ ჩაურიცხავს',
+  liquidity: 'ლიკვიდობის პრობლემა',
   other: 'სხვა',
 };
 
