@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../lib/activeRequest';
+import { isMissingRead } from '../lib/missingRead';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
@@ -6,7 +8,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
-import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, todayTbilisi } from '../lib/format';
+import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, tbilisiDay, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
@@ -22,6 +24,29 @@ import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/Requ
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
+
+/** One quiet report per failure streak. A later success arms it again. */
+let matchedFailureLogged = false;
+
+/** Ids request_outcomes already marks went_through. Null means this refresh could not tell. */
+async function matchedSuccessIds(ids: number[]): Promise<Set<number> | null> {
+  if (!ids.length) return new Set();
+  const listed = await supabase.rpc('request_went_through_ids', { p_ids: ids });
+  if (!listed.error) {
+    matchedFailureLogged = false;
+    const data = Array.isArray(listed.data) ? listed.data : [];
+    return new Set(data.map((row: { id: number }) => Number(row.id)));
+  }
+  if (isMissingRead(listed.error)) {
+    const narrow = await supabase.from('request_outcomes').select('id').in('id', ids).eq('went_through', true);
+    if (!narrow.error) return new Set((narrow.data ?? []).map((row) => row.id));
+  }
+  if (!matchedFailureLogged) {
+    matchedFailureLogged = true;
+    console.error('request_went_through_ids failed; keeping the last reconciled list', listed.error.message);
+  }
+  return null;
+}
 
 async function withPeople(rows: RequestRow[]): Promise<RequestRow[]> {
   return applyRatePeople(rows, await loadRatePeople(rows.map((row) => row.id)));
@@ -127,6 +152,7 @@ export default function Requests() {
   const [approvedRows, setApprovedRows] = useState<RequestRow[]>([]);
   const [approvedLoaded, setApprovedLoaded] = useState(false);
   const [approvedError, setApprovedError] = useState('');
+  const [doneRows, setDoneRows] = useState<RequestRow[]>([]);
   const histReq = useRef(0);
   const appliedClient = useRef<string | null>(null);
   const bankClient = useRef<string | null>(null);
@@ -137,16 +163,46 @@ export default function Requests() {
   const today = todayTbilisi();
 
   const load = useCallback(async () => {
-    if (!isKam) { setLoaded(true); return; }
-    const { data, error } = await supabase
-      .from('request_outcomes')
-      .select('*')
-      .eq('kam_id', profile!.id)
+    if (!isKam || !profile) { setLoaded(true); return; }
+    const active = await supabase
+      .from('request_active')
+      .select(ACTIVE_COLUMNS)
+      .eq('kam_id', profile.id)
       .or(`request_date.eq.${today},quote_status.eq.asking`)
       .order('asked_at', { ascending: false });
-    if (!error) {
-      const next = await withPeople((data ?? []) as RequestRow[]);
-      setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    if (active.error && isMissingRead(active.error)) {
+      const { data, error } = await supabase
+        .from('request_outcomes')
+        .select('*')
+        .eq('kam_id', profile.id)
+        .or(`request_date.eq.${today},quote_status.eq.asking`)
+        .order('asked_at', { ascending: false });
+      if (!error) {
+        const next = await withPeople((data ?? []) as RequestRow[]);
+        setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        const went = next.filter((row) => row.went_through && row.request_date === today);
+        setDoneRows((prev) => (JSON.stringify(prev) === JSON.stringify(went) ? prev : went));
+      }
+      setLoaded(true);
+      return;
+    }
+    if (!active.error) {
+      const fetched = (active.data ?? []) as unknown as ActiveSource[];
+      const matched = await matchedSuccessIds(fetched.map((row) => row.id));
+      // Do not paint this payload if we could not ask the outcomes view.
+      // The last reconciled list stays, so a payment match is not shown as a loss.
+      if (matched) {
+        let freshnessDay = '';
+        try {
+          const iso = await rpc<string | null>('data_freshness');
+          freshnessDay = iso ? tbilisiDay(iso) : '';
+        } catch {
+          freshnessDay = '';
+        }
+        const next = await withPeople(fetched.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), matched)));
+        setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        setDoneRows((prev) => (prev.length === 0 ? prev : []));
+      }
     }
     setLoaded(true);
   }, [profile, today, isKam]);
@@ -497,9 +553,7 @@ export default function Requests() {
   const stateOf = (r: RequestRow) =>
     r.quote_state === 'quoted' && r.rate_valid_until && new Date(r.rate_valid_until) < new Date() ? 'expired' : r.quote_state;
 
-  const open = rows.filter((r) => !r.went_through && r.source !== 'import');
-  const done = rows.filter((r) => r.went_through && r.request_date === today);
-  const todayCount = rows.filter((r) => r.request_date === today).length;
+  const { open, done, todayCount } = splitKamRequests(rows, doneRows, today);
 
   return (
     <>

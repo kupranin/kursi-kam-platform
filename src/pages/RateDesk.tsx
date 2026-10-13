@@ -2,7 +2,9 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, ty
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useLive } from '../lib/useLive';
-import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, tbilisiDay, tbilisiDayStart, todayTbilisi } from '../lib/format';
+import { DAY_COLUMNS, DESK_DAY_SINCE_FIELDS, onDeskToday } from '../lib/deskDay';
+import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, tbilisiDayStart, todayTbilisi } from '../lib/format';
+import { isMissingRead } from '../lib/missingRead';
 import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
@@ -184,28 +186,6 @@ interface DeskDayRow {
   written_by_name?: string | null;
 }
 
-/**
- * Today's rate-desk list. The boundary is midnight in Asia/Tbilisi.
- * A deal stays on this list until that midnight, then it leaves the list.
- * Nothing is deleted: older deals stay in History.
- *
- * The deal was on the desk today when any of these Tbilisi days is today:
- * request_date / requested_at (the KAM logged it and it arrived),
- * asked_at (it was put in front of treasury, including ask-again),
- * quoted_at (treasury gave a rate or sent it back — a decline sets quoted_at),
- * rate_valid_until (that rate was still live today, including on the KAM open list),
- * client_replied_at (the client approved, asked for a better rate, or rejected),
- * rate_written_at (treasury wrote the rate),
- * or loss_reason_at (a KAM marked it lost — დაიკარგა — and sent the reason).
- * Leaving the waiting queue does not remove it. A quoted deal the KAM still
- * has open, a rate already written, and a loss from today all stay until midnight.
- */
-function onDeskToday(row: DeskDayRow, today: string): boolean {
-  if (row.request_date === today) return true;
-  return [row.requested_at, row.asked_at, row.quoted_at, row.rate_valid_until, row.client_replied_at, row.rate_written_at, row.loss_reason_at]
-    .some((iso) => tbilisiDay(iso) === today);
-}
-
 function deskSeenAt(row: DeskDayRow): string {
   return [row.loss_reason_at, row.rate_written_at, row.client_replied_at, row.quoted_at, row.asked_at, row.requested_at]
     .filter((iso): iso is string => !!iso)
@@ -312,20 +292,59 @@ function dayStatus(
   return { label: t('ღიაა', 'Open'), cls: 'pill-wait', detail: '' };
 }
 
-const DAY_COLUMNS = 'id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, client_rate, rate, approved_rate, given_rate, quote_status, quote_state, decline_reason, client_reply, client_decline_reason, better_decision, requested_at, request_date, asked_at, quoted_at, client_replied_at, rate_valid_until, rate_written_at, outcome, went_through, loss_open, loss_reason, loss_reason_at, loss_reason_note, loss_approved_at, loss_approval_comment, loss_approver_name, payment_confirmed_at, bank, note';
+/** One quiet report per failure streak. A later success arms it again. */
+let deskDayFailureLogged = false;
+/** At most one slice batch at a time. A second refresh waits, it does not start another. */
+let deskDaySliceFlight: { key: string; promise: Promise<DeskDayRow[]> } | null = null;
 
-/** Today's app requests, plus anything treasury quoted or wrote today. One failed slice does not drop the rest. */
+function deskDaySliceKey(today: string, alsoIds: number[]): string {
+  return today + '\n' + [...alsoIds].sort((a, b) => a - b).join(',');
+}
+
+/**
+ * Today's app requests, plus anything the old slices included.
+ * One call when desk_day_rows exists. Until setup 33 is pasted, the slices stay.
+ * If the function exists and this call fails, this refresh uses the slices once.
+ * The screen still drops a row that is not onDeskToday.
+ */
 async function loadDeskDay(today: string, alsoIds: number[]): Promise<DeskDayRow[]> {
+  const start = tbilisiDayStart(today);
+  const { data, error } = await supabase.rpc('desk_day_rows', {
+    p_today: today,
+    p_start: start,
+    p_also_ids: alsoIds,
+  });
+  if (!error) {
+    deskDayFailureLogged = false;
+    return (Array.isArray(data) ? data : []) as DeskDayRow[];
+  }
+  if (!isMissingRead(error) && !deskDayFailureLogged) {
+    deskDayFailureLogged = true;
+    console.error('desk_day_rows failed; using the day slices for this refresh', error.message);
+  }
+  return loadDeskDaySlicesCoalesced(today, alsoIds);
+}
+
+async function loadDeskDaySlicesCoalesced(today: string, alsoIds: number[]): Promise<DeskDayRow[]> {
+  const key = deskDaySliceKey(today, alsoIds);
+  while (deskDaySliceFlight && deskDaySliceFlight.key !== key) {
+    await deskDaySliceFlight.promise.catch(() => undefined);
+  }
+  if (deskDaySliceFlight?.key === key) return deskDaySliceFlight.promise;
+  const promise = loadDeskDaySlices(today, alsoIds).finally(() => {
+    if (deskDaySliceFlight?.promise === promise) deskDaySliceFlight = null;
+  });
+  deskDaySliceFlight = { key, promise };
+  return promise;
+}
+
+/** The seven day slices plus explicit ids. One failed slice does not drop the rest. */
+async function loadDeskDaySlices(today: string, alsoIds: number[]): Promise<DeskDayRow[]> {
   const start = tbilisiDayStart(today);
   const day = () => supabase.from('request_outcomes').select(DAY_COLUMNS).eq('source', 'app').limit(1000);
   const queries = [
     day().eq('request_date', today),
-    day().gte('quoted_at', start),
-    day().gte('asked_at', start),
-    day().gte('client_replied_at', start),
-    day().gte('rate_written_at', start),
-    day().gte('rate_valid_until', start),
-    day().gte('loss_reason_at', start),
+    ...DESK_DAY_SINCE_FIELDS.map((field) => day().gte(field, start)),
   ];
   if (alsoIds.length) queries.push(supabase.from('request_outcomes').select(DAY_COLUMNS).in('id', alsoIds).limit(1000));
   const slices = await Promise.all(queries);
@@ -596,14 +615,26 @@ export default function RateDesk() {
     try {
       const list = await rpc<ClientReply[]>('treasury_client_replies');
       setRepliesNote('');
-      const { data: older } = await supabase
-        .from('request_outcomes')
-        .select('id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, client_reply, note')
+      const olderCols = 'id, kam_name, client_id, client_name, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate, client_reply, note';
+      const olderActive = await supabase
+        .from('request_active')
+        .select(olderCols)
         .eq('source', 'app')
         .eq('client_reply', 'approved')
         .gte('request_date', todayTbilisi(-14))
         .order('requested_at', { ascending: false })
         .limit(40);
+      const olderRes = olderActive.error && isMissingRead(olderActive.error)
+        ? await supabase
+          .from('request_outcomes')
+          .select(olderCols)
+          .eq('source', 'app')
+          .eq('client_reply', 'approved')
+          .gte('request_date', todayTbilisi(-14))
+          .order('requested_at', { ascending: false })
+          .limit(40)
+        : olderActive;
+      const older = olderRes.data;
       const extras: ClientReply[] = ((older ?? []) as {
         id: number; kam_name: string | null; client_id: string; client_name: string | null;
         sells_currency: string | null; gets_currency: string | null; amount: number | null; gets_amount: number | null;
