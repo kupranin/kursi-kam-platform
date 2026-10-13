@@ -1,7 +1,7 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase, rpc } from '../lib/supabase';
 import { useToast } from '../lib/toast';
-import { useLive, useTick } from '../lib/useLive';
+import { useLive } from '../lib/useLive';
 import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, minutesSince, parseRate, rateUnit, sideAmount, tbilisiDay, tbilisiDayStart, todayTbilisi } from '../lib/format';
 import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
@@ -369,6 +369,74 @@ async function closedIds(ids: number[]): Promise<Set<number>> {
   return closed;
 }
 
+/** Fields the waiting card actually draws. `waiting_seconds` changes on every read and is not shown. */
+const QUEUE_SHOWN: (keyof QueueRow)[] = [
+  'request_id', 'asked_at', 'kam_name', 'client_id', 'client_name', 'is_new_client',
+  'sells_currency', 'gets_currency', 'amount', 'gets_amount', 'client_rate', 'note',
+  'loss_reason_note', 'last_rate', 'last_rate_at', 'standard_rate', 'nbg_rate', 'last_given_today',
+];
+
+function queueNorm(value: unknown): string {
+  if (value == null) return '\u0000';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'string') {
+    if (/^-?\d+(\.\d+)?$/.test(value)) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return String(n);
+    }
+    return value;
+  }
+  return String(value);
+}
+
+function queueSignature(rows: QueueRow[]): string {
+  return rows.map((row) => QUEUE_SHOWN.map((key) => queueNorm(row[key])).join('\u001f')).join('\u001e');
+}
+
+function replaceIfChanged<T>(prev: T, next: T): T {
+  return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+}
+
+/**
+ * The waiting clock. It ticks on its own so the rest of the desk
+ * (rate box, today table, market board) does not re-render every 10 seconds.
+ * Georgian wording stays exactly as it was on the card.
+ */
+function WaitingSince({ askedAt, seenAt, kamName, isNewClient }: {
+  askedAt: string;
+  seenAt: number;
+  kamName: string;
+  isNewClient: boolean;
+}) {
+  const mark = useRef<HTMLSpanElement>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 10000);
+    return () => window.clearInterval(id);
+  }, []);
+  const mins = minutesSince(askedAt);
+  const late = mins >= 2;
+  const isNew = seenAt > 0 && Date.now() - seenAt < 60000;
+  // Runs after every paint of this clock, including when the card re-renders
+  // and React resets the article class to "req-card".
+  useLayoutEffect(() => {
+    const article = mark.current?.closest('article');
+    if (!article) return;
+    article.classList.toggle('new', isNew);
+    article.classList.toggle('late', !isNew && late);
+  });
+  const label = mins < 1 ? 'ახლახან' : 'ელოდება ' + mins + ' წთ';
+  return (
+    <div className="row small" style={{ gap: '8px 14px' }}>
+      <span ref={mark} className={'pill ' + (late ? 'pill-alert' : 'pill-wait')}><IconClock />{label}</span>
+      <span style={{ color: 'var(--ink-2)' }}>{kamName}-ისგან</span>
+      {isNew && <span className="pill pill-gold">ახალი</span>}
+      {isNewClient && <span className="pill pill-dark">ახალი კლიენტი</span>}
+    </div>
+  );
+}
+
 /** Same pairs, buy and sell as the Rates board. Per 1 unit, including ruble. */
 function DeskMarketRates({ board }: { board: CurrentBoard }) {
   const { t } = useI18n();
@@ -417,7 +485,6 @@ export default function RateDesk() {
   const { t, lang } = useI18n();
   const { role, realRole } = useViewAs();
   const seeDay = role === 'treasury' || role === 'admin';
-  useTick(10000);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
   const [replies, setReplies] = useState<ClientReply[]>([]);
@@ -440,42 +507,79 @@ export default function RateDesk() {
   const [lossReasons, setLossReasons] = useState<LossReason[]>([]);
   const [dayNote, setDayNote] = useState('');
   const [loaded, setLoaded] = useState(false);
+  // Bumped by the slow desk reload so banks and earlier-deal marks refresh
+  // even when the waiting-list cards themselves did not change.
+  const [sidesTick, setSidesTick] = useState(0);
   const firstSeen = useRef<Map<number, number>>(new Map());
   const initial = useRef(true);
   // A slower refresh must not paint an older waiting list over a newer one.
   const queueGen = useRef(0);
+  const rawSigRef = useRef<string | null>(null);
+  const openSigRef = useRef<string | null>(null);
+  const queueAgain = useRef<'light' | 'full' | null>(null);
+  const queueFlight = useRef<Promise<void> | null>(null);
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const tRef = useRef(t);
+  tRef.current = t;
   // Latest digits in the rate box, updated as they are typed. Send uses this,
   // so a later click (such as 30 minutes) cannot put an older rate back.
   const draftRate = useRef<Record<number, string>>({});
 
-  const refreshQueue = useCallback(async () => {
-    const gen = ++queueGen.current;
-    try {
-      const q = await rpc<QueueRow[]>('treasury_queue');
-      if (gen !== queueGen.current) return;
-      const queueRows = q ?? [];
-      const closed = await closedIds(queueRows.map((r) => r.request_id));
-      if (gen !== queueGen.current) return;
-      const open = queueRows.filter((r) => !closed.has(r.request_id));
-      const now = Date.now();
-      for (const r of open) {
-        if (!firstSeen.current.has(r.request_id)) firstSeen.current.set(r.request_id, initial.current ? 0 : now);
+  const refreshQueue = useCallback((mode: 'light' | 'full' = 'light') => {
+    queueAgain.current = queueAgain.current === 'full' || mode === 'full' ? 'full' : 'light';
+    if (queueFlight.current) return queueFlight.current;
+    const run = async () => {
+      while (queueAgain.current) {
+        const next = queueAgain.current;
+        queueAgain.current = null;
+        const gen = ++queueGen.current;
+        try {
+          const q = await rpc<QueueRow[]>('treasury_queue');
+          if (gen !== queueGen.current) continue;
+          const queueRows = q ?? [];
+          const rawSig = queueSignature(queueRows);
+          // The 3-second check stops here when the cards would look the same.
+          // That skips setQueue, so the bank and outcomes effect does not run.
+          if (next === 'light' && rawSig === rawSigRef.current) continue;
+          const closed = await closedIds(queueRows.map((r) => r.request_id));
+          if (gen !== queueGen.current) continue;
+          const open = queueRows.filter((r) => !closed.has(r.request_id));
+          rawSigRef.current = rawSig;
+          const openSig = queueSignature(open);
+          if (openSig === openSigRef.current) {
+            initial.current = false;
+            continue;
+          }
+          const now = Date.now();
+          for (const r of open) {
+            if (!firstSeen.current.has(r.request_id)) firstSeen.current.set(r.request_id, initial.current ? 0 : now);
+          }
+          if (!initial.current && open.some((r) => firstSeen.current.get(r.request_id) === now)) {
+            const fresh = open.filter((r) => firstSeen.current.get(r.request_id) === now);
+            const say = tRef.current;
+            toastRef.current(fresh.length === 1
+              ? say('ახალი მოთხოვნა {name}-ისგან: {client}', 'New request from {name}: {client}', { name: fresh[0].kam_name, client: fresh[0].client_name ?? fresh[0].client_id })
+              : say('{n} ახალი მოთხოვნა', '{n} new requests', { n: fresh.length }));
+          }
+          initial.current = false;
+          openSigRef.current = openSig;
+          setQueue(open);
+        } catch (err) {
+          if (gen === queueGen.current) toastRef.current((err as Error).message, 'error');
+        }
       }
-      if (!initial.current && open.some((r) => firstSeen.current.get(r.request_id) === now)) {
-        const fresh = open.filter((r) => firstSeen.current.get(r.request_id) === now);
-        toast(fresh.length === 1
-          ? t('ახალი მოთხოვნა {name}-ისგან: {client}', 'New request from {name}: {client}', { name: fresh[0].kam_name, client: fresh[0].client_name ?? fresh[0].client_id })
-          : t('{n} ახალი მოთხოვნა', '{n} new requests', { n: fresh.length }));
-      }
-      initial.current = false;
-      setQueue(open);
-    } catch (err) {
-      if (gen === queueGen.current) toast((err as Error).message, 'error');
-    }
-  }, [toast, t]);
+    };
+    const flight = run().finally(() => {
+      queueFlight.current = null;
+      if (queueAgain.current) void refreshQueue(queueAgain.current);
+    });
+    queueFlight.current = flight;
+    return flight;
+  }, []);
 
   const load = useCallback(async () => {
-    void refreshQueue();
+    void refreshQueue('full');
     let quotedTodayIds: number[] = [];
     try {
       const quoted = await rpc<QuoteToday[]>('treasury_quotes_today');
@@ -484,7 +588,8 @@ export default function RateDesk() {
       const closed = await closedIds(quoteRows.map((r) => r.request_id));
       const openQuotes = quoteRows.filter((r) => !closed.has(r.request_id));
       const quotePeople = await loadRatePeople(openQuotes.map((r) => r.request_id));
-      setQuotes(openQuotes.map((r) => ({ ...r, ...ratePeopleFor(quotePeople, r.request_id) })));
+      const nextQuotes = openQuotes.map((r) => ({ ...r, ...ratePeopleFor(quotePeople, r.request_id) }));
+      setQuotes((prev) => replaceIfChanged(prev, nextQuotes));
     } catch (err) {
       toast((err as Error).message, 'error');
     }
@@ -529,8 +634,10 @@ export default function RateDesk() {
       const people = await loadRatePeople(ids);
       const stamp = (row: ClientReply): ClientReply => ({ ...row, ...ratePeopleFor(people, row.request_id) });
       const stillHere = (row: ClientReply) => !closed.has(row.request_id) && row.client_reply !== 'declined';
-      setReplies(list.filter(stillHere).map(stamp));
-      setExtraAgreed(extras.filter((row) => !closed.has(row.request_id)).map(stamp));
+      const nextReplies = list.filter(stillHere).map(stamp);
+      const nextExtra = extras.filter((row) => !closed.has(row.request_id)).map(stamp);
+      setReplies((prev) => replaceIfChanged(prev, nextReplies));
+      setExtraAgreed((prev) => replaceIfChanged(prev, nextExtra));
     } catch {
       setReplies([]);
       setExtraAgreed([]);
@@ -544,17 +651,22 @@ export default function RateDesk() {
         // even after it leaves the waiting queue and stays on the KAM card.
         const raw = await loadDeskDay(todayTbilisi(), quotedTodayIds);
         const reasonRes = await supabase.from('loss_reasons').select('code, label_en, label_ka, sort_order, active').eq('active', true).order('sort_order');
-        if (!reasonRes.error && reasonRes.data) setLossReasons(reasonRes.data as LossReason[]);
-        setDayRows(applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id))));
+        if (!reasonRes.error && reasonRes.data) {
+          const nextReasons = reasonRes.data as LossReason[];
+          setLossReasons((prev) => replaceIfChanged(prev, nextReasons));
+        }
+        const nextDay = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
+        setDayRows((prev) => replaceIfChanged(prev, nextDay));
         setDayNote('');
       } catch {
         setDayRows([]);
         setDayNote(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
       }
     } else {
-      setDayRows([]);
+      setDayRows((prev) => (prev.length === 0 ? prev : []));
       setDayNote('');
     }
+    setSidesTick((n) => n + 1);
     setLoaded(true);
   }, [toast, t, seeDay, refreshQueue]);
 
@@ -580,11 +692,13 @@ export default function RateDesk() {
       window.clearInterval(timer);
     };
   }, []);
-  useLive(['requests'], load, 15000);
-  // The waiting list is the handoff. Check it on its own every few seconds.
-  // The rest of the desk (quoted rates, replies, today) stays on the slower reload.
+  // Quotes, replies, and today. Realtime bursts collapse inside useLive.
+  // The 3-second waiting-list check does not call this.
+  useLive(['requests'], () => { void load(); }, 15000);
+  // The waiting list is the handoff. treasury_queue only, every 3 seconds.
+  // Unchanged cards do not set state and do not read banks or outcomes.
   useEffect(() => {
-    const timer = window.setInterval(() => { void refreshQueue(); }, 3000);
+    const timer = window.setInterval(() => { void refreshQueue('light'); }, 3000);
     return () => window.clearInterval(timer);
   }, [refreshQueue]);
 
@@ -594,7 +708,11 @@ export default function RateDesk() {
       ...replies.map((r) => r.request_id),
       ...extraAgreed.map((r) => r.request_id),
     ]));
-    if (!ids.length) { setBanks({}); setHidePast({}); return; }
+    if (!ids.length) {
+      setBanks((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      setHidePast((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
+    }
     let live = true;
     (async () => {
       const withSet = await supabase.from('requests').select('id, bank, banks').in('id', ids);
@@ -608,7 +726,7 @@ export default function RateDesk() {
         const picked = fromSet.length ? fromSet : bankList(row.bank);
         if (picked.length) next[row.id] = picked;
       }
-      setBanks(next);
+      setBanks((prev) => replaceIfChanged(prev, next));
     })();
     (async () => {
       const full = await supabase.from('request_outcomes')
@@ -635,10 +753,10 @@ export default function RateDesk() {
       }[]) {
         if (hideEarlierDeals(row)) next[row.id] = true;
       }
-      setHidePast(next);
+      setHidePast((prev) => replaceIfChanged(prev, next));
     })();
     return () => { live = false; };
-  }, [queue, replies, extraAgreed]);
+  }, [queue, replies, extraAgreed, sidesTick]);
 
   const blankCard = (valid: number): CardState => ({ rate: '', valid, declining: false, confirmFar: false, tried: false });
   const card = (id: number): CardState => cards[id] ?? blankCard(defaultValid);
@@ -801,9 +919,6 @@ export default function RateDesk() {
             <div className="stack-sm">
               {queue.map((r) => {
                 const c = card(r.request_id);
-                const late = minutesSince(r.asked_at) >= 2;
-                const seenAt = firstSeen.current.get(r.request_id) ?? 0;
-                const isNew = seenAt > 0 && Date.now() - seenAt < 60000;
                 const rateNum = Number(c.rate);
                 const rateOk = c.rate.trim() !== '' && rateNum > 0;
                 const dev = rateOk && r.standard_rate ? Math.abs(rateNum - r.standard_rate) / r.standard_rate * 100 : 0;
@@ -814,14 +929,14 @@ export default function RateDesk() {
                   r.last_rate != null && { label: 'ბოლო ამ კლიენტზე', value: r.last_rate },
                 ].filter(Boolean) as { label: string; value: number }[];
                 return (
-                  <article key={r.request_id} className={'req-card' + (isNew ? ' new' : late ? ' late' : '')}>
+                  <article key={r.request_id} className="req-card">
                     <div className="row-between" style={{ gap: 12, marginBottom: 10 }}>
-                      <div className="row small" style={{ gap: '8px 14px' }}>
-                        <span className={'pill ' + (late ? 'pill-alert' : 'pill-wait')}><IconClock />{minutesSince(r.asked_at) < 1 ? 'ახლახან' : 'ელოდება ' + minutesSince(r.asked_at) + ' წთ'}</span>
-                        <span style={{ color: 'var(--ink-2)' }}>{r.kam_name}-ისგან</span>
-                        {isNew && <span className="pill pill-gold">ახალი</span>}
-                        {r.is_new_client && <span className="pill pill-dark">ახალი კლიენტი</span>}
-                      </div>
+                      <WaitingSince
+                        askedAt={r.asked_at}
+                        seenAt={firstSeen.current.get(r.request_id) ?? 0}
+                        kamName={r.kam_name}
+                        isNewClient={r.is_new_client}
+                      />
                       {adminDelete(r.request_id)}
                     </div>
                     <div className="row-between">

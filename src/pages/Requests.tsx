@@ -144,7 +144,10 @@ export default function Requests() {
       .eq('kam_id', profile!.id)
       .or(`request_date.eq.${today},quote_status.eq.asking`)
       .order('asked_at', { ascending: false });
-    if (!error) setRows(await withPeople((data ?? []) as RequestRow[]));
+    if (!error) {
+      const next = await withPeople((data ?? []) as RequestRow[]);
+      setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    }
     setLoaded(true);
   }, [profile, today, isKam]);
 
@@ -171,7 +174,7 @@ export default function Requests() {
     else {
       const written = await withPeople((data ?? []) as RequestRow[]);
       if (ticket !== histReq.current) return;
-      setHistory(written);
+      setHistory((prev) => (JSON.stringify(prev) === JSON.stringify(written) ? prev : written));
       setHistCount(count ?? 0);
       setHistError('');
     }
@@ -189,18 +192,20 @@ export default function Requests() {
       .limit(40);
     if (error) setApprovedError(t('სია ჯერ არ იტვირთება.', 'This list is not loading yet.'));
     else {
-      setApprovedRows(await withPeople((data ?? []) as RequestRow[]));
+      const next = await withPeople((data ?? []) as RequestRow[]);
+      setApprovedRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       setApprovedError('');
     }
     setApprovedLoaded(true);
   }, [seeAll, t]);
 
-  useEffect(() => {
-    load();
-    loadHistory();
-    loadApproved();
-  }, [load, loadHistory, loadApproved]);
-  useLive(['requests'], () => { load(); loadHistory(); loadApproved(); }, 20000);
+  useEffect(() => { void load(); }, [load]);
+  // History stays off Realtime and off the short poll. It loads when this
+  // page opens, when month / KAM / page size change, and from refresh().
+  useEffect(() => { void loadHistory(); }, [loadHistory]);
+  useEffect(() => { void loadApproved(); }, [loadApproved]);
+  useLive(['requests'], () => { void load(); }, 10000, { realtime: isKam });
+  useLive(['requests'], () => { void loadApproved(); }, 60000, { realtime: false });
 
   useEffect(() => {
     if (!seeAll) return;

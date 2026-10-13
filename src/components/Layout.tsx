@@ -62,7 +62,9 @@ export default function Layout({ children }: { children: ReactNode }) {
   }, [items, profile]);
 
   useEffect(() => { loadCounts(); }, [loadCounts]);
-  useLive(['requests'], loadCounts, 60000);
+  // Badge counts stay on a slow poll. They do not run on every requests change.
+  // The waiting list itself stays on the rate desk's own 3-second check.
+  useLive(['requests'], loadCounts, 60000, { realtime: false });
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
