@@ -110,7 +110,8 @@ export default function LostRequests() {
             <div className="row-between" style={{ gap: 12 }}>
               <div>
                 <div className="name">{r.client_name ?? r.client_id}</div>
-                <div className="tiny muted">{fmtDay(r.request_date)} · ID {r.client_id}{r.kam_name ? ' · ' + r.kam_name : ''}</div>
+                <div className="tiny muted">{fmtDay(r.request_date)} · ID {r.client_id}</div>
+                {r.kam_name?.trim() && <div className="small">{t('KAM', 'KAM')}: {r.kam_name.trim()}</div>}
                 <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                 <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />

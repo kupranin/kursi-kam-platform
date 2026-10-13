@@ -84,6 +84,33 @@ function asPending(row: ActiveSource, today: string): RequestRow | null {
   return { ...decorated, outcome: 'waiting', loss_open: true };
 }
 
+async function attachKamNames(rows: ActiveSource[]): Promise<ActiveSource[]> {
+  const ids = rows.map((row) => row.id);
+  const kamIds = [...new Set(rows.map((row) => row.kam_id).filter((id): id is string => !!id))];
+  const byRequest = new Map<number, string>();
+  const byKam = new Map<string, string>();
+  const [deals, profiles] = await Promise.all([
+    ids.length
+      ? supabase.from('analyst_deals').select('id, kam_name').in('id', ids)
+      : Promise.resolve({ data: [] as { id: number; kam_name: string | null }[] }),
+    kamIds.length
+      ? supabase.from('profiles').select('id, full_name').in('id', kamIds)
+      : Promise.resolve({ data: [] as { id: string; full_name: string | null }[] }),
+  ]);
+  for (const row of deals.data ?? []) {
+    const name = (row.kam_name as string | null)?.trim();
+    if (name) byRequest.set(row.id as number, name);
+  }
+  for (const row of profiles.data ?? []) {
+    const name = (row.full_name as string | null)?.trim();
+    if (name) byKam.set(row.id as string, name);
+  }
+  return rows.map((row) => ({
+    ...row,
+    kam_name: byRequest.get(row.id) ?? (row.kam_id ? byKam.get(row.kam_id) : null) ?? row.kam_name ?? null,
+  }));
+}
+
 async function attachClientNames(rows: ActiveSource[]): Promise<ActiveSource[]> {
   const ids = [...new Set(rows.map((row) => row.client_id).filter(Boolean))];
   if (!ids.length) return rows;
@@ -111,7 +138,7 @@ export async function loadPendingLossPage(shown: number): Promise<{ rows: Reques
     .range(0, 1999);
   if (result.error) return { error: true };
 
-  const source = await attachClientNames((result.data ?? []) as ActiveSource[]);
+  const source = await attachKamNames(await attachClientNames((result.data ?? []) as ActiveSource[]));
   const waiting = source
     .map((row) => asPending(row, today))
     .filter((row): row is RequestRow => row != null);
