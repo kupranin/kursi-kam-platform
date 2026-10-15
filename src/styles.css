@@ -531,7 +531,7 @@ html.kb-open .page { padding-bottom: calc(var(--keyboard-inset, 0px) + env(safe-
 .m-card-hit { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; color: inherit; }
 .m-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; width: 100%; }
 .m-card .pill { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
-.m-card-client { font-weight: 600; font-size: 17px; min-width: 0; }
+.m-card-client { font-weight: 600; font-size: 17px; min-width: 0; overflow-wrap: anywhere; }
 .m-card-pair { font-weight: 600; letter-spacing: 0.02em; }
 .m-card-amount { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .m-card-dir, .m-card-rate { color: var(--ink-2); font-size: 14px; }
@@ -659,3 +659,49 @@ html.is-phone .m-detail select {
   scroll-margin-top: 12px;
   scroll-margin-bottom: calc(var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px) + 24px);
 }
+.m-card-dir, .m-card-rate, .m-card-pair { overflow-wrap: anywhere; min-width: 0; }
+.m-facts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.m-fact { display: flex; flex-direction: column; gap: 2px; margin: 0; min-width: 0; }
+.m-fact-label { font-size: 13px; color: var(--muted); }
+.m-fact-value { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.m-refs { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.m-refs .ref-chip { min-height: 44px; max-width: 100%; }
+.m-rate-input { font-size: 32px; font-weight: 600; min-height: 64px; font-variant-numeric: tabular-nums; }
+.m-loss-n { font-size: 32px; font-weight: 600; line-height: 1.1; color: var(--aubergine); font-variant-numeric: tabular-nums; }
+html.is-phone .m-focal h2,
+html.is-phone .m-focal .m-rate,
+html.is-phone .note-box { overflow-wrap: anywhere; max-width: 100%; }
+html.is-phone:has(.m-treasury),
+html.is-phone:has(.m-treasury) body { overflow: hidden; height: 100%; }
+html.is-phone:has(.m-treasury) .topbar {
+  position: fixed;
+  top: var(--vv-offset, 0px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+}
+html.is-phone .page:has(.m-treasury) {
+  position: fixed;
+  top: calc(var(--header-h, 56px) + var(--vv-offset, 0px));
+  left: 0;
+  right: 0;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  height: calc(var(--app-h, 100dvh) - var(--header-h, 56px) - var(--tabbar-h, 0px));
+  max-height: calc(var(--app-h, 100dvh) - var(--header-h, 56px) - var(--tabbar-h, 0px));
+  padding: 12px 12px 0;
+  gap: 0;
+  overflow: hidden;
+}
+.m-treasury {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 12px;
+}
+.m-home .m-card-action, .m-home .m-more-row { text-align: center; justify-content: center; }
+html.is-phone .chips { max-width: 100%; }
+html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; }

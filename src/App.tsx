@@ -16,7 +16,7 @@ import Security from './pages/Security';
 import PhoneMore from './components/mobile/PhoneMore';
 import RequestsSwitch from './pages/RequestsSwitch';
 import FollowUps from './pages/FollowUps';
-import RateDesk from './pages/RateDesk';
+import RateDeskSwitch from './pages/RateDeskSwitch';
 import QuoteProgress from './pages/QuoteProgress';
 import LostRequests from './pages/LostRequests';
 import DeskHistory from './pages/DeskHistory';
@@ -70,7 +70,7 @@ export default function App() {
         {can('/requests') ? <Route key="/requests" path="/requests/*" element={<PhoneGate path="/requests"><RequestsSwitch /></PhoneGate>} /> : null}
         {screen('/more', <PhoneMore />)}
         {screen('/follow-ups', <FollowUps />)}
-        {screen('/rate-desk', <RateDesk />)}
+        {can('/rate-desk') ? <Route key="/rate-desk" path="/rate-desk/*" element={<PhoneGate path="/rate-desk"><RateDeskSwitch /></PhoneGate>} /> : null}
         {screen('/quoted-progress', <QuoteProgress />)}
         {screen('/lost-requests', <LostRequests />)}
         {screen('/desk-history', <DeskHistory />)}

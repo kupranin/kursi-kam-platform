@@ -10,7 +10,7 @@ export const HOME: Record<Role, string> = {
 
 export const PAGES: Record<Role, string[]> = {
   kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat', '/more'],
-  treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat'],
+  treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat', '/more'],
   admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
   manager: ['/team', '/requests', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
   analyst: ['/analysis', '/analytics', '/rates'],
@@ -92,11 +92,9 @@ export const PHONE_NAV: Record<Role, PhoneTab[]> = {
     { to: '/more', ka: 'სხვა', en: 'More', icon: 'more' },
   ],
   treasury: [
-    { to: '/rate-desk', ka: 'მაგიდა', en: 'Desk', badge: 'queue' },
-    { to: '/lost-requests', ka: 'დაკარგული', en: 'Lost', badge: 'losses' },
-    { to: '/rates', ka: 'კურსები', en: 'Rates' },
-    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
-    { to: '/quoted-progress', ka: 'მიმდინარეობა', en: 'Progress' },
+    { to: '/rate-desk', ka: 'მაგიდა', en: 'Desk', badge: 'queue', icon: 'home' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat', icon: 'chat' },
+    { to: '/more', ka: 'სხვა', en: 'More', icon: 'more' },
   ],
   admin: [
     { to: '/rate-desk', ka: 'მაგიდა', en: 'Desk', badge: 'queue' },
@@ -129,8 +127,12 @@ export function phoneHome(role: Role): string | null {
 /** Pages a KAM opens from More. Not primary tabs, and not a change to desktop nav. */
 const KAM_MORE_PAGES = new Set(['/rates', '/clients', '/follow-ups']);
 
+/** Treasury pages that stay under More. Desktop nav is unchanged. */
+const TREASURY_MORE_PAGES = new Set(['/lost-requests', '/rates', '/quoted-progress', '/desk-history', '/log']);
+
 export function isPhonePage(role: Role, path: string): boolean {
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   if (PHONE_NAV[role].some((item) => normalized === item.to || normalized.startsWith(item.to + '/'))) return true;
-  return role === 'kam' && KAM_MORE_PAGES.has(normalized);
+  if (role === 'kam' && KAM_MORE_PAGES.has(normalized)) return true;
+  return role === 'treasury' && TREASURY_MORE_PAGES.has(normalized);
 }

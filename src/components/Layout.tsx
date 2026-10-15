@@ -251,12 +251,24 @@ export default function Layout({ children }: { children: ReactNode }) {
 function tabSelected(to: string, path: string): boolean {
   if (to === '/requests/new') return path === '/requests/new';
   if (to === '/requests') return path === '/requests' || path === '/requests/history' || /^\/requests\/\d+$/.test(path);
-  if (to === '/more') return path === '/more' || path === '/rates' || path === '/clients' || path === '/follow-ups';
+  if (to === '/rate-desk') return path === '/rate-desk' || path.startsWith('/rate-desk/');
+  if (to === '/more') {
+    return path === '/more'
+      || path === '/rates'
+      || path === '/clients'
+      || path === '/follow-ups'
+      || path === '/lost-requests'
+      || path === '/quoted-progress'
+      || path === '/desk-history'
+      || path === '/log'
+      || path === '/security';
+  }
   return path === to;
 }
 
 function phoneScreenTitle(path: string, role: string, t: (ka: string, en: string) => string): string {
   if (path === '/security') return t('პაროლი და შესვლა', 'Password and sign-in');
+  if (path.startsWith('/rate-desk/')) return t('მაგიდა', 'Desk');
   if (role === 'kam') {
     if (path === '/requests/new') return t('ახალი მოთხოვნა', 'New request');
     if (path === '/requests/history') return t('წინა მოთხოვნები', 'Earlier requests');
