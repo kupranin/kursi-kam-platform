@@ -56,6 +56,8 @@ export interface RequestRow {
   /** Set when a KAM or an admin said the payment went through, with no bank row. */
   payment_confirmed_at?: string | null;
   payment_confirmed_by?: string | null;
+  /** Set when a KAM or an admin marked the request lost. */
+  marked_lost_at?: string | null;
   /** App loss that treasury has not approved yet. The loss is not final. */
   loss_open?: boolean | null;
 }

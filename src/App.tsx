@@ -13,7 +13,8 @@ import Login from './pages/Login';
 import SetPassword from './pages/SetPassword';
 import SecondFactor from './pages/SecondFactor';
 import Security from './pages/Security';
-import Requests from './pages/Requests';
+import PhoneMore from './components/mobile/PhoneMore';
+import RequestsSwitch from './pages/RequestsSwitch';
 import FollowUps from './pages/FollowUps';
 import RateDesk from './pages/RateDesk';
 import QuoteProgress from './pages/QuoteProgress';
@@ -66,7 +67,8 @@ export default function App() {
     <Layout>
       <Routes>
         <Route path="/" element={home ? <Navigate to={home} replace /> : <DesktopOnly />} />
-        {screen('/requests', <Requests />)}
+        {can('/requests') ? <Route key="/requests" path="/requests/*" element={<PhoneGate path="/requests"><RequestsSwitch /></PhoneGate>} /> : null}
+        {screen('/more', <PhoneMore />)}
         {screen('/follow-ups', <FollowUps />)}
         {screen('/rate-desk', <RateDesk />)}
         {screen('/quoted-progress', <QuoteProgress />)}

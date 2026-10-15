@@ -9,7 +9,7 @@ export const HOME: Record<Role, string> = {
 };
 
 export const PAGES: Record<Role, string[]> = {
-  kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat'],
+  kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat', '/more'],
   treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat'],
   admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
   manager: ['/team', '/requests', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
@@ -72,14 +72,24 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
   ],
 };
 
+export type PhoneBadge = 'followups' | 'queue' | 'losses' | 'chat' | 'action';
+export type PhoneIcon = 'home' | 'plus' | 'chat' | 'rates' | 'more';
+
+export interface PhoneTab {
+  to: string;
+  ka: string;
+  en: string;
+  badge?: PhoneBadge;
+  icon?: PhoneIcon;
+}
+
 /** Phone tabs. Analyst has none: analysis stays on a computer, and rates stay on the desktop site. */
-export const PHONE_NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' | 'chat' }[]> = {
+export const PHONE_NAV: Record<Role, PhoneTab[]> = {
   kam: [
-    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
-    { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups', badge: 'followups' },
-    { to: '/rates', ka: 'კურსები', en: 'Rates' },
-    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
-    { to: '/clients', ka: 'კლიენტები', en: 'Clients' },
+    { to: '/requests', ka: 'საქმე', en: 'Home', badge: 'action', icon: 'home' },
+    { to: '/requests/new', ka: 'ახალი', en: 'New', icon: 'plus' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat', icon: 'chat' },
+    { to: '/more', ka: 'სხვა', en: 'More', icon: 'more' },
   ],
   treasury: [
     { to: '/rate-desk', ka: 'მაგიდა', en: 'Desk', badge: 'queue' },
@@ -116,6 +126,11 @@ export function phoneHome(role: Role): string | null {
   return PHONE_HOME[role];
 }
 
+/** Pages a KAM opens from More. Not primary tabs, and not a change to desktop nav. */
+const KAM_MORE_PAGES = new Set(['/rates', '/clients', '/follow-ups']);
+
 export function isPhonePage(role: Role, path: string): boolean {
-  return PHONE_NAV[role].some((item) => item.to === path);
+  const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+  if (PHONE_NAV[role].some((item) => normalized === item.to || normalized.startsWith(item.to + '/'))) return true;
+  return role === 'kam' && KAM_MORE_PAGES.has(normalized);
 }

@@ -21,6 +21,7 @@ import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
 import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/RequestOutcomeButtons';
+import CorrectStatusButton from '../components/CorrectStatusButton';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
@@ -711,6 +712,7 @@ export default function Requests() {
                 )}
                 {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
                 <RequestOutcomeButtons row={r} onDone={refresh} />
+                <CorrectStatusButton row={r} onDone={refresh} />
                 {own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
                 {own && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
@@ -762,6 +764,7 @@ export default function Requests() {
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
             {canChange(r) && (
               <div className="actions">
+                <CorrectStatusButton row={r} onDone={refresh} />
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
                 {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
@@ -805,6 +808,7 @@ export default function Requests() {
             {canChange(r) && (
               <div className="actions">
                 <RequestOutcomeButtons row={r} onDone={refresh} />
+                <CorrectStatusButton row={r} onDone={refresh} />
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
                 {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
@@ -894,6 +898,7 @@ export default function Requests() {
               {(canChange(r) || (canMarkRequestOutcome(realRole, profile?.id, r.kam_id) && isOpenRequest(r))) && (
                 <div className="actions">
                   <RequestOutcomeButtons row={r} onDone={refresh} />
+                  <CorrectStatusButton row={r} onDone={refresh} />
                   {canChange(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
                   {canChange(r) && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
                 </div>

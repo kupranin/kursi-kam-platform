@@ -53,6 +53,11 @@ export default function NotificationBell() {
   }, [me, role]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const openBell = () => setOpen(true);
+    window.addEventListener('kursi-open-bell', openBell);
+    return () => window.removeEventListener('kursi-open-bell', openBell);
+  }, []);
   useLive(['user_notifications'], load, 30000);
 
   useEffect(() => {
