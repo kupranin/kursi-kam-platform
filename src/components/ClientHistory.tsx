@@ -36,8 +36,8 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 function fmtDelta(given: number, standard: number): string {
-  const text = (given - standard).toFixed(4);
-  if (text === '0.0000' || text === '-0.0000') return '0.0000';
+  const text = (given - standard).toFixed(5);
+  if (text === '0.00000' || text === '-0.00000') return '0.00000';
   if (text.startsWith('-')) return '−' + text.slice(1);
   return '+' + text;
 }

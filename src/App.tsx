@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { useI18n } from './lib/i18n';
-import { HOME, PAGES } from './lib/nav';
+import { HOME, PAGES, phoneHome } from './lib/nav';
+import { usePhone } from './lib/usePhone';
 import { arrivedFrom, isConfigured } from './lib/supabase';
 import { useViewAs } from './lib/viewAs';
+import DesktopOnly, { PhoneGate } from './components/DesktopOnly';
 import Layout from './components/Layout';
 import LangSwitch from './components/LangSwitch';
 import Login from './pages/Login';
@@ -32,6 +34,7 @@ export default function App() {
   const { role } = useViewAs();
   const { t } = useI18n();
   const location = useLocation();
+  const phone = usePhone();
 
   if (!isConfigured) return <SetupNeeded />;
   if (location.pathname === '/set-password' || recovering || arrivedFrom === 'invite' || arrivedFrom === 'recovery') return <SetPassword />;
@@ -54,28 +57,32 @@ export default function App() {
 
   const allowed = PAGES[role];
   const can = (path: string) => allowed.includes(path);
+  const screen = (path: string, element: ReactNode) => can(path)
+    ? <Route key={path} path={path} element={<PhoneGate path={path}>{element}</PhoneGate>} />
+    : null;
+  const home = phone ? phoneHome(role) : HOME[role];
 
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Navigate to={HOME[role]} replace />} />
-        {can('/requests') && <Route path="/requests" element={<Requests />} />}
-        {can('/follow-ups') && <Route path="/follow-ups" element={<FollowUps />} />}
-        {can('/rate-desk') && <Route path="/rate-desk" element={<RateDesk />} />}
-        {can('/quoted-progress') && <Route path="/quoted-progress" element={<QuoteProgress />} />}
-        {can('/lost-requests') && <Route path="/lost-requests" element={<LostRequests />} />}
-        {can('/desk-history') && <Route path="/desk-history" element={<DeskHistory />} />}
-        {can('/team') && <Route path="/team" element={<Team />} />}
-        {can('/clients') && <Route path="/clients" element={<Clients />} />}
-        {can('/analytics') && <Route path="/analytics" element={<Analytics />} />}
-        {can('/analysis') && <Route path="/analysis" element={<Analyst />} />}
-        {can('/kpis') && <Route path="/kpis" element={<Kpis />} />}
-        {can('/rates') && <Route path="/rates" element={<MarketRates />} />}
-        {can('/log') && <Route path="/log" element={<RequestLog />} />}
-        {can('/chat') && <Route path="/chat" element={<Chat />} />}
-        {can('/admin') && <Route path="/admin" element={<Admin />} />}
+        <Route path="/" element={home ? <Navigate to={home} replace /> : <DesktopOnly />} />
+        {screen('/requests', <Requests />)}
+        {screen('/follow-ups', <FollowUps />)}
+        {screen('/rate-desk', <RateDesk />)}
+        {screen('/quoted-progress', <QuoteProgress />)}
+        {screen('/lost-requests', <LostRequests />)}
+        {screen('/desk-history', <DeskHistory />)}
+        {screen('/team', <Team />)}
+        {screen('/clients', <Clients />)}
+        {screen('/analytics', <Analytics />)}
+        {screen('/analysis', <Analyst />)}
+        {screen('/kpis', <Kpis />)}
+        {screen('/rates', <MarketRates />)}
+        {screen('/log', <RequestLog />)}
+        {screen('/chat', <Chat />)}
+        {screen('/admin', <Admin />)}
         <Route path="/security" element={<Security />} />
-        <Route path="*" element={<Navigate to={HOME[role]} replace />} />
+        <Route path="*" element={home ? <Navigate to={home} replace /> : <DesktopOnly />} />
       </Routes>
     </Layout>
   );

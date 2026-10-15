@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
-import { NAV } from '../lib/nav';
+import { NAV, PHONE_NAV } from '../lib/nav';
+import { usePhone } from '../lib/usePhone';
 import { countPendingLosses } from '../lib/pendingLoss';
 import {
   loadChatNames,
@@ -17,6 +18,7 @@ import { fmtDateTime, todayTbilisi } from '../lib/format';
 import { useToast } from '../lib/toast';
 import { useLive } from '../lib/useLive';
 import { useViewAs } from '../lib/viewAs';
+import { ensurePushWorker, listenForPushOpen, syncPushLang } from '../lib/push';
 import LangSwitch from './LangSwitch';
 import NotificationBell from './NotificationBell';
 import ViewSwitch from './ViewSwitch';
@@ -24,7 +26,7 @@ import ViewSwitch from './ViewSwitch';
 export default function Layout({ children }: { children: ReactNode }) {
   const { profile, signOut } = useAuth();
   const { role, realRole } = useViewAs();
-  const { t, roleName } = useI18n();
+  const { t, lang, roleName } = useI18n();
   const toast = useToast();
   const [fresh, setFresh] = useState<string | null>(null);
   const [counts, setCounts] = useState<{ followups: number; queue: number; losses: number; chat: number }>({ followups: 0, queue: 0, losses: 0, chat: 0 });
@@ -33,7 +35,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const chatNames = useRef<Map<string, string>>(new Map());
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const items = NAV[role];
+  const phone = usePhone();
+  const items = phone ? PHONE_NAV[role] : NAV[role];
 
   const loadCounts = useCallback(async () => {
     try {
@@ -104,6 +107,11 @@ export default function Layout({ children }: { children: ReactNode }) {
     }
   }, [items, profile, t, toast]);
 
+  useEffect(() => {
+    void ensurePushWorker();
+    return listenForPushOpen();
+  }, []);
+  useEffect(() => { void syncPushLang(lang); }, [lang]);
   useEffect(() => { loadCounts(); }, [loadCounts]);
   useEffect(() => { loadChat(); }, [loadChat]);
   useEffect(() => onChatRead(() => { void loadChat(); }), [loadChat]);
@@ -133,18 +141,20 @@ export default function Layout({ children }: { children: ReactNode }) {
             {role !== 'admin' && realRole === 'admin' && <span className="role-tag">{roleName(role)}</span>}
             {role === 'treasury' && realRole === 'treasury' && <span className="role-tag">{t('ხაზინა', 'Treasury')}</span>}
           </Link>
-          <nav className="nav" aria-label={t('მთავარი', 'Main')}>
-            {items.map((i) => (
-              <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? 'active' : '')}>
-                {t(i.ka, i.en)}
-                {i.badge && counts[i.badge] > 0 && <span className="badge">{counts[i.badge]}</span>}
-              </NavLink>
-            ))}
-          </nav>
+          {!phone && (
+            <nav className="nav" aria-label={t('მთავარი', 'Main')}>
+              {items.map((i) => (
+                <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+                  {t(i.ka, i.en)}
+                  {i.badge && counts[i.badge] > 0 && <span className="badge">{counts[i.badge]}</span>}
+                </NavLink>
+              ))}
+            </nav>
+          )}
           <div className="topbar-right">
-            <ViewSwitch />
+            {!phone && <ViewSwitch />}
             <LangSwitch />
-            <span className="freshness">{fresh ? t('ტრანზაქციები განახლდა {when}', 'Transactions updated {when}', { when: fmtDateTime(fresh) }) : t('ტრანზაქციები ჯერ არ არის სინქრონიზებული', 'Transactions are not synced yet')}</span>
+            {!phone && <span className="freshness">{fresh ? t('ტრანზაქციები განახლდა {when}', 'Transactions updated {when}', { when: fmtDateTime(fresh) }) : t('ტრანზაქციები ჯერ არ არის სინქრონიზებული', 'Transactions are not synced yet')}</span>}
             <NotificationBell />
             <div className="user-menu" ref={menuRef}>
               <button type="button" className="avatar" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t('შესული ხართ: {name}', 'Signed in as {name}', { name: profile!.full_name })} onClick={() => setMenuOpen((o) => !o)}>
@@ -165,6 +175,16 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="page">{children}</main>
+      {phone && items.length > 0 && (
+        <nav className="tabbar" aria-label={t('მთავარი', 'Main')}>
+          {items.map((i) => (
+            <NavLink key={i.to} to={i.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+              <span className="tabbar-label">{t(i.ka, i.en)}</span>
+              {i.badge && counts[i.badge] > 0 && <span className="badge">{counts[i.badge]}</span>}
+            </NavLink>
+          ))}
+        </nav>
+      )}
     </>
   );
 }

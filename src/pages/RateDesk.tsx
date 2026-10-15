@@ -8,6 +8,7 @@ import { isMissingRead } from '../lib/missingRead';
 import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
 import { useI18n } from '../lib/i18n';
+import { usePhone } from '../lib/usePhone';
 import { useViewAs } from '../lib/viewAs';
 import { dealLeftOpen, hideEarlierDeals, isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { bankList, type LossReason, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
@@ -494,6 +495,7 @@ export default function RateDesk() {
   const toast = useToast();
   const { t, lang } = useI18n();
   const { role, realRole } = useViewAs();
+  const phone = usePhone();
   const seeDay = role === 'treasury' || role === 'admin';
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [quotes, setQuotes] = useState<QuoteToday[]>([]);
@@ -694,12 +696,18 @@ export default function RateDesk() {
 
   useEffect(() => {
     load();
-    rpc<ReferenceRate[]>('treasury_rates').then(setRates).catch(() => setRates([]));
     supabase.from('rules').select('default_quote_minutes').single().then(({ data }) => {
       if (data?.default_quote_minutes) setDefaultValid(data.default_quote_minutes);
     });
   }, [load]);
   useEffect(() => {
+    if (phone) return;
+    let live = true;
+    rpc<ReferenceRate[]>('treasury_rates').then((rows) => { if (live) setRates(rows); }).catch(() => { if (live) setRates([]); });
+    return () => { live = false; };
+  }, [phone]);
+  useEffect(() => {
+    if (phone) return;
     let live = true;
     const run = () => {
       loadMarketRateData()
@@ -713,7 +721,7 @@ export default function RateDesk() {
       live = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [phone]);
   // Quotes, replies, and today. Realtime bursts collapse inside useLive.
   // The 3-second waiting-list check does not call this.
   useLive(['requests'], () => { void load(); }, 15000);
@@ -1267,7 +1275,7 @@ export default function RateDesk() {
           </section>
         </div>
 
-        <div className="col-side">
+        {!phone && <div className="col-side">
           <section className="card flush" aria-labelledby="rates-title">
             <div className="card-head" style={{ display: 'block' }}>
               <h2 id="rates-title">კურსები ახლა</h2>
@@ -1351,7 +1359,7 @@ export default function RateDesk() {
             })}
             <p className="tiny muted" style={{ marginTop: 12 }}>ლიმიტები: დღის ბოლოს თითო ვალუტაზე USD 1 მლნ, დღის განმავლობაში USD 1.5 მლნ. მიმდინარე პოზიცია აქ გამოჩნდება, როცა ძირითადი სისტემა გამოგზავნის.</p>
           </section>
-        </div>
+        </div>}
       </div>
     </>
   );

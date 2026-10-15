@@ -13,7 +13,7 @@ export const PAGES: Record<Role, string[]> = {
   treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat'],
   admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
   manager: ['/team', '/requests', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
-  analyst: ['/analysis', '/analytics'],
+  analyst: ['/analysis', '/analytics', '/rates'],
 };
 
 export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' | 'chat' }[]> = {
@@ -68,5 +68,54 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
   analyst: [
     { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },
     { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
   ],
 };
+
+/** Phone tabs. Analyst has none: analysis stays on a computer, and rates stay on the desktop site. */
+export const PHONE_NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' | 'chat' }[]> = {
+  kam: [
+    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/follow-ups', ka: 'დაბრუნება', en: 'Follow-ups', badge: 'followups' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
+    { to: '/clients', ka: 'კლიენტები', en: 'Clients' },
+  ],
+  treasury: [
+    { to: '/rate-desk', ka: 'მაგიდა', en: 'Desk', badge: 'queue' },
+    { to: '/lost-requests', ka: 'დაკარგული', en: 'Lost', badge: 'losses' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
+    { to: '/quoted-progress', ka: 'მიმდინარეობა', en: 'Progress' },
+  ],
+  admin: [
+    { to: '/rate-desk', ka: 'მაგიდა', en: 'Desk', badge: 'queue' },
+    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/lost-requests', ka: 'დაკარგული', en: 'Lost', badge: 'losses' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+  ],
+  manager: [
+    { to: '/requests', ka: 'მოთხოვნები', en: 'Requests' },
+    { to: '/lost-requests', ka: 'დაკარგული', en: 'Lost', badge: 'losses' },
+    { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
+    { to: '/rates', ka: 'კურსები', en: 'Rates' },
+  ],
+  analyst: [],
+};
+
+const PHONE_HOME: Record<Exclude<Role, 'analyst'>, string> = {
+  kam: '/requests',
+  treasury: '/rate-desk',
+  admin: '/rate-desk',
+  manager: '/requests',
+};
+
+export function phoneHome(role: Role): string | null {
+  if (role === 'analyst') return null;
+  return PHONE_HOME[role];
+}
+
+export function isPhonePage(role: Role, path: string): boolean {
+  return PHONE_NAV[role].some((item) => item.to === path);
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { rpc, supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
@@ -10,6 +11,7 @@ import type { StaffMessage, StaffPerson } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
 
 const MAX_BODY = 2000;
+const PERSON_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function preview(body: string): string {
   const one = body.replace(/\s+/g, ' ').trim();
@@ -21,6 +23,9 @@ export default function Chat() {
   const { role } = useViewAs();
   const { t, roleName } = useI18n();
   const me = profile!.id;
+  const [params] = useSearchParams();
+  const withId = params.get('with');
+  const openedFromPush = useRef<string | null>(null);
   // Same split as private.can_see_all(): admin and manager. An admin's chosen view follows that split.
   const canSeeAll = role === 'admin' || role === 'manager';
 
@@ -57,6 +62,13 @@ export default function Chat() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!withId || withId === me || !PERSON_ID.test(withId)) return;
+    if (openedFromPush.current === withId) return;
+    openedFromPush.current = withId;
+    setView('chat');
+    setSelected(withId);
+  }, [withId, me]);
   useLive(['staff_messages'], load);
   useEffect(() => onChatRead(() => setMarks(readChatMarks(me))), [me]);
 

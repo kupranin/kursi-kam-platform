@@ -11,7 +11,7 @@ const wholeFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 export const fmtAmount = (n: number | null | undefined) => (n == null ? '' : amountFmt.format(Number(n)));
 export const fmtWhole = (n: number | null | undefined) => (n == null ? '' : wholeFmt.format(Number(n)));
-export const fmtRate = (n: number | null | undefined) => (n == null ? '' : Number(n).toFixed(4));
+export const fmtRate = (n: number | null | undefined) => (n == null ? '' : Number(n).toFixed(5));
 
 /**
  * The rate someone typed. A comma is a decimal point.

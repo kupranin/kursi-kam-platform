@@ -6,6 +6,7 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime } from '../lib/format';
+import PushToggle from './PushToggle';
 
 interface Note {
   id: number;
@@ -104,6 +105,7 @@ export default function NotificationBell() {
             <span className="strong">{t('შეტყობინებები', 'Notifications')}</span>
             {unread > 0 && <button type="button" className="link" onClick={markAll}>{t('ყველას წაკითხვა', 'Mark all read')}</button>}
           </div>
+          <PushToggle />
           {!notes.length && <p className="empty">{t('შეტყობინება ჯერ არ არის.', 'No notifications yet.')}</p>}
           {notes.map((n) => (
             <Link key={n.id} to={href(n)} className={'bell-item' + (read.has(n.id) ? '' : ' unread')} onClick={() => { mark(n.id); setOpen(false); }}>

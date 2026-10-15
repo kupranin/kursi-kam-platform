@@ -145,4 +145,4 @@ revoke all on public.market_rates from anon, authenticated;
 grant select on public.market_rates to authenticated;
 
 create policy market_rates_read on public.market_rates for select to authenticated
-  using ((select private.my_role()) in ('admin', 'manager', 'treasury', 'kam'));
+  using ((select private.my_role()) in ('admin', 'manager', 'treasury', 'kam', 'analyst'));

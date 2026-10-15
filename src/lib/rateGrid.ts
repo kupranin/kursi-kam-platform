@@ -457,7 +457,7 @@ export function buildCurrentBoard(rows: RateSnapshot[]): CurrentBoard {
 }
 
 function rateText(value: number | null): string {
-  return value == null ? '' : value.toFixed(4);
+  return value == null ? '' : value.toFixed(5);
 }
 
 /** History spreadsheet: one block per pair, Buy and Sell under each hour. */

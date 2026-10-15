@@ -49,19 +49,19 @@ function shown(value: number | null): number | null {
 }
 
 function sameRate(a: number, b: number): boolean {
-  return a.toFixed(4) === b.toFixed(4);
+  return a.toFixed(5) === b.toFixed(5);
 }
 
-/** Subtraction of two stored rates, at the same four decimals the table prints. */
+/** Subtraction of two stored rates, at the same five decimals the table prints. */
 function gap(from: number, base: number): number {
-  const text = (from - base).toFixed(4);
-  if (text === '0.0000' || text === '-0.0000') return 0;
+  const text = (from - base).toFixed(5);
+  if (text === '0.00000' || text === '-0.00000') return 0;
   return Number(text);
 }
 
 function fmtSigned(value: number): string {
-  const text = value.toFixed(4);
-  if (text === '0.0000' || text === '-0.0000') return '0.0000';
+  const text = value.toFixed(5);
+  if (text === '0.00000' || text === '-0.00000') return '0.00000';
   return text.startsWith('-') ? '−' + text.slice(1) : '+' + text;
 }
 
@@ -331,8 +331,8 @@ function DiffChart({ model, openId, bind }: { model: PairModel; openId: string |
       <h3>{t('სხვაობა Kursi.ge-სთან, GEL', 'Difference vs Kursi.ge, GEL')}</h3>
       <p className="tiny muted fx-note">
         {t(
-          'ნული Kursi.ge-ა. ყიდვის სხვაობა = კონკურენტის ყიდვა − Kursi.ge-ის ყიდვა. გაყიდვის სხვაობა = კონკურენტის გაყიდვა − Kursi.ge-ის გაყიდვა. ერთეული ლარია, 1 ვალუტის ერთეულზე, ოთხ ნიშნამდე, როგორც ცხრილში.',
-          'Zero is Kursi.ge. Buy difference = competitor buy − Kursi.ge buy. Sell difference = competitor sell − Kursi.ge sell. The unit is GEL per 1 unit of currency, to four decimals, as in the table.',
+          'ნული Kursi.ge-ა. ყიდვის სხვაობა = კონკურენტის ყიდვა − Kursi.ge-ის ყიდვა. გაყიდვის სხვაობა = კონკურენტის გაყიდვა − Kursi.ge-ის გაყიდვა. ერთეული ლარია, 1 ვალუტის ერთეულზე, ხუთ ნიშნამდე, როგორც ცხრილში.',
+          'Zero is Kursi.ge. Buy difference = competitor buy − Kursi.ge buy. Sell difference = competitor sell − Kursi.ge sell. The unit is GEL per 1 unit of currency, to five decimals, as in the table.',
         )}
       </p>
       <p className="tiny muted fx-note">
@@ -364,7 +364,7 @@ function DiffChart({ model, openId, bind }: { model: PairModel; openId: string |
                   <span>{fmtSigned(model.diffLimit)}</span>
                 </div>
               ) : (
-                <div className="fx-axis is-flat"><span>0.0000</span></div>
+                <div className="fx-axis is-flat"><span>0.00000</span></div>
               )}
             </div>
             <span className="fx-nums"><span className="fx-num">{buyWord}</span><span className="fx-num">{sellWord}</span></span>
@@ -497,8 +497,8 @@ function RangeSummary({ model }: { model: PairModel }) {
       <h3>{t('ბაზრის დიაპაზონი', 'Market range')}</h3>
       <p className="tiny muted fx-note">
         {t(
-          'საუკეთესო ყიდვა ყველაზე მაღალი ყიდვაა. საუკეთესო გაყიდვა ყველაზე დაბალი გაყიდვაა. თანაბარი კურსი ცხრილის ოთხ ნიშანში თანაბრად ჩანს.',
-          'Best buy is the highest buy. Best sell is the lowest sell. A tie is a tie in the table’s four decimals.',
+          'საუკეთესო ყიდვა ყველაზე მაღალი ყიდვაა. საუკეთესო გაყიდვა ყველაზე დაბალი გაყიდვაა. თანაბარი კურსი ცხრილის ხუთ ნიშანში თანაბრად ჩანს.',
+          'Best buy is the highest buy. Best sell is the lowest sell. A tie is a tie in the table’s five decimals.',
         )}
       </p>
       <div className="fx-sum">

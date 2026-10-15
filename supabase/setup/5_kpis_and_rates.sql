@@ -145,7 +145,7 @@ revoke all on public.market_rates from anon, authenticated;
 grant select on public.market_rates to authenticated;
 
 create policy market_rates_read on public.market_rates for select to authenticated
-  using ((select private.my_role()) in ('admin', 'manager', 'treasury', 'kam'));
+  using ((select private.my_role()) in ('admin', 'manager', 'treasury', 'kam', 'analyst'));
 
 -- Each fetch is kept: fetched_at is part of the key, so the rates page can
 -- show 11:00, 13:00, 15:00, 17:00 and 19:00. Paste 7_market_rates_history.sql
