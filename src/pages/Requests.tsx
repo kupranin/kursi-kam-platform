@@ -22,6 +22,7 @@ import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
 import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/RequestOutcomeButtons';
 import CorrectStatusButton from '../components/CorrectStatusButton';
+import RequestSearch from '../components/RequestSearch';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
@@ -569,6 +570,8 @@ export default function Requests() {
           <div className="stat"><div className="label">{t('გავიდა', 'Went through')}</div><div className="value ok-text">{done.length}</div></div>
         </div>}
       </div>
+
+      {isKam && <RequestSearch variant="desk" />}
 
       {isKam && <section className="card" aria-labelledby="new-title">
         <h2 id="new-title" style={{ marginBottom: 16 }}>{t('ახალი მოთხოვნა', 'New request')}</h2>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import CopyLine from '../CopyLine';
 import DeleteRequestButton, { canDeleteRequest } from '../DeleteRequestButton';
 import LossApproval from '../LossApproval';
@@ -34,6 +34,8 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
   const { profile } = useAuth();
   const { realRole } = useViewAs();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const home = { pathname: '/requests', search };
   const [row, setRow] = useState<RequestRow | null>(seed ?? null);
   const [loaded, setLoaded] = useState(seed != null);
   const [missing, setMissing] = useState(false);
@@ -53,7 +55,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     : null;
   useScreenTitle(title);
 
-  async function reload() {
+  async function reload(keepEdit = false) {
     const next = await loadKamRequest(id);
     if (!next) {
       setMissing(true);
@@ -63,7 +65,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     setRow(next);
     setMissing(false);
     setLoaded(true);
-    setEditing(false);
+    setEditing(keepEdit);
     setMode(null);
   }
 
@@ -156,7 +158,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     return (
       <div className="m-detail">
         <p className="m-quiet">{t('მოთხოვნა ვერ მოიძებნა.', 'Request not found.')}</p>
-        <Link to="/requests" className="btn">{t('საქმეზე დაბრუნება', 'Back to home')}</Link>
+        <Link to={home} className="btn">{t('საქმეზე დაბრუნება', 'Back to home')}</Link>
       </div>
     );
   }
@@ -237,7 +239,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
 
   return (
     <div className="m-detail">
-      <Link to="/requests" className="m-back">{t('უკან', 'Back')}</Link>
+      <Link to={home} className="m-back">{t('უკან', 'Back')}</Link>
       {action ? (
         <section className="m-focal">
           {pair && <p className="m-focal-pair">{pair}</p>}
@@ -306,10 +308,10 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
           {secondary && !editing && (
             <div className="m-secondary-body">
               <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} />
-              <CorrectStatusButton row={row} onDone={() => { void reload(); }} />
+              <CorrectStatusButton row={row} onDone={() => { setSecondary(true); void reload(true); }} />
               <LossApproval row={row} onDone={() => { void reload(); }} />
               {own && <button type="button" className="btn" onClick={() => setEditing(true)}>{t('რედაქტირება', 'Edit')}</button>}
-              {showDelete && <DeleteRequestButton requestId={row.id} onDeleted={() => navigate('/requests')} />}
+              {showDelete && <DeleteRequestButton requestId={row.id} onDeleted={() => navigate(home)} />}
             </div>
           )}
           {secondary && editing && (
@@ -317,7 +319,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
               row={row}
               onClose={() => setEditing(false)}
               onSaved={() => { void reload(); }}
-              onDeleted={() => navigate('/requests')}
+              onDeleted={() => navigate(home)}
             />
           )}
         </section>

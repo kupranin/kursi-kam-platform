@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../../lib/i18n';
 import type { RequestRow } from '../../lib/types';
 import LoadingLine from '../LoadingLine';
+import RequestSearch from '../RequestSearch';
 import KamRequestCard from './KamRequestCard';
 import { useKamDesk } from './useKamDesk';
 import type { KamGroups } from './kamBuckets';
@@ -37,6 +38,7 @@ function Block({
 export default function KamHome({ seed }: { seed?: KamGroups }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const live = useKamDesk(seed == null);
   const data = seed ?? live;
   const loaded = seed != null || live.loaded;
@@ -49,11 +51,12 @@ export default function KamHome({ seed }: { seed?: KamGroups }) {
   }, [loaded, data.waiting.length]);
 
   function open(row: RequestRow) {
-    navigate('/requests/' + row.id);
+    navigate({ pathname: '/requests/' + row.id, search });
   }
 
   return (
     <div className="m-home">
+      <RequestSearch variant="phone" />
       {!loaded && <LoadingLine />}
       {loaded && (
         <>

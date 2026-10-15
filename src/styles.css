@@ -705,3 +705,8 @@ html.is-phone .page:has(.m-treasury) {
 .m-home .m-card-action, .m-home .m-more-row { text-align: center; justify-content: center; }
 html.is-phone .chips { max-width: 100%; }
 html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; }
+.req-search, .req-search-phone { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.req-search-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.req-search-filters .field { flex: 1 1 9.5rem; min-width: 0; }
+.req-search-detail { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.req-search-detail .actions { display: flex; flex-wrap: wrap; gap: 8px; }
