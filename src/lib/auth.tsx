@@ -79,21 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Fixture sign-in for a local phone preview. Not used by the app. */
-export function PreviewAuth({ children }: { children: ReactNode }) {
-  const value: AuthState = {
-    loading: false,
-    session: { user: { id: 'preview-kam' } } as Session,
-    profile: { id: 'preview-kam', full_name: 'ნინო ბერიძე', email: 'nino@kursi.ge', role: 'kam' },
-    profileUnavailable: false,
-    needsSecondFactor: false,
-    recovering: false,
-    refresh: async () => {},
-    signOut: async () => {},
-  };
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth outside AuthProvider');
