@@ -11,9 +11,9 @@ export const HOME: Record<Role, string> = {
 export const PAGES: Record<Role, string[]> = {
   kam: ['/requests', '/follow-ups', '/clients', '/team', '/rates', '/log', '/chat', '/more'],
   treasury: ['/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/analysis', '/rates', '/log', '/chat', '/more'],
-  admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/log', '/chat', '/admin'],
-  manager: ['/team', '/requests', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/log', '/chat'],
-  analyst: ['/analysis', '/analytics', '/rates'],
+  admin: ['/team', '/requests', '/rate-desk', '/quoted-progress', '/lost-requests', '/desk-history', '/follow-ups', '/clients', '/analytics', '/analysis', '/kpis', '/rates', '/competitiveness', '/log', '/chat', '/admin'],
+  manager: ['/team', '/requests', '/lost-requests', '/follow-ups', '/clients', '/analytics', '/kpis', '/rates', '/competitiveness', '/log', '/chat'],
+  analyst: ['/analysis', '/analytics', '/rates', '/competitiveness'],
 };
 
 export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'followups' | 'queue' | 'losses' | 'chat' }[]> = {
@@ -49,6 +49,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },
     { to: '/kpis', ka: 'KPI', en: 'KPI' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/competitiveness', ka: 'კონკურენტუნარიანობა', en: 'Competitiveness' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
     { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
     { to: '/admin', ka: 'ადმინი', en: 'Admin' },
@@ -62,6 +63,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },
     { to: '/kpis', ka: 'KPI', en: 'KPI' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/competitiveness', ka: 'კონკურენტუნარიანობა', en: 'Competitiveness' },
     { to: '/log', ka: 'ჟურნალი', en: 'Log' },
     { to: '/chat', ka: 'ჩატი', en: 'Chat', badge: 'chat' },
   ],
@@ -69,6 +71,7 @@ export const NAV: Record<Role, { to: string; ka: string; en: string; badge?: 'fo
     { to: '/analysis', ka: 'ანალიზი', en: 'Analysis' },
     { to: '/analytics', ka: 'ანალიტიკა', en: 'Analytics' },
     { to: '/rates', ka: 'კურსები', en: 'Rates' },
+    { to: '/competitiveness', ka: 'კონკურენტუნარიანობა', en: 'Competitiveness' },
   ],
 };
 

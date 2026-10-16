@@ -710,3 +710,18 @@ html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; 
 .req-search-filters .field { flex: 1 1 9.5rem; min-width: 0; }
 .req-search-detail { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .req-search-detail .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.comp-note { margin: 8px 0 0; color: var(--muted); font-size: 15px; }
+.comp-chart-wrap { margin: 8px 0; }
+.comp-chart { width: 100%; height: auto; display: block; background: #fff; border: 1px solid var(--line); border-radius: 14px; }
+.comp-chart .comp-zero { stroke: var(--line); stroke-width: 1; }
+.comp-chart .comp-gap { fill: none; stroke: var(--aubergine); stroke-width: 2; }
+.comp-chart .comp-dot { fill: var(--aubergine); }
+.comp-chart .comp-worse { fill: rgba(242, 166, 90, 0.35); cursor: pointer; }
+.comp-chart text { fill: var(--muted); font-size: 12px; }
+.comp-sort { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 500; font-size: 13px; color: var(--muted); cursor: pointer; }
+.comp-sort[aria-pressed="true"] { color: var(--ink); }
+.comp-log tbody tr { cursor: pointer; }
+.comp-log tr.comp-on td { background: #FBF8FD; }
+.comp-detail { display: flex; flex-direction: column; gap: 8px; }
+.comp-points { max-height: 320px; overflow: auto; }

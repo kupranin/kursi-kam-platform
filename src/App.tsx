@@ -25,6 +25,7 @@ import Clients from './pages/Clients';
 import Analytics from './pages/Analytics';
 import Kpis from './pages/Kpis';
 import MarketRates from './pages/MarketRates';
+import Competitiveness from './pages/Competitiveness';
 import Chat from './pages/Chat';
 import RequestLog from './pages/RequestLog';
 import Admin from './pages/admin/Admin';
@@ -80,6 +81,7 @@ export default function App() {
         {screen('/analysis', <Analyst />)}
         {screen('/kpis', <Kpis />)}
         {screen('/rates', <MarketRates />)}
+        {screen('/competitiveness', <Competitiveness />)}
         {screen('/log', <RequestLog />)}
         {screen('/chat', <Chat />)}
         {screen('/admin', <Admin />)}
