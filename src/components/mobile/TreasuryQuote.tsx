@@ -8,6 +8,8 @@ import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import type { QueueRow } from '../../lib/types';
 import LoadingLine from '../LoadingLine';
+import SpecialRateMark from '../SpecialRateMark';
+import VenuePairLine from '../VenuePairLine';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText, WaitClock } from './TreasuryBits';
 import { DECLINE_REASONS, FAR_PCT, loadDefaultValid, loadRequestBanks, loadWaitingQueue } from './treasuryLoad';
@@ -200,6 +202,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
         )}
         {row.note && <p className="note-box">{t('კომენტარი ხაზინისთვის', 'Comment for treasury')}: {row.note}</p>}
         {row.loss_reason_note && <p className="note-box">{t('სხვა მიზეზი', 'Other reason')}: {row.loss_reason_note}</p>}
+        <SpecialRateMark clientId={row.client_id} variant="detail" />
         {refs.length > 0 && !declining && (
           <div className="m-refs" aria-label={t('კურსები ამ გარიგებაზე', 'Rates for this deal')}>
             {refs.map((item) => (
@@ -210,6 +213,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
             ))}
           </div>
         )}
+        {!declining && <VenuePairLine sells={row.sells_currency} gets={row.gets_currency} />}
         {!declining && (
           <>
             <div className="field">

@@ -5,6 +5,8 @@ import { useI18n } from '../../lib/i18n';
 import type { QueueRow } from '../../lib/types';
 import { formatBanks } from '../../lib/types';
 import LoadingLine from '../LoadingLine';
+import SpecialRateMark from '../SpecialRateMark';
+import { useSpecialRates, type SpecialRateRow } from '../../lib/specialRates';
 import { clientName, pairText, WaitClock } from './TreasuryBits';
 import type { TreasuryReply } from './treasuryLoad';
 import { useTreasuryDesk } from './useTreasuryDesk';
@@ -18,7 +20,7 @@ function Quiet({ title, id, text }: { title: string; id: string; text: string })
   );
 }
 
-function WaitingCard({ row, bank }: { row: QueueRow; bank?: string[] }) {
+function WaitingCard({ row, bank, terms }: { row: QueueRow; bank?: string[]; terms: SpecialRateRow[] }) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const open = () => navigate('/rate-desk/quote/' + row.request_id);
@@ -31,6 +33,7 @@ function WaitingCard({ row, bank }: { row: QueueRow; bank?: string[] }) {
         <div className="m-card-dir">{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(row.sells_currency, row.amount)}</div>
         <div className="m-card-dir">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
         {banks && <div className="m-card-dir">{t('ბანკი', 'Bank')}: {banks}</div>}
+        <SpecialRateMark clientId={row.client_id} rows={terms} variant="pill" />
         <div className="m-card-dir">KAM: {row.kam_name}</div>
         <WaitClock iso={row.asked_at} />
       </button>
@@ -86,6 +89,10 @@ function WriteCard({ row }: { row: TreasuryReply }) {
 export default function TreasuryHome() {
   const { t } = useI18n();
   const data = useTreasuryDesk();
+  const specialRates = useSpecialRates(
+    data.waiting.map((row) => row.client_id),
+    data.waiting.map((row) => row.request_id).join(','),
+  );
 
   useEffect(() => {
     if (!data.loaded) return;
@@ -109,7 +116,7 @@ export default function TreasuryHome() {
             <section className="m-block" id="treasury-waiting" aria-labelledby="treasury-waiting-title">
               <h2 id="treasury-waiting-title" className="m-block-title">{waitingTitle}</h2>
               {data.waiting.map((row) => (
-                <WaitingCard key={row.request_id} row={row} bank={data.banks[row.request_id]} />
+                <WaitingCard key={row.request_id} row={row} bank={data.banks[row.request_id]} terms={specialRates.get(row.client_id) ?? []} />
               ))}
             </section>
           ) : !data.queueError ? (

@@ -20,6 +20,9 @@ import RatePeople from '../components/RatePeople';
 import { applyRatePeople, loadRatePeople, ratePeopleFor } from '../lib/ratePeople';
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
+import SpecialRateMark from '../components/SpecialRateMark';
+import VenuePairLine from '../components/VenuePairLine';
+import { useSpecialRates } from '../lib/specialRates';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import { IconClock } from '../components/Icons';
@@ -537,6 +540,14 @@ export default function RateDesk() {
   // Latest digits in the rate box, updated as they are typed. Send uses this,
   // so a later click (such as 30 minutes) cannot put an older rate back.
   const draftRate = useRef<Record<number, string>>({});
+  const specialRates = useSpecialRates(
+    [
+      ...queue.map((row) => row.client_id),
+      ...replies.map((row) => row.client_id),
+      ...extraAgreed.map((row) => row.client_id),
+    ],
+    [...queue, ...replies, ...extraAgreed].map((row) => row.request_id).join(','),
+  );
 
   const refreshQueue = useCallback((mode: 'light' | 'full' = 'light') => {
     queueAgain.current = queueAgain.current === 'full' || mode === 'full' ? 'full' : 'light';
@@ -988,6 +999,7 @@ export default function RateDesk() {
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
                     </div>
+                    <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
                     {r.note && <p className="note-box">კომენტარი ხაზინისთვის: {r.note}</p>}
                     {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
@@ -1004,6 +1016,8 @@ export default function RateDesk() {
                             ))}
                           </div>
                         )}
+                        {/* Valuto is already a row on this card's market table. This line is a stored Online Express quote, when one exists. */}
+                        <VenuePairLine sells={r.sells_currency} gets={r.gets_currency} include={['onlineexpress']} />
                         <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
                         <div className="form-row" style={{ marginTop: 12 }}>
                           <div className="field" style={{ flex: '0 1 190px' }}>
@@ -1167,6 +1181,7 @@ export default function RateDesk() {
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? t('სახელი არ არის', 'No name')}</div>
                     <div className="tiny muted">ID {r.client_id}</div>
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
+                    <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
                     <p className="note-box">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
                     <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
@@ -1248,6 +1263,7 @@ export default function RateDesk() {
                   <div className="tiny muted">ID {r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
+                  <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
                 </div>
                 <div className="what">
                   <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>

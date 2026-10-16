@@ -725,3 +725,13 @@ html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; 
 .comp-log tr.comp-on td { background: #FBF8FD; }
 .comp-detail { display: flex; flex-direction: column; gap: 8px; }
 .comp-points { max-height: 320px; overflow: auto; }
+
+.special-terms { margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--ground); min-width: 0; }
+.special-terms .checkbox { align-items: flex-start; height: auto; white-space: normal; }
+.special-terms-body { margin-top: 8px; min-width: 0; }
+.special-saved { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.special-saved .link { text-align: left; white-space: normal; }
+.special-rate { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: var(--ground); min-width: 0; }
+.special-rate p { overflow-wrap: anywhere; }
+.venue-pair { margin-top: 8px; min-width: 0; }
+.m-card-hit .pill { margin-top: 6px; margin-left: 0; max-width: 100%; white-space: normal; }

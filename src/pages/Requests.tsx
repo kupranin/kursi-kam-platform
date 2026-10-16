@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../lib/activeRequest';
 import { isMissingRead } from '../lib/missingRead';
+import { EMPTY_SPECIAL_DRAFT, saveClientSpecialRate, type SpecialTermsDraft } from '../lib/specialRates';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
@@ -13,6 +14,7 @@ import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
+import ClientSpecialTerms from '../components/ClientSpecialTerms';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
@@ -160,6 +162,7 @@ export default function Requests() {
   const bankClient = useRef<string | null>(null);
   const bankClientKnown = useRef(false);
   const banksTouched = useRef(false);
+  const specialRef = useRef<SpecialTermsDraft>(EMPTY_SPECIAL_DRAFT);
   const months = monthOptions(12).map((m) => ({ value: m.value, label: m.label.replace(/, so far$|, ჯერჯერობით$/, '') }));
 
   const today = todayTbilisi();
@@ -335,7 +338,13 @@ export default function Requests() {
         p_client_name: info.nameFromFile ? null : info.name,
         p_bank: pBank,
       });
-      toast(t('გაეგზავნა ხაზინას. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.'));
+      const special = await saveClientSpecialRate(info.id, specialRef.current);
+      const sent = t('გაეგზავნა ხაზინას. კურსი ქვემოთ გამოჩნდება, როგორც კი უპასუხებენ.', 'Sent to treasury. The rate appears below as soon as they answer.');
+      if (special === 'invalid' || special === 'failed') {
+        toast(sent + ' ' + t('საბანკო პირობა ვერ შეინახა.', 'The bank terms were not saved.'), 'error');
+      } else {
+        toast(sent);
+      }
       setInfo(null);
       setClientForm((n) => n + 1);
       setSellsAmount('');
@@ -349,6 +358,7 @@ export default function Requests() {
       bankClient.current = null;
       bankClientKnown.current = false;
       banksTouched.current = false;
+      specialRef.current = EMPTY_SPECIAL_DRAFT;
       load();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -601,6 +611,7 @@ export default function Requests() {
               </span>
             </div>
           </div>
+          <ClientSpecialTerms key={clientForm} clientId={info?.valid ? info.id : null} idSuffix="desk" onDraft={(draft) => { specialRef.current = draft; }} />
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
               <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />

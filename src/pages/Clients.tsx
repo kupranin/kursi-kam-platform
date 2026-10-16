@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import SpecialRateMark from '../components/SpecialRateMark';
+import { useSpecialRates } from '../lib/specialRates';
 import { rpc } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
@@ -11,6 +13,8 @@ export default function Clients() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ClientMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openClient, setOpenClient] = useState<string | null>(null);
+  const specialRates = useSpecialRates(rows.map((row) => row.client_id));
 
   useEffect(() => {
     let alive = true;
@@ -47,15 +51,35 @@ export default function Clients() {
             <table className="table" style={{ minWidth: 640 }}>
               <thead><tr><th>{t('კლიენტი', 'Client')}</th><th>ID</th><th>{t('ტიპი', 'Type')}</th><th>{t('ბოლო მოთხოვნა', 'Last request')}</th><th>{t('ბოლო მიმართულება', 'Last direction')}</th></tr></thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.client_id}>
-                    <td className="strong">{r.name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</td>
+                {rows.map((r) => {
+                  const terms = specialRates.get(r.client_id) ?? [];
+                  const open = openClient === r.client_id;
+                  return (
+                  <Fragment key={r.client_id}>
+                  <tr>
+                    <td className="strong">
+                      <div>{r.name ?? <span className="muted">{t('სახელი არ არის', 'No name')}</span>}</div>
+                      {terms.length > 0 && (
+                        <button type="button" className="link" aria-expanded={open} onClick={() => setOpenClient(open ? null : r.client_id)}>
+                          {t('სპეც. კურსი', 'Special rate')}
+                        </button>
+                      )}
+                    </td>
                     <td>{r.client_id}</td>
                     <td>{r.kind === 'company' ? t('კომპანია', 'Company') : t('ფიზიკური პირი', 'Person')}</td>
                     <td>{r.last_request_date ? fmtDay(r.last_request_date) : ''}</td>
                     <td>{r.last_sells_currency ? `${r.last_sells_currency} → ${r.last_gets_currency}` : ''}</td>
                   </tr>
-                ))}
+                  {open && terms.length > 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        <SpecialRateMark clientId={r.client_id} rows={terms} variant="detail" />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

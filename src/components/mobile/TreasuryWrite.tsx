@@ -7,6 +7,7 @@ import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import { useLive } from '../../lib/useLive';
 import LoadingLine from '../LoadingLine';
+import SpecialRateMark from '../SpecialRateMark';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText } from './TreasuryBits';
 import { loadActionReplies, type TreasuryReply } from './treasuryLoad';
@@ -104,6 +105,7 @@ export default function TreasuryWrite({ id }: { id: number }) {
             <span className="m-rate">{fmtRate(row.approved_rate)}</span>
           </p>
         </div>
+        <SpecialRateMark clientId={row.client_id} variant="detail" />
         <p className="note-box">{t(
           'კლიენტმა ეს კურსი დაამტკიცა. „კურსი ჩაიწერა“ ნიშნავს, რომ კურსი ძირითად სისტემაში ჩაიწერა. გადახდა ამით არ დასტურდება და გარიგება წარმატებულად არ ითვლება.',
           'The client approved this rate. “Rate written” means the rate was entered in the core system. It does not confirm the payment, and it does not mark the deal successful.',

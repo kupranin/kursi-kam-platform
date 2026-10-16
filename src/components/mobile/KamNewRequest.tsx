@@ -2,8 +2,10 @@ import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ClientField, { type ClientInfo } from '../ClientField';
 import ClientHistory from '../ClientHistory';
+import ClientSpecialTerms from '../ClientSpecialTerms';
 import CurrencyPicker from '../CurrencyPicker';
 import { useI18n } from '../../lib/i18n';
+import { EMPTY_SPECIAL_DRAFT, saveClientSpecialRate, type SpecialTermsDraft } from '../../lib/specialRates';
 import { rpc } from '../../lib/supabase';
 import { useToast } from '../../lib/toast';
 import { BANKS, CURRENCIES, bankList } from '../../lib/types';
@@ -33,6 +35,7 @@ export default function KamNewRequest() {
   const bankClient = useRef<string | null>(null);
   const bankClientKnown = useRef(false);
   const banksTouched = useRef(false);
+  const specialRef = useRef<SpecialTermsDraft>(EMPTY_SPECIAL_DRAFT);
 
   const sellsSide = readAmount(sellsAmount);
   const getsSide = readAmount(showGets ? getsAmount : '');
@@ -99,7 +102,12 @@ export default function KamNewRequest() {
         p_client_name: info.nameFromFile ? null : info.name,
         p_bank: pBank,
       });
-      toast(t('გაეგზავნა ხაზინას.', 'Sent to treasury.'));
+      const special = await saveClientSpecialRate(info.id, specialRef.current);
+      if (special === 'invalid' || special === 'failed') {
+        toast(t('გაეგზავნა ხაზინას. საბანკო პირობა ვერ შეინახა.', 'Sent to treasury. The bank terms were not saved.'), 'error');
+      } else {
+        toast(t('გაეგზავნა ხაზინას.', 'Sent to treasury.'));
+      }
       navigate('/requests#kam-waiting', { replace: true });
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -129,6 +137,8 @@ export default function KamNewRequest() {
         {tried && chosenBanks.length < 1 && <span className="hint error">{t('აირჩიეთ ერთი ბანკი მაინც', 'Choose at least one bank')}</span>}
         {!tried && banksFromClient && <span className="hint">{t('შენახული ბანკები ჩანს. ამ გარიგებისთვის შეგიძლიათ შეცვალოთ.', 'Saved banks are on. You can change them for this deal.')}</span>}
       </div>
+
+      <ClientSpecialTerms clientId={info?.valid ? info.id : null} idSuffix="phone" onDraft={(draft) => { specialRef.current = draft; }} />
 
       <div className="m-fields" id="new-pair">
         <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} idSuffix="new" />

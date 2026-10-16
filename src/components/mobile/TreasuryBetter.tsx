@@ -7,6 +7,7 @@ import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import { useLive } from '../../lib/useLive';
 import LoadingLine from '../LoadingLine';
+import SpecialRateMark from '../SpecialRateMark';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText, WaitClock } from './TreasuryBits';
 import { loadActionReplies, type TreasuryReply } from './treasuryLoad';
@@ -185,6 +186,7 @@ export default function TreasuryBetter({ id }: { id: number }) {
       </p>
       <WaitClock iso={row.client_replied_at} />
       {row.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {row.note}</p>}
+      <SpecialRateMark clientId={row.client_id} variant="detail" />
     </div>
   );
 
