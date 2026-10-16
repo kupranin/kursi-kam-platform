@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import BoardCoveragePanel from '../components/BoardCoveragePanel';
 import LoadingLine from '../components/LoadingLine';
 import { fmtDay, fmtMinutes, fmtRate, fmtTime, tbilisiDay } from '../lib/format';
 import { useI18n } from '../lib/i18n';
@@ -9,12 +10,13 @@ import {
   fmtTetri,
   inclusiveDays,
   loadBoardReport,
+  loadBoardSeries,
   missingCompetitiveness,
   presetRange,
   sortPairs,
   type BoardIncident,
-  type BoardPoint,
   type BoardReport,
+  type BoardSeries,
   type BoardSide,
   type RangePreset,
 } from '../lib/competitiveness';
@@ -40,6 +42,9 @@ export default function Competitiveness() {
   const [side, setSide] = useState<SideFilter>('both');
   const [competitor, setCompetitor] = useState('all');
   const [report, setReport] = useState<BoardReport | null>(null);
+  const [series, setSeries] = useState<BoardSeries | null>(null);
+  const [seriesError, setSeriesError] = useState('');
+  const [asOf, setAsOf] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState('');
@@ -59,11 +64,24 @@ export default function Competitiveness() {
     setLoaded(false);
     setError('');
     setMissing(false);
+    setSeries(null);
+    setSeriesError('');
+    setAsOf(Date.now());
     loadBoardReport(range.from, range.to, pair === 'all' ? null : pair)
-      .then((next) => {
+      .then(async (next) => {
         if (!live) return;
         setReport(next);
-        setLoaded(true);
+        if (next.grain === 'fetches' || next.grain === 'hours') {
+          try {
+            const loadedSeries = await loadBoardSeries(range.from, range.to, next.grain);
+            if (!live) return;
+            setSeries(loadedSeries);
+          } catch (err) {
+            if (!live) return;
+            setSeriesError(err instanceof Error ? err.message : String(err));
+          }
+        }
+        if (live) setLoaded(true);
       })
       .catch((err: Error) => {
         if (!live) return;
@@ -117,16 +135,6 @@ export default function Competitiveness() {
     if (selected && !shown.some((incident) => incident.id === selected)) setSelected(null);
   }, [shown, selected]);
 
-  const chartPoints = useMemo(() => {
-    if (pair === 'all') return [];
-    return (report?.observations ?? []).filter((point) => {
-      if (point.pair !== pair) return false;
-      if (side !== 'both' && point.side !== side) return false;
-      if (competitor !== 'all' && !point.bestKeys.includes(competitor)) return false;
-      return true;
-    });
-  }, [report, pair, side, competitor]);
-
   const detail = shown.find((incident) => incident.id === selected) ?? null;
   const noHistory = missing || report?.reason === 'single_generation' || report?.grain === 'none';
   const noRows = !!report && report.grain !== 'none' && report.pairs.length === 0 && report.incidents.length === 0;
@@ -139,11 +147,6 @@ export default function Competitiveness() {
       setSortDesc(key === 'start' || key === 'end' || key === 'duration');
     }
   }
-
-  const buyPoints = chartPoints.filter((point) => point.side === 'buy');
-  const sellPoints = chartPoints.filter((point) => point.side === 'sell');
-  const buyIncidents = shown.filter((incident) => incident.side === 'buy' && (pair === 'all' || incident.pair === pair));
-  const sellIncidents = shown.filter((incident) => incident.side === 'sell' && (pair === 'all' || incident.pair === pair));
 
   return (
     <>
@@ -217,8 +220,24 @@ export default function Competitiveness() {
           'The stored rates do not include past fetches. Earlier periods cannot be reconstructed.',
         )}</p>
       )}
-      {!tooLong && loaded && !missing && !error && !noHistory && (
+      {!tooLong && loaded && !missing && !error && !noHistory && report && (
         <>
+          {seriesError && <p className="alert-box" role="alert">{seriesError}</p>}
+          {!seriesError && series && (report.grain === 'fetches' || report.grain === 'hours') && (
+            <BoardCoveragePanel
+              fetches={series.fetches}
+              truncated={series.truncated}
+              grain={report.grain}
+              pair={pair}
+              side={side}
+              competitor={competitor}
+              competitorLabel={names.get(competitor) ?? competitor}
+              from={range.from}
+              to={range.to}
+              nowMs={asOf}
+              preset={preset}
+            />
+          )}
           <p className="comp-note">{report?.grain === 'hours'
             ? t('საათობრივი მარცვალი: თითო თბილისის საათში ბოლო წამოღება რჩება. საათის შიგნით მოძრაობა არ ჩანს და საათი არ ივსება.', 'Hour grain: the last fetch in each Tbilisi hour is kept. A move inside the hour is not shown, and missing hours are not filled in.')
             : t('ანგარიში შენახული წამოღებებიდანაა. ერთი წამოღება ცალკე სტრიქონი არ არის.', 'Built from stored fetches. One fetch is not its own row.')}</p>
@@ -226,26 +245,6 @@ export default function Competitiveness() {
           {(pair === 'RUB/GEL' || shown.some((incident) => incident.pair === 'RUB/GEL')) && (
             <p className="comp-note">{t('RUB/GEL არის ლარი 1 რუბლზე. 1-ზე მეტი კურსი აქ არ გადაიყვანება.', 'RUB/GEL is lari per 1 ruble. A rate of 1 or more is not converted here.')}</p>
           )}
-
-          {pair !== 'all' && side !== 'sell' && (
-            <GapChart
-              title={pair + ' · ' + t('ყიდვა', 'Buy')}
-              hint={t('კლიენტი ყიდის საბაზისო ვალუტას', 'The client sells the base')}
-              points={buyPoints}
-              incidents={buyIncidents}
-              onPick={setSelected}
-            />
-          )}
-          {pair !== 'all' && side !== 'buy' && (
-            <GapChart
-              title={pair + ' · ' + t('გაყიდვა', 'Sell')}
-              hint={t('კლიენტი ყიდულობს საბაზისო ვალუტას', 'The client buys the base')}
-              points={sellPoints}
-              incidents={sellIncidents}
-              onPick={setSelected}
-            />
-          )}
-          {pair === 'all' && <p className="comp-note">{t('გრაფიკი ერთ წყვილზე ჩანს. სია ყველა წყვილს აჩვენებს.', 'The chart is for one pair. The log lists every pair.')}</p>}
 
           {noRows && <p className="empty">{t('ამ პერიოდში შენახული დაფა არ არის.', 'No stored board in this period.')}</p>}
           {noneWorse && <p className="empty">{t('ამ პერიოდში საჯარო დაფა საუკეთესო კონკურენტზე უარესი არ ყოფილა.', 'In this period the public board was not worse than the best competitor.')}</p>}
@@ -411,94 +410,5 @@ function IncidentDetail({ incident }: { incident: BoardIncident }) {
         </table>
       </div>
     </section>
-  );
-}
-
-function GapChart({ title, hint, points, incidents, onPick }: {
-  title: string;
-  hint: string;
-  points: BoardPoint[];
-  incidents: BoardIncident[];
-  onPick: (id: string) => void;
-}) {
-  const { t } = useI18n();
-  const drawn = points.filter((point) => point.advantage != null && point.at);
-  if (!drawn.length) return null;
-  const width = 800;
-  const height = 200;
-  const left = 58;
-  const right = 12;
-  const top = 16;
-  const bottom = 28;
-  const times = drawn.map((point) => new Date(point.at).getTime());
-  const minT = Math.min(...times);
-  const maxT = Math.max(...times);
-  const spanT = Math.max(maxT - minT, 60 * 60 * 1000);
-  const values = drawn.map((point) => point.advantage as number);
-  const minY = Math.min(0, ...values);
-  const maxY = Math.max(0, ...values);
-  const spanY = maxY - minY || 0.01;
-  const xOf = (time: number) => left + ((time - minT) / spanT) * (width - left - right);
-  const yOf = (value: number) => top + ((maxY - value) / spanY) * (height - top - bottom);
-  const y0 = yOf(0);
-  const paths: string[] = [];
-  let seg = '';
-  let prev = 0;
-  drawn.forEach((point, index) => {
-    const time = new Date(point.at).getTime();
-    const hole = index > 0 && (time - prev > 90 * 60 * 1000 || point.standing === 'no_kursi');
-    if (hole) {
-      if (seg) paths.push(seg);
-      seg = '';
-    }
-    if (point.advantage == null || point.standing === 'no_kursi') {
-      prev = time;
-      return;
-    }
-    const cmd = seg ? 'L' : 'M';
-    seg += cmd + xOf(time).toFixed(1) + ' ' + yOf(point.advantage).toFixed(1) + ' ';
-    prev = time;
-  });
-  if (seg) paths.push(seg);
-
-  return (
-    <figure className="comp-chart-wrap">
-      <figcaption className="strong">{title} <span className="tiny muted">{hint}</span></figcaption>
-      <svg className="comp-chart" viewBox={'0 0 ' + width + ' ' + height} role="img" aria-label={title}>
-        <line className="comp-zero" x1={left} x2={width - right} y1={y0} y2={y0} />
-        <text x={8} y={y0 + 4}>0</text>
-        {incidents.map((incident) => {
-          const end = incident.endedAt ?? incident.points[incident.points.length - 1]?.at ?? incident.startedAt;
-          const x1 = xOf(new Date(incident.startedAt).getTime());
-          const x2 = xOf(new Date(end).getTime());
-          const w = Math.max(2, x2 - x1);
-          return (
-            <rect
-              key={incident.id}
-              className="comp-worse"
-              x={x1}
-              y={y0}
-              width={w}
-              height={Math.max(0, yOf(minY) - y0)}
-              onClick={() => onPick(incident.id)}
-            />
-          );
-        })}
-        {paths.map((d, index) => <path key={index} className="comp-gap" d={d} />)}
-        {drawn.map((point, index) => {
-          if (point.advantage == null) return null;
-          const time = new Date(point.at).getTime();
-          const prevTime = index > 0 ? new Date(drawn[index - 1].at).getTime() : 0;
-          const nextTime = index + 1 < drawn.length ? new Date(drawn[index + 1].at).getTime() : 0;
-          const before = index === 0 || time - prevTime > 90 * 60 * 1000;
-          const after = index === drawn.length - 1 || nextTime - time > 90 * 60 * 1000;
-          if (!before || !after) return null;
-          return <circle key={point.at} className="comp-dot" cx={xOf(time)} cy={yOf(point.advantage)} r={3.5} />;
-        })}
-        <text x={left} y={height - 8}>{fmtDay(tbilisiDay(drawn[0].at))} {fmtTime(drawn[0].at)}</text>
-        <text x={width - right} y={height - 8} textAnchor="end">{fmtDay(tbilisiDay(drawn[drawn.length - 1].at))} {fmtTime(drawn[drawn.length - 1].at)}</text>
-      </svg>
-      <p className="tiny muted">{t('დაჩრდილულია პერიოდი, როცა დაფა უარესი იყო. ხაზი წყდება, თუ შენახული წერტილი აკლია.', 'A shaded span is when the board was worse. The line breaks when a stored point is missing.')}</p>
-    </figure>
   );
 }

@@ -1,5 +1,5 @@
 import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../../lib/activeRequest';
-import { appendDeferredOpen, deferredIds, deferredOpenIds } from '../../lib/deferWrite';
+import { appendDeferredOpen, deferFlags, deferredOpenIds } from '../../lib/deferWrite';
 import { isMissingRead } from '../../lib/missingRead';
 import { applyRatePeople, loadRatePeople } from '../../lib/ratePeople';
 import { rpc, supabase } from '../../lib/supabase';
@@ -136,15 +136,15 @@ export async function loadKamRequest(id: number): Promise<RequestRow | null> {
     const row = decorateActiveRow(source, freshnessDay);
     const [withName] = await withPeople([matched ? applyMatchedSuccess(row, matched) : row]);
     if (!withName) return null;
-    const held = await deferredIds([id]);
-    return { ...withName, rate_write_deferred: held.has(id) };
+    const flag = (await deferFlags([id])).get(id);
+    return { ...withName, rate_write_deferred: flag === true };
   }
   const outcome = await supabase.from('request_outcomes').select('*').eq('id', id).maybeSingle();
   if (outcome.error || !outcome.data) return null;
   const [withName] = await withPeople([outcome.data as RequestRow]);
   if (!withName) return null;
-  const held = await deferredIds([id]);
-  return { ...withName, rate_write_deferred: held.has(id) };
+  const flag = (await deferFlags([id])).get(id);
+  return { ...withName, rate_write_deferred: flag === true };
 }
 
 export async function loadKamEarlier(profileId: string, limit: number): Promise<{ rows: RequestRow[]; done: boolean }> {

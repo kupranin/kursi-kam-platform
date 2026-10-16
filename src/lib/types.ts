@@ -60,7 +60,7 @@ export interface RequestRow {
   marked_lost_at?: string | null;
   /** App loss that treasury has not approved yet. The loss is not final. */
   loss_open?: boolean | null;
-  /** Client approved, and the KAM has not sent it to the treasury write queue. */
+  /** Client approved, and the KAM has not sent it to the treasury write queue. The agreed rate stays. */
   rate_write_deferred?: boolean | null;
 }
 

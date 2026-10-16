@@ -9,6 +9,7 @@ import SpecialRateMark from '../SpecialRateMark';
 import { useSpecialRates, type SpecialRateRow } from '../../lib/specialRates';
 import { clientName, pairText, WaitClock } from './TreasuryBits';
 import type { TreasuryReply } from './treasuryLoad';
+import ClosingQueue from '../ClosingQueue';
 import { useTreasuryDesk } from './useTreasuryDesk';
 
 function Quiet({ title, id, text }: { title: string; id: string; text: string }) {
@@ -99,7 +100,7 @@ export default function TreasuryHome() {
     const id = window.location.hash.replace('#', '');
     if (!id) return;
     document.getElementById(id)?.scrollIntoView({ block: 'start' });
-  }, [data.loaded, data.waiting.length, data.better.length, data.write.length]);
+  }, [data.loaded, data.waiting.length, data.better.length, data.write.length, data.closing?.length]);
 
   const waitingTitle = t('კურსს ელოდება', 'Waiting for a rate');
   const betterTitle = t('უკეთესი კურსი', 'Better rate');
@@ -132,6 +133,8 @@ export default function TreasuryHome() {
               {data.better.map((row) => <BetterCard key={row.request_id} row={row} />)}
             </section>
           ) : !data.repliesReady ? <LoadingLine compact /> : null}
+
+          {data.closing != null && <ClosingQueue rows={data.closing} onDone={() => { void data.reload(); }} />}
 
           {data.repliesReady && data.write.length === 0 && !data.replyError ? (
             <Quiet id="treasury-write" title={writeTitle} text={t('კურსი გასაწერი არ არის.', 'Nothing is waiting to be written.')} />

@@ -4,6 +4,7 @@ import { isMissingRead } from '../lib/missingRead';
 import { EMPTY_SPECIAL_DRAFT, saveClientSpecialRate, type SpecialTermsDraft } from '../lib/specialRates';
 import { appendDeferredOpen, deferredOpenIds, isRateWriteDeferred, useDeferWriteReady } from '../lib/deferWrite';
 import DeferWriteBar from '../components/DeferWriteBar';
+import WrittenRateNote from '../components/WrittenRateNote';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
@@ -704,9 +705,9 @@ export default function Requests() {
           const answer = clientReplyNote(r, t);
           const chatText = r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = bookedLine(r);
-          const offerText = !chatText && r.rate != null && (st === 'quoted' || st === 'expired') ? clientOffer(r.rate, r.rate_valid_until) : null;
+          const canAnswer = !isPendingLoss(r) && !r.client_reply && r.quote_status === 'quoted';
+          const offerText = !chatText && r.rate != null && canAnswer ? clientOffer(r.rate) : null;
           const lostPending = isPendingLoss(r);
-          const canAnswer = !lostPending && st === 'quoted' && !r.client_reply;
           const replyOpen = canAnswer && reply?.id === r.id ? reply.kind : null;
           const parsedReply = readRate(replyRate);
           const replyRateOk = parsedReply.ok && parsedReply.value != null;
@@ -717,7 +718,7 @@ export default function Requests() {
             && r.client_reply !== 'approved'
             && !(r.client_reply === 'better' && !r.better_decision);
           return (
-            <div key={r.id} className={'list-row' + (st === 'quoted' ? ' highlight' : '')}>
+            <div key={r.id} className={'list-row' + (canAnswer ? ' highlight' : '')}>
               <div className="when">
                 <div className="strong">{fmtTime(r.requested_at)}</div>
                 <div className="tiny muted">{ago(r.asked_at)}</div>
@@ -743,17 +744,20 @@ export default function Requests() {
                   : (
                     <div className="tiny muted">
                       {st === 'asking' && t('იკითხა {time}-ზე', 'Asked at {time}', { time: fmtTime(r.asked_at) })}
-                      {st === 'quoted' && t('კლიენტს უთხარით კურსი და ჩაწერეთ პასუხი.', 'Tell the client the rate and record the answer.')}
-                      {st === 'expired' && t('ხელახლა იკითხეთ, თუ კლიენტს კვლავ სურს კონვერტაცია', 'Ask again if the client still wants to convert')}
+                      {canAnswer && t('კლიენტს უთხარით კურსი და ჩაწერეთ პასუხი.', 'Tell the client the rate and record the answer.')}
+                      {!canAnswer && st === 'expired' && t('ხელახლა იკითხეთ, თუ კლიენტს კვლავ სურს კონვერტაცია', 'Ask again if the client still wants to convert')}
                       {st === 'declined' && (r.decline_reason ? t('ხაზინამ უარი თქვა: {reason}', 'Treasury declined: {reason}', { reason: treasuryReason(r.decline_reason, lang) }) : t('დაამატეთ დეტალები და ხელახლა იკითხეთ', 'Add details and ask again'))}
                     </div>
                   )}
               </div>
-              {held && <span className="pill pill-warn">{t('კლიენტმა დაადასტურა — გაწერას ელოდება', 'Client confirmed — waiting to write the rate')}</span>}
+              {held && (
+                <span className="pill pill-warn">
+                  {t('კლიენტმა დაადასტურა — გაწერას ელოდება', 'Client confirmed — waiting to write the rate')}
+                </span>
+              )}
               {!held && lostPending && <span className="pill pill-alert">{t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury')}</span>}
               {!held && !lostPending && st === 'asking' && <span className="pill pill-wait"><IconClock />{t('ხაზინას ელოდება', 'Waiting on treasury')}</span>}
-              {!held && !lostPending && st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
-              {!lostPending && st === 'expired' && <span className="pill pill-wait">{t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
+              {!held && !lostPending && canAnswer && r.rate != null && <span className="pill pill-warn">{t('კურსი {rate}', 'Rate {rate}', { rate: fmtRate(r.rate) })}</span>}
               {!lostPending && st === 'declined' && <span className="pill pill-alert">{t('ხაზინა', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
               <div className="actions">
                 {canAnswer && (
@@ -786,7 +790,7 @@ export default function Requests() {
                         {replyTried && !replyRateOk
                           ? t('ჩაწერეთ კურსი', 'Enter the rate')
                           : replyOpen === 'approved' && deferGate === 'on'
-                            ? t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი დადასტურებას ინახავს და ღია მოთხოვნაზე ტოვებს.', 'Write the rate sends it to the treasury queue. Do not write the rate yet saves the approval and keeps it on your open requests.')
+                            ? t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი შეთანხმებულ კურსს ინახავს და ღია მოთხოვნაზე ტოვებს. მოგვიანებით გაწერა იმავე კურსს აგზავნის.', 'Write the rate sends it to the treasury queue. Do not write the rate yet keeps the agreed rate on your open requests. A later write sends that same rate.')
                             : replyOpen === 'approved'
                               ? t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან.', 'This goes to treasury and to managers.')
                               : t('მოთხოვნა მიდის მხოლოდ ხაზინასთან. ხაზინის პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
@@ -829,7 +833,9 @@ export default function Requests() {
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
             <span className="who strong">{r.client_name ?? r.client_id}</span>
-            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} /></span>
+            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
+              {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
+            </span>
             <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
             {canChange(r) && (
               <div className="actions">
@@ -957,6 +963,7 @@ export default function Requests() {
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>}
                 {clientReplyNote(r, t) && <div className="tiny muted">{clientReplyNote(r, t)}</div>}
+                {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
                 {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
                 {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
                 {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}

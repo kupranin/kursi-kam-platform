@@ -141,7 +141,8 @@ export default function VenuePairLine({
 
 /**
  * Provider reference next to the client's own special terms.
- * Valuto is the stored TBC reference (source valuto, venue Valuto, board).
+ * Valuto is the public board (source valuto, venue Valuto, venue_kind board).
+ * It is a provider reference, not the client's negotiated TBC rate.
  * It is shown only when a quote from the last two days is already stored.
  * Express Online has no feed in fetch-market-rates. expresslombard is not used.
  */
@@ -170,7 +171,10 @@ export function BankSpecialReference({ sells, gets }: { sells: string; gets: str
         <p className="small" style={{ margin: '0 0 6px' }}>
           <span className="strong">Valuto</span>
           {' · '}
-          {t('TBC-ის სპეციალური კურსის ორიენტირი', 'TBC special-rate reference')}
+          {t(
+            'პროვაიდერის საჯარო დაფა. ეს კლიენტის შეთანხმებული TBC კურსი არ არის.',
+            'A provider public board. This is not the client’s negotiated TBC rate.',
+          )}
           {valuto.buy != null ? ` · ${t('ყიდვა', 'Buy')} ${fmtRate(valuto.buy)}` : ''}
           {valuto.sell != null ? ` · ${t('გაყიდვა', 'Sell')} ${fmtRate(valuto.sell)}` : ''}
           {valuto.fetched_at ? <span className="tiny muted"> · {fmtDateTime(valuto.fetched_at)}</span> : null}
@@ -178,8 +182,6 @@ export function BankSpecialReference({ sells, gets }: { sells: string; gets: str
       ) : null}
       <p className="small" style={{ margin: 0 }}>
         <span className="strong">Express Online</span>
-        {' · '}
-        {t('BOG-ის სპეციალური კურსის ორიენტირი', 'BOG special-rate reference')}
         {' · '}
         {t('კურსი ხელმისაწვდომი არ არის. ეს არხი მიერთებული არ არის.', 'No rate is available. This feed is not connected.')}
       </p>

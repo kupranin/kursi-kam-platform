@@ -1,4 +1,4 @@
-import { deferredIds } from '../../lib/deferWrite';
+import { deferredIds, extrasOffWriteQueue } from '../../lib/deferWrite';
 import { supabase, rpc } from '../../lib/supabase';
 import { todayTbilisi } from '../../lib/format';
 import { isMissingRead } from '../../lib/missingRead';
@@ -131,7 +131,8 @@ export async function loadActionReplies(): Promise<{ better: TreasuryReply[]; wr
       client_replied_at: null,
       note: row.note,
     }));
-  const ids = [...list.map((row) => row.request_id), ...extras.map((row) => row.request_id)];
+  const visibleExtras = await extrasOffWriteQueue(extras);
+  const ids = [...list.map((row) => row.request_id), ...visibleExtras.map((row) => row.request_id)];
   const closed = await closedIds(ids);
   const held = await deferredIds(ids);
   const stillHere = (row: TreasuryReply) => !closed.has(row.request_id) && !held.has(row.request_id) && row.client_reply !== 'declined';
@@ -142,7 +143,7 @@ export async function loadActionReplies(): Promise<{ better: TreasuryReply[]; wr
   const betterIds = new Set(better.map((row) => row.request_id));
   const write = [
     ...open.filter((row) => row.client_reply === 'approved' && !betterIds.has(row.request_id)),
-    ...extras.filter((row) => !closed.has(row.request_id) && !held.has(row.request_id) && !betterIds.has(row.request_id)),
+    ...visibleExtras.filter((row) => !closed.has(row.request_id) && !held.has(row.request_id) && !betterIds.has(row.request_id)),
   ].sort(byOldestReply);
   return { better, write };
 }
@@ -162,13 +163,6 @@ export async function loadRequestBanks(ids: number[]): Promise<Record<number, st
     if (picked.length) next[row.id] = picked;
   }
   return next;
-}
-
-/** The desk's default validity. Falls back to 15, same as the desktop card. */
-export async function loadDefaultValid(): Promise<number> {
-  const { data } = await supabase.from('rules').select('default_quote_minutes').single();
-  const minutes = data?.default_quote_minutes;
-  return minutes === 5 || minutes === 15 || minutes === 30 ? minutes : 15;
 }
 
 /** A waiting row drops out of the other two sections, and a better-rate row is not also "to write". */

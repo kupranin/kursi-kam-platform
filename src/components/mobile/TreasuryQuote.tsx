@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fmtRate, fmtTime, parseRate, rateUnit } from '../../lib/format';
+import { fmtRate, parseRate, rateUnit } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
 import { treasuryReason } from '../../lib/requestStatus';
 import { rpc } from '../../lib/supabase';
@@ -12,7 +12,7 @@ import SpecialRateMark from '../SpecialRateMark';
 import VenuePairLine from '../VenuePairLine';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText, WaitClock } from './TreasuryBits';
-import { DECLINE_REASONS, FAR_PCT, loadDefaultValid, loadRequestBanks, loadWaitingQueue } from './treasuryLoad';
+import { DECLINE_REASONS, FAR_PCT, loadRequestBanks, loadWaitingQueue } from './treasuryLoad';
 
 export default function TreasuryQuote({ id }: { id: number }) {
   const { t, lang } = useI18n();
@@ -24,14 +24,12 @@ export default function TreasuryQuote({ id }: { id: number }) {
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState('');
   const [rateText, setRateText] = useState('');
-  const [valid, setValid] = useState(15);
   const [tried, setTried] = useState(false);
   const [confirmFar, setConfirmFar] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const rateRef = useRef('');
-  const validReady = useRef(false);
   const ticket = useRef(0);
   rateRef.current = rateText;
 
@@ -41,16 +39,11 @@ export default function TreasuryQuote({ id }: { id: number }) {
   async function reload() {
     const mine = ++ticket.current;
     try {
-      const [queue, minutes, bankMap] = await Promise.all([
+      const [queue, bankMap] = await Promise.all([
         loadWaitingQueue(),
-        validReady.current ? Promise.resolve(valid) : loadDefaultValid(),
         loadRequestBanks([id]),
       ]);
       if (mine !== ticket.current) return;
-      if (!validReady.current) {
-        validReady.current = true;
-        setValid(minutes);
-      }
       setBanks(bankMap[id]);
       const next = queue.find((item) => item.request_id === id) ?? null;
       if (!next) {
@@ -140,15 +133,14 @@ export default function TreasuryQuote({ id }: { id: number }) {
     lock.current = true;
     setBusy(true);
     try {
-      const until = await rpc<string>('treasury_quote', {
+      await rpc('treasury_quote', {
         p_request_id: deal.request_id,
         p_rate: parsed.value,
-        p_valid_minutes: valid,
       });
       toast(t(
-        'კურსი {rate} გაეგზავნა {name}-ს, მოქმედებს {time}-მდე',
-        'Rate {rate} sent to {name}, valid until {time}',
-        { rate: fmtRate(parsed.value), name: deal.kam_name.split(' ')[0], time: fmtTime(until) },
+        'კურსი {rate} გაეგზავნა {name}-ს',
+        'Rate {rate} sent to {name}',
+        { rate: fmtRate(parsed.value), name: deal.kam_name.split(' ')[0] },
       ));
       navigate('/rate-desk#treasury-waiting', { replace: true });
     } catch (err) {
@@ -216,16 +208,6 @@ export default function TreasuryQuote({ id }: { id: number }) {
         {!declining && <VenuePairLine sells={row.sells_currency} gets={row.gets_currency} />}
         {!declining && (
           <>
-            <div className="field">
-              <span className="label" id={'valid-' + row.request_id}>{t('მოქმედებს', 'Valid for')}</span>
-              <div className="seg dark" role="group" aria-labelledby={'valid-' + row.request_id}>
-                {[5, 15, 30].map((minutes) => (
-                  <button key={minutes} type="button" aria-pressed={valid === minutes} onClick={() => setValid(minutes)}>
-                    {t('{n} წთ', '{n} min', { n: minutes })}
-                  </button>
-                ))}
-              </div>
-            </div>
             <div className="field" id="treasury-rate-field">
               <label htmlFor="treasury-rate">{t('კურსი', 'Rate')}</label>
               <input

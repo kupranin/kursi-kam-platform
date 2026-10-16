@@ -7,6 +7,7 @@ import { useViewAs } from '../lib/viewAs';
 import { fmtDay } from '../lib/format';
 import type { ClientMatch } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
+import ClientBrief from '../components/ClientBrief';
 
 export default function Clients() {
   const { role } = useViewAs();
@@ -14,6 +15,7 @@ export default function Clients() {
   const [rows, setRows] = useState<ClientMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [openClient, setOpenClient] = useState<string | null>(null);
+  const [summaryId, setSummaryId] = useState<string | null>(null);
   const specialRates = useSpecialRates(rows.map((row) => row.client_id));
 
   useEffect(() => {
@@ -64,6 +66,9 @@ export default function Clients() {
                           {t('სპეც. კურსი', 'Special rate')}
                         </button>
                       )}
+                      <button type="button" className="link" style={{ marginLeft: 8 }} aria-expanded={summaryId === r.client_id} onClick={() => setSummaryId(summaryId === r.client_id ? null : r.client_id)}>
+                        {t('შეჯამება', 'Summary')}
+                      </button>
                     </td>
                     <td>{r.client_id}</td>
                     <td>{r.kind === 'company' ? t('კომპანია', 'Company') : t('ფიზიკური პირი', 'Person')}</td>
@@ -74,6 +79,13 @@ export default function Clients() {
                     <tr>
                       <td colSpan={5}>
                         <SpecialRateMark clientId={r.client_id} rows={terms} variant="detail" />
+                      </td>
+                    </tr>
+                  )}
+                  {summaryId === r.client_id && (
+                    <tr>
+                      <td colSpan={5}>
+                        <ClientBrief clientId={r.client_id} />
                       </td>
                     </tr>
                   )}

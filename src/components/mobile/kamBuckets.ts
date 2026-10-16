@@ -1,4 +1,4 @@
-import { fmtRate, fmtTime } from '../../lib/format';
+import { fmtRate } from '../../lib/format';
 import { isPendingLoss } from '../../lib/requestStatus';
 import type { RequestRow } from '../../lib/types';
 
@@ -18,12 +18,14 @@ export function quoteLive(row: RequestRow, now = Date.now()): QuoteLive {
 /**
  * Treasury sent a rate, or answered a better-rate request with a new rate.
  * That answer clears the previous reply, so the KAM has to act again.
- * The reply call itself rejects an expired rate, so those stay out of this list.
+ * A stored rate_valid_until does not close acceptance, including when the
+ * outcomes view still labels an old row expired.
  */
 export function needsKamAction(row: RequestRow, now = Date.now()): boolean {
   if (isPendingLoss(row)) return false;
   if (row.client_reply) return false;
-  return quoteLive(row, now) === 'quoted';
+  if (row.quote_status === 'declined' || quoteLive(row, now) === 'declined') return false;
+  return row.quote_status === 'quoted' || quoteLive(row, now) === 'quoted' || quoteLive(row, now) === 'expired';
 }
 
 /** Waiting on treasury: a new ask, or a better rate they have not answered. */
@@ -75,18 +77,9 @@ export function pairLabel(row: RequestRow): string {
   return row.sells_currency + ' / ' + row.gets_currency;
 }
 
-/** Waiting time, or how long the quoted rate still stands. */
+/** Waiting time. A quote does not show an acceptance countdown. */
 export function cardTime(row: RequestRow, t: T, ago: (iso: string) => string, now = Date.now()): string {
-  if (needsKamAction(row, now) && row.rate_valid_until) {
-    return t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(row.rate_valid_until) });
-  }
   if (waitingOnTreasury(row, now)) return ago(row.client_reply === 'better' ? (row.client_replied_at || row.asked_at) : row.asked_at);
-  if (row.rate_valid_until && quoteLive(row, now) === 'quoted') {
-    return t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(row.rate_valid_until) });
-  }
-  if (quoteLive(row, now) === 'expired' && row.rate_valid_until) {
-    return t('ვადა გაუვიდა {time}-ზე', 'Expired at {time}', { time: fmtTime(row.rate_valid_until) });
-  }
   return ago(row.asked_at || row.requested_at);
 }
 

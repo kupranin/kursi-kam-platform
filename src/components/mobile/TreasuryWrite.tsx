@@ -7,6 +7,7 @@ import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import { useLive } from '../../lib/useLive';
 import LoadingLine from '../LoadingLine';
+import WrittenRateNote from '../WrittenRateNote';
 import SpecialRateMark from '../SpecialRateMark';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText } from './TreasuryBits';
@@ -65,7 +66,10 @@ export default function TreasuryWrite({ id }: { id: number }) {
     setBusy(true);
     try {
       await rpc('treasury_mark_rate_written', { p_request_id: row.request_id });
-      toast(t('KAM-ს ეცნობა, რომ კურსი გაწერილია.', 'The KAM is notified that the rate is written.'));
+      toast(t(
+        'KAM-ს ეცნობა, რომ კურსი გაწერილია. კურსი გაწერიდან 30 წუთი მოქმედებს.',
+        'The KAM is notified that the rate is written. The written rate works for 30 minutes from that moment.',
+      ));
       navigate('/rate-desk#treasury-write', { replace: true });
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -106,6 +110,7 @@ export default function TreasuryWrite({ id }: { id: number }) {
           </p>
         </div>
         <SpecialRateMark clientId={row.client_id} variant="detail" />
+        <WrittenRateNote />
         <p className="note-box">{t(
           'კლიენტმა ეს კურსი დაამტკიცა. „კურსი ჩაიწერა“ ნიშნავს, რომ კურსი ძირითად სისტემაში ჩაიწერა. გადახდა ამით არ დასტურდება და გარიგება წარმატებულად არ ითვლება.',
           'The client approved this rate. “Rate written” means the rate was entered in the core system. It does not confirm the payment, and it does not mark the deal successful.',

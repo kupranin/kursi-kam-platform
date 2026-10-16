@@ -163,10 +163,9 @@ export function classifyRequest(row: StatusInput): { code: LogCode; reason: stri
   if (row.loss_open || row.outcome === 'did_not_go_through') return { code: 'did_not', reason: null };
   if (row.client_reply === 'better' && !row.better_decision) return { code: 'waiting_treasury', reason: null };
   if (row.quote_status === 'asking' || row.quote_state === 'asking') return { code: 'waiting_treasury', reason: null };
-  const expired = row.quote_state === 'expired'
-    || (row.quote_status === 'quoted' && !!row.rate_valid_until && new Date(row.rate_valid_until).getTime() < Date.now());
-  if (expired) return { code: 'expired', reason: null };
-  if (row.quote_status === 'quoted' || row.quote_state === 'quoted') return { code: 'waiting_kam', reason: null };
+  if (row.quote_status === 'quoted' || row.quote_state === 'quoted' || row.quote_state === 'expired') {
+    return { code: 'waiting_kam', reason: null };
+  }
   return { code: 'waiting', reason: null };
 }
 

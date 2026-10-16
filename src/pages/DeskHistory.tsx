@@ -8,6 +8,7 @@ import { isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
+import WrittenRateNote from '../components/WrittenRateNote';
 
 const PAGE = 100;
 
@@ -94,6 +95,7 @@ export default function DeskHistory() {
                 )}
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.rate_written_at && <div className="tiny muted">{t('ჩაიწერა {when}', 'Written {when}', { when: fmtDateTime(r.rate_written_at) })}</div>}
+                {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
               </div>
               <div className="actions">
                 <span className="pill pill-ok">{t('კურსი გაწერილია', 'Rate is written')}</span>

@@ -113,8 +113,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           .eq('kam_id', profile.id)
           .eq('quote_status', 'quoted')
           .is('client_reply', null)
-          .is('marked_lost_at', null)
-          .gt('rate_valid_until', new Date().toISOString());
+          .is('marked_lost_at', null);
         if (!error) setCounts((c) => ({ ...c, action: count ?? 0 }));
       }
     } catch {

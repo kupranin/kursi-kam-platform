@@ -22,7 +22,9 @@ import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import SpecialRateMark from '../components/SpecialRateMark';
 import VenuePairLine from '../components/VenuePairLine';
-import { deferredIds } from '../lib/deferWrite';
+import { deferFlags, deferredIds, extrasOffWriteQueue, loadClosingQueue, type ClosingDeal } from '../lib/deferWrite';
+import ClosingQueue from '../components/ClosingQueue';
+import WrittenRateNote, { writtenRateUntil } from '../components/WrittenRateNote';
 import { useSpecialRates } from '../lib/specialRates';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
@@ -124,7 +126,7 @@ function QuotedRateEditor({ requestId, rate, onChanged }: { requestId: number; r
   );
 }
 
-interface CardState { rate: string; valid: number; declining: boolean; confirmFar: boolean; tried: boolean }
+interface CardState { rate: string; declining: boolean; confirmFar: boolean; tried: boolean }
 
 interface ClientReply {
   request_id: number;
@@ -242,7 +244,11 @@ function dayStatus(
         time: fmtTime(row.rate_written_at),
       }),
       cls: 'pill-ok',
-      detail: '',
+      detail: t(
+        'კურსი გაწერიდან 30 წუთი მოქმედებს, {time}-მდე.',
+        'The written rate works for 30 minutes from when it was written, until {time}.',
+        { time: fmtDateTime(writtenRateUntil(row.rate_written_at)) },
+      ),
     };
   }
   if (isDeskLoss(row)) {
@@ -263,32 +269,17 @@ function dayStatus(
     return {
       label: t('კლიენტმა დაადასტურა — გაწერას ელოდება', 'Client confirmed — waiting to write the rate'),
       cls: 'pill-warn',
-      detail: t('ხაზინის რიგში ჯერ არ არის.', 'Not on the treasury queue yet.'),
+      detail: t('ხაზინის რიგში ჯერ არ არის. შეთანხმებული კურსი იგივეა.', 'Not on the treasury queue yet. The agreed rate stays the same.'),
     };
   }
   if (row.client_reply === 'approved') return { label: t('კურსი გასაწერია', 'Rate to write'), cls: 'pill-warn', detail: '' };
   if (row.client_reply === 'better' && !row.better_decision) return { label: t('უკეთესი კურსი', 'Better rate'), cls: 'pill-warn', detail: '' };
   if (row.quote_status === 'asking' || row.quote_state === 'asking') return { label: t('კურსს ელოდება', 'Waiting for a rate'), cls: 'pill-wait', detail: '' };
   if ((row.quote_status === 'quoted' || row.quote_state === 'quoted' || row.quote_state === 'expired') && row.rate != null) {
-    const expired = row.quote_state === 'expired'
-      || (!!row.rate_valid_until && new Date(row.rate_valid_until).getTime() < Date.now());
-    if (expired) {
-      return {
-        label: t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', {
-          rate: fmtRate(row.rate),
-          time: fmtTime(row.rate_valid_until),
-        }),
-        cls: 'pill-wait',
-        detail: '',
-      };
-    }
     return {
-      label: t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', {
-        rate: fmtRate(row.rate),
-        time: fmtTime(row.rate_valid_until),
-      }),
+      label: t('კურსი {rate}', 'Rate {rate}', { rate: fmtRate(row.rate) }),
       cls: 'pill-warn',
-      detail: '',
+      detail: t('კლიენტის პასუხს ელოდება', 'Waiting on the client'),
     };
   }
   if (row.loss_open || row.outcome === 'did_not_go_through') return { label: t('არ გავიდა', 'Did not go through'), cls: 'pill-alert', detail: '' };
@@ -521,9 +512,9 @@ export default function RateDesk() {
   const [rates, setRates] = useState<ReferenceRate[]>([]);
   const [marketBoard, setMarketBoard] = useState<CurrentBoard>(EMPTY_MARKET_BOARD);
   const [marketLoaded, setMarketLoaded] = useState(false);
-  const [defaultValid, setDefaultValid] = useState(15);
   const [cards, setCards] = useState<Record<number, CardState>>({});
   const [extraAgreed, setExtraAgreed] = useState<ClientReply[]>([]);
+  const [closing, setClosing] = useState<ClosingDeal[] | null>(null);
   const [banks, setBanks] = useState<Record<number, string[]>>({});
   const [hidePast, setHidePast] = useState<Record<number, true>>({});
   const [writingId, setWritingId] = useState<number | null>(null);
@@ -612,6 +603,11 @@ export default function RateDesk() {
 
   const load = useCallback(async () => {
     void refreshQueue('full');
+    try {
+      setClosing(await loadClosingQueue());
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
     let quotedTodayIds: number[] = [];
     try {
       const quoted = await rpc<QuoteToday[]>('treasury_quotes_today');
@@ -673,14 +669,15 @@ export default function RateDesk() {
           client_replied_at: null,
           note: row.note,
         }));
-      const ids = [...list.map((r) => r.request_id), ...extras.map((r) => r.request_id)];
+      const visibleExtras = await extrasOffWriteQueue(extras);
+      const ids = [...list.map((r) => r.request_id), ...visibleExtras.map((r) => r.request_id)];
       const closed = await closedIds(ids);
       const held = await deferredIds(ids);
       const people = await loadRatePeople(ids);
       const stamp = (row: ClientReply): ClientReply => ({ ...row, ...ratePeopleFor(people, row.request_id) });
       const stillHere = (row: ClientReply) => !closed.has(row.request_id) && !held.has(row.request_id) && row.client_reply !== 'declined';
       const nextReplies = list.filter(stillHere).map(stamp);
-      const nextExtra = extras.filter((row) => !closed.has(row.request_id) && !held.has(row.request_id)).map(stamp);
+      const nextExtra = visibleExtras.filter((row) => !closed.has(row.request_id) && !held.has(row.request_id)).map(stamp);
       setReplies((prev) => replaceIfChanged(prev, nextReplies));
       setExtraAgreed((prev) => replaceIfChanged(prev, nextExtra));
     } catch {
@@ -701,8 +698,11 @@ export default function RateDesk() {
           setLossReasons((prev) => replaceIfChanged(prev, nextReasons));
         }
         const nextDay = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
-        const dayHeld = await deferredIds(nextDay.map((row) => row.id));
-        const stampedDay = nextDay.map((row) => ({ ...row, rate_write_deferred: dayHeld.has(row.id) }));
+        const dayFlags = await deferFlags(nextDay.map((row) => row.id));
+        const stampedDay = nextDay.map((row) => ({
+          ...row,
+          rate_write_deferred: dayFlags.get(row.id) === true,
+        }));
         setDayRows((prev) => replaceIfChanged(prev, stampedDay));
         setDayNote('');
       } catch {
@@ -719,9 +719,6 @@ export default function RateDesk() {
 
   useEffect(() => {
     load();
-    supabase.from('rules').select('default_quote_minutes').single().then(({ data }) => {
-      if (data?.default_quote_minutes) setDefaultValid(data.default_quote_minutes);
-    });
   }, [load]);
   useEffect(() => {
     if (phone) return;
@@ -811,12 +808,11 @@ export default function RateDesk() {
     return () => { live = false; };
   }, [queue, replies, extraAgreed, sidesTick]);
 
-  const blankCard = (valid: number): CardState => ({ rate: '', valid, declining: false, confirmFar: false, tried: false });
-  const card = (id: number): CardState => cards[id] ?? blankCard(defaultValid);
+  const blankCard = (): CardState => ({ rate: '', declining: false, confirmFar: false, tried: false });
+  const card = (id: number): CardState => cards[id] ?? blankCard();
   // Merge into the card already stored, not into a copy from the last render.
-  // A click on "30 წთ" must not restore a rate that was just typed over.
   const patch = (id: number, p: Partial<CardState>) => setCards((c) => {
-    const prev = c[id] ?? blankCard(defaultValid);
+    const prev = c[id] ?? blankCard();
     return { ...c, [id]: { ...prev, ...p } };
   });
   const rememberRate = (id: number, rate: string) => { draftRate.current[id] = rate; };
@@ -831,8 +827,8 @@ export default function RateDesk() {
       return;
     }
     try {
-      const until = await rpc<string>('treasury_quote', { p_request_id: r.request_id, p_rate: parsed.value, p_valid_minutes: c.valid });
-      toast(t('კურსი {rate} გაეგზავნა {name}-ს, მოქმედებს {time}-მდე', 'Rate {rate} sent to {name}, valid until {time}', { rate: fmtRate(rate), name: r.kam_name.split(' ')[0], time: fmtTime(until) }));
+      await rpc('treasury_quote', { p_request_id: r.request_id, p_rate: parsed.value });
+      toast(t('კურსი {rate} გაეგზავნა {name}-ს', 'Rate {rate} sent to {name}', { rate: fmtRate(rate), name: r.kam_name.split(' ')[0] }));
       delete draftRate.current[r.request_id];
       setCards((all) => { const n = { ...all }; delete n[r.request_id]; return n; });
       load();
@@ -877,7 +873,10 @@ export default function RateDesk() {
     setWritingId(r.request_id);
     try {
       await rpc('treasury_mark_rate_written', { p_request_id: r.request_id });
-      toast(t('KAM-ს ეცნობა, რომ კურსი გაწერილია.', 'The KAM is notified that the rate is written.'));
+      toast(t(
+        'KAM-ს ეცნობა, რომ კურსი გაწერილია. კურსი გაწერიდან 30 წუთი მოქმედებს.',
+        'The KAM is notified that the rate is written. The written rate works for 30 minutes from that moment.',
+      ));
       load();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -1044,14 +1043,6 @@ export default function RateDesk() {
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); send(r); } }}
                             />
                             <span className={'hint' + (c.tried && !rateOk ? ' error' : '')}>{c.tried && !rateOk ? 'ჯერ ჩაწერეთ კურსი' : rateUnit(r.sells_currency, r.gets_currency)}</span>
-                          </div>
-                          <div className="field">
-                            <span className="label" id={'valid-' + r.request_id}>მოქმედებს</span>
-                            <div className="seg dark" role="group" aria-labelledby={'valid-' + r.request_id}>
-                              {[5, 15, 30].map((m) => (
-                                <button key={m} type="button" aria-pressed={c.valid === m} onClick={() => patch(r.request_id, { valid: m })}>{m} წთ</button>
-                              ))}
-                            </div>
                           </div>
                           <div className="row" style={{ flex: '1 1 auto', justifyContent: 'flex-end', paddingTop: 27 }}>
                             <button type="button" className="btn btn-quiet" style={{ minHeight: 52 }} onClick={() => patch(r.request_id, { declining: true })}>{t('კურსს ვერ ვიძლევი', 'I cannot give a rate')}</button>
@@ -1261,10 +1252,13 @@ export default function RateDesk() {
             </div>
           </section>
 
+          {closing != null && <ClosingQueue rows={closing} onDone={load} />}
+
           <section className="card flush" aria-labelledby="write-desk-title" style={{ marginTop: 22 }}>
             <div className="card-head">
               <h2 id="write-desk-title" style={{ fontSize: 22 }}>{t('კურსი გასაწერია', 'Rate to write')}</h2>
               <span className="small muted">{t('კლიენტმა დაამტკიცა და კურსი ძირითად სისტემაში ჯერ არ არის ჩაწერილი. ჩაწერის შემდეგ დააჭირეთ „კურსი გაწერილია“. გაწერილი კურსი ისტორიაში გადადის.', 'The client approved, and the rate is not in the core system yet. After you enter it, press “Rate is written”. A written rate moves to History.')}</span>
+              <WrittenRateNote />
             </div>
             {!loaded && !repliesNote && <LoadingLine />}
             {loaded && !repliesNote && !approvedReplies.length && <p className="empty">{t('კურსი გასაწერი არ არის.', 'Nothing is waiting to be written.')}</p>}
@@ -1284,7 +1278,6 @@ export default function RateDesk() {
                   <div>{t('გასაწერი კურსი', 'Rate to write')} {fmtRate(r.approved_rate)}</div>
                   <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                   {r.rate != null && <div className="tiny muted">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}</div>}
-                  {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
                 </div>
                 <div className="actions">
                   <button type="button" className="btn btn-primary" disabled={writingId === r.request_id} onClick={() => markWritten(r)}>

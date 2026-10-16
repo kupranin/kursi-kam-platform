@@ -7,7 +7,7 @@ import RequestOutcomeButtons, { canMarkRequestOutcome } from '../RequestOutcomeB
 import CorrectStatusButton from '../CorrectStatusButton';
 import { useAuth } from '../../lib/auth';
 import { chatHandoff, clientOffer, rateBooked } from '../../lib/copyText';
-import { ago, fmtDateTime, fmtRate, fmtTime, sideAmount } from '../../lib/format';
+import { ago, fmtDateTime, fmtRate, sideAmount } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
 import { isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../../lib/requestStatus';
 import { rpc } from '../../lib/supabase';
@@ -22,6 +22,7 @@ import KamEditForm from './KamEditForm';
 import { loadKamRequest } from './kamLoad';
 import { isRateWriteDeferred, useDeferWriteReady } from '../../lib/deferWrite';
 import DeferWriteBar from '../DeferWriteBar';
+import WrittenRateNote from '../WrittenRateNote';
 
 type ReplyMode = 'approved' | 'better' | 'declined';
 
@@ -187,7 +188,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
   const transferText = bookedLine(row);
   const live = quoteLive(row);
   const offerText = !chatText && row.rate != null && (live === 'quoted' || live === 'expired')
-    ? clientOffer(row.rate, row.rate_valid_until)
+    ? clientOffer(row.rate)
     : null;
   const lostPending = isPendingLoss(row);
   const pair = pairLabel(row);
@@ -214,7 +215,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
           {deferGate === 'unknown' && <LoadingLine compact />}
           {deferGate === 'on' && (
             <>
-              <p className="tiny muted">{t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი დადასტურებას ინახავს და ღია მოთხოვნაზე ტოვებს.', 'Write the rate sends it to the treasury queue. Do not write the rate yet saves the approval and keeps it on your open requests.')}</p>
+              <p className="tiny muted">{t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი შეთანხმებულ კურსს ინახავს და ღია მოთხოვნაზე ტოვებს. მოგვიანებით გაწერა იმავე კურსს აგზავნის.', 'Write the rate sends it to the treasury queue. Do not write the rate yet keeps the agreed rate on your open requests. A later write sends that same rate.')}</p>
               <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { void sendReply(false); }}>
                 {busy ? t('იტვირთება', 'Loading') : t('გაწერეთ კურსი', 'Write the rate')}
               </button>
@@ -268,9 +269,6 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
           {pair && <p className="m-focal-pair">{pair}</p>}
           {amountText && <p className="m-focal-amount">{amountText}</p>}
           {row.rate != null && <p className="m-rate">{fmtRate(row.rate)}</p>}
-          {row.rate_valid_until && (
-            <p className="m-card-time">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(row.rate_valid_until) })}</p>
-          )}
           <div className="m-detail-head">
             <h2>{row.client_name || row.client_id}</h2>
             <span className={'pill ' + status.cls}>{status.label}</span>
@@ -314,10 +312,10 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
       <ol className="m-timeline">
         <li><span>{t('იკითხა', 'Asked')}</span><time dateTime={row.asked_at}>{fmtDateTime(row.asked_at)}</time></li>
         {row.quoted_at && <li><span>{t('კურსი', 'Rate')}</span><time dateTime={row.quoted_at}>{fmtDateTime(row.quoted_at)}</time></li>}
-        {row.rate_valid_until && row.rate != null && <li><span>{t('მოქმედებს', 'Valid until')}</span><time dateTime={row.rate_valid_until}>{fmtTime(row.rate_valid_until)}</time></li>}
         {row.client_replied_at && <li><span>{t('პასუხი', 'Reply')}</span><time dateTime={row.client_replied_at}>{fmtDateTime(row.client_replied_at)}</time></li>}
         {row.rate_written_at && <li><span>{t('გაწერილია', 'Written')}</span><time dateTime={row.rate_written_at}>{fmtDateTime(row.rate_written_at)}</time></li>}
       </ol>
+      {row.rate_written_at && <WrittenRateNote writtenAt={row.rate_written_at} />}
 
       {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={row.client_id} />}
       {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}

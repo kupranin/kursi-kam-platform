@@ -1,106 +1,40 @@
-// Public-board competitiveness. The numbers come from board_competitiveness.
+// Public-board competitiveness. The log numbers come from board_competitiveness.
 // This file does not read requests. A positive gap means the Kursi board
 // was better for the client. Zero is a five-decimal tie.
+// Time-weighted percentages live in boardCoverage.ts and do not change this log.
 
 import { supabase } from './supabase';
-import { tbilisiDayStart, todayTbilisi } from './format';
+import { tbilisiDayStart } from './format';
+import {
+  BOARD_CLUSTER_MS,
+  BOARD_FRESHNESS_MS,
+  type BoardFetch,
+} from './boardCoverage';
+import {
+  parseBoardReport,
+  shiftDay,
+} from './boardReport';
+
+export type {
+  BoardGrain,
+  BoardIncident,
+  BoardPoint,
+  BoardReport,
+  BoardSide,
+  RangePreset,
+} from './boardReport';
+export {
+  inclusiveDays,
+  parseBoardReport,
+  presetRange,
+  shiftDay,
+  sortPairs,
+  tbilisiMonday,
+} from './boardReport';
 
 export const MAX_COMP_DAYS = 92;
 
-const PAIR_ORDER = ['USD/GEL', 'EUR/GEL', 'RUB/GEL', 'CNY/GEL', 'EUR/USD', 'EUR/RUB', 'USD/RUB', 'USD/CNY', 'EUR/CNY'];
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-export type BoardGrain = 'fetches' | 'hours' | 'none';
-export type BoardSide = 'buy' | 'sell';
-export type RangePreset = 'today' | '7d' | 'week' | 'prev' | 'custom';
-
-export interface BoardPoint {
-  at: string;
-  pair: string;
-  side: BoardSide;
-  kursiRate: number | null;
-  bestRate: number | null;
-  bestNames: string;
-  bestKeys: string[];
-  advantage: number | null;
-  standing: string;
-  tetri: number | null;
-  bps: number | null;
-}
-
-export interface BoardIncident {
-  id: string;
-  pair: string;
-  side: BoardSide;
-  startedAt: string;
-  endedAt: string | null;
-  endKind: 'flip' | 'break' | 'open';
-  durationMinutes: number;
-  kursiRate: number | null;
-  bestRate: number | null;
-  bestNames: string;
-  bestKeys: string[];
-  bestKeysAny: string[];
-  maxGap: number | null;
-  avgGap: number | null;
-  avgWeight: 'time' | 'equal';
-  startKursiRate: number | null;
-  endKursiRate: number | null;
-  startNames: string;
-  endNames: string;
-  tetri: number | null;
-  bps: number | null;
-  points: BoardPoint[];
-}
-
-export interface BoardReport {
-  grain: BoardGrain;
-  reason: string | null;
-  pairs: string[];
-  observations: BoardPoint[];
-  incidents: BoardIncident[];
-}
-
-export function shiftDay(day: string, days: number): string {
-  const [y, m, d] = day.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
-
-export function inclusiveDays(from: string, to: string): number {
-  const a = Date.parse(from + 'T00:00:00Z');
-  const b = Date.parse(to + 'T00:00:00Z');
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
-  return Math.round((b - a) / 86_400_000) + 1;
-}
-
-function weekdayIndex(day: string): number {
-  const mid = new Date(new Date(tbilisiDayStart(day)).getTime() + 12 * 3_600_000);
-  const name = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tbilisi', weekday: 'short' }).format(mid);
-  const index = WEEKDAYS.indexOf(name);
-  return index < 0 ? 1 : index;
-}
-
-export function tbilisiMonday(day: string): string {
-  const wd = weekdayIndex(day);
-  return shiftDay(day, wd === 0 ? -6 : 1 - wd);
-}
-
-export function presetRange(preset: Exclude<RangePreset, 'custom'>): { from: string; to: string } {
-  const today = todayTbilisi();
-  if (preset === 'today') return { from: today, to: today };
-  if (preset === '7d') return { from: shiftDay(today, -6), to: today };
-  if (preset === 'week') return { from: tbilisiMonday(today), to: today };
-  const monday = tbilisiMonday(today);
-  return { from: shiftDay(monday, -7), to: shiftDay(monday, -1) };
-}
-
-export function sortPairs(pairs: readonly string[]): string[] {
-  return [...pairs].sort((a, b) => {
-    const ia = PAIR_ORDER.indexOf(a);
-    const ib = PAIR_ORDER.indexOf(b);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
-  });
-}
+const cache = new Map<string, import('./boardReport').BoardReport>();
 
 export function fmtAdvantage(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(Number(value))) return '';
@@ -127,84 +61,7 @@ export function missingCompetitiveness(message: string): boolean {
   return /board_competitiveness|schema cache|could not find the function|PGRST202/i.test(message);
 }
 
-function num(value: unknown): number | null {
-  if (value == null || value === '') return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function strings(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item)).filter((item) => item.length > 0);
-}
-
-function sideOf(value: unknown): BoardSide {
-  return value === 'sell' ? 'sell' : 'buy';
-}
-
-function pointOf(row: Record<string, unknown>, pair: string, side: BoardSide): BoardPoint {
-  return {
-    at: String(row.at ?? ''),
-    pair: String(row.pair ?? pair),
-    side: sideOf(row.side ?? side),
-    kursiRate: num(row.kursi_rate),
-    bestRate: num(row.best_rate),
-    bestNames: String(row.best_names ?? ''),
-    bestKeys: strings(row.best_keys),
-    advantage: num(row.advantage),
-    standing: String(row.standing ?? ''),
-    tetri: num(row.tetri),
-    bps: num(row.bps),
-  };
-}
-
-function incidentOf(row: Record<string, unknown>): BoardIncident {
-  const pair = String(row.pair ?? '');
-  const side = sideOf(row.side);
-  const points = Array.isArray(row.points)
-    ? row.points.map((item) => pointOf(item as Record<string, unknown>, pair, side))
-    : [];
-  const endKind = row.end_kind === 'flip' || row.end_kind === 'break' || row.end_kind === 'open' ? row.end_kind : 'open';
-  return {
-    id: String(row.id ?? pair + '|' + side + '|' + String(row.started_at ?? '')),
-    pair,
-    side,
-    startedAt: String(row.started_at ?? ''),
-    endedAt: row.ended_at == null || row.ended_at === '' ? null : String(row.ended_at),
-    endKind,
-    durationMinutes: num(row.duration_minutes) ?? 0,
-    kursiRate: num(row.kursi_rate),
-    bestRate: num(row.best_rate),
-    bestNames: String(row.best_names ?? ''),
-    bestKeys: strings(row.best_keys),
-    bestKeysAny: strings(row.best_keys_any),
-    maxGap: num(row.max_gap),
-    avgGap: num(row.avg_gap),
-    avgWeight: row.avg_weight === 'equal' ? 'equal' : 'time',
-    startKursiRate: num(row.start_kursi_rate),
-    endKursiRate: num(row.end_kursi_rate),
-    startNames: String(row.start_names ?? ''),
-    endNames: String(row.end_names ?? ''),
-    tetri: num(row.tetri),
-    bps: num(row.bps),
-    points,
-  };
-}
-
-function asObject(data: unknown): Record<string, unknown> {
-  if (typeof data === 'string') {
-    try {
-      return asObject(JSON.parse(data) as unknown);
-    } catch {
-      return {};
-    }
-  }
-  return data && typeof data === 'object' ? data as Record<string, unknown> : {};
-}
-
-const cache = new Map<string, BoardReport>();
-
-export async function loadBoardReport(from: string, to: string, pair: string | null): Promise<BoardReport> {
+export async function loadBoardReport(from: string, to: string, pair: string | null): Promise<import('./boardReport').BoardReport> {
   const key = from + '|' + to + '|' + (pair ?? '');
   const hit = cache.get(key);
   if (hit) return hit;
@@ -214,19 +71,81 @@ export async function loadBoardReport(from: string, to: string, pair: string | n
     p_pair: pair,
   });
   if (error) throw new Error(error.message);
-  const body = asObject(data);
-  const grain = body.grain === 'fetches' || body.grain === 'hours' || body.grain === 'none' ? body.grain : 'none';
-  const report: BoardReport = {
-    grain,
-    reason: body.reason == null ? null : String(body.reason),
-    pairs: sortPairs(strings(body.pairs)),
-    observations: Array.isArray(body.observations)
-      ? body.observations.map((item) => pointOf(item as Record<string, unknown>, pair ?? '', 'buy'))
-      : [],
-    incidents: Array.isArray(body.incidents)
-      ? body.incidents.map((item) => incidentOf(item as Record<string, unknown>))
-      : [],
-  };
+  const report = parseBoardReport(data, pair);
   cache.set(key, report);
   return report;
+}
+
+function num(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export interface BoardSeries {
+  fetches: BoardFetch[];
+  truncated: boolean;
+}
+
+async function readRatePages(
+  table: 'market_rates' | 'market_rate_hours',
+  startIso: string,
+  endIso: string,
+): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const pageSize = 1000;
+  const cap = 80000;
+  const timeCol = table === 'market_rates' ? 'fetched_at' : 'hour_start';
+  const rows: Record<string, unknown>[] = [];
+  for (let from = 0; from < cap; from += pageSize) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('source, venue, venue_kind, currency, quote_currency, buy, sell, fetched_at')
+      .in('currency', ['USD', 'EUR', 'RUB', 'CNY'])
+      .in('quote_currency', ['GEL', 'USD', 'EUR', 'RUB', 'CNY'])
+      .in('venue_kind', ['board', 'bank'])
+      .gte(timeCol, startIso)
+      .lt(timeCol, endIso)
+      .order(timeCol, { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as Record<string, unknown>[];
+    rows.push(...batch);
+    if (batch.length < pageSize) return { rows, truncated: false };
+  }
+  return { rows, truncated: true };
+}
+
+function toFetch(row: Record<string, unknown>): BoardFetch | null {
+  const fetchedAt = String(row.fetched_at ?? '');
+  if (!fetchedAt) return null;
+  return {
+    source: String(row.source ?? ''),
+    venue: String(row.venue ?? ''),
+    venueKind: String(row.venue_kind ?? ''),
+    currency: String(row.currency ?? ''),
+    quote: String(row.quote_currency ?? ''),
+    buy: num(row.buy),
+    sell: num(row.sell),
+    fetchedAt,
+  };
+}
+
+/** Public board rows for the time-weighted view. The incident log does not use this. */
+export async function loadBoardSeries(
+  from: string,
+  to: string,
+  grain: 'fetches' | 'hours',
+): Promise<BoardSeries> {
+  const lookback = grain === 'hours' ? BOARD_FRESHNESS_MS + 60 * 60 * 1000 : BOARD_FRESHNESS_MS + BOARD_CLUSTER_MS;
+  const startMs = Date.parse(tbilisiDayStart(from)) - lookback;
+  const endIso = tbilisiDayStart(shiftDay(to, 1));
+  const startIso = new Date(startMs).toISOString();
+  const table = grain === 'hours' ? 'market_rate_hours' : 'market_rates';
+  const { rows, truncated } = await readRatePages(table, startIso, endIso);
+  const fetches: BoardFetch[] = [];
+  for (const row of rows) {
+    const fetch = toFetch(row);
+    if (fetch) fetches.push(fetch);
+  }
+  return { fetches, truncated };
 }

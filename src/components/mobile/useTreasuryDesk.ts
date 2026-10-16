@@ -4,6 +4,7 @@ import { countPendingLosses } from '../../lib/pendingLoss';
 import { useToast } from '../../lib/toast';
 import { useLive } from '../../lib/useLive';
 import type { QueueRow } from '../../lib/types';
+import { loadClosingQueue, type ClosingDeal } from '../../lib/deferWrite';
 import {
   loadActionReplies,
   loadRequestBanks,
@@ -16,6 +17,7 @@ export interface TreasuryDeskData {
   waiting: QueueRow[];
   better: TreasuryReply[];
   write: TreasuryReply[];
+  closing: ClosingDeal[] | null;
   banks: Record<number, string[]>;
   losses: number | null;
   loaded: boolean;
@@ -29,6 +31,7 @@ const EMPTY: TreasuryDeskData = {
   waiting: [],
   better: [],
   write: [],
+  closing: null,
   banks: {},
   losses: null,
   loaded: false,
@@ -46,7 +49,7 @@ function replySig(rows: TreasuryReply[]): string {
   return rows.map((row) => [row.request_id, row.client_reply, row.rate, row.wanted_rate, row.approved_rate, row.client_replied_at].join('\u001f')).join('\u001e');
 }
 
-export function useTreasuryDesk(enabled = true): TreasuryDeskData {
+export function useTreasuryDesk(enabled = true): TreasuryDeskData & { reload: () => Promise<void> } {
   const { t } = useI18n();
   const toast = useToast();
   const [data, setData] = useState<TreasuryDeskData>(EMPTY);
@@ -165,9 +168,22 @@ export function useTreasuryDesk(enabled = true): TreasuryDeskData {
     }
   }, []);
 
+  const pullClosing = useCallback(async () => {
+    try {
+      const rows = await loadClosingQueue();
+      setData((current) => {
+        if (rows == null) return current.closing == null ? current : { ...current, closing: null };
+        const same = JSON.stringify(current.closing) === JSON.stringify(rows);
+        return same ? current : { ...current, closing: rows };
+      });
+    } catch (err) {
+      toastRef.current((err as Error).message, 'error');
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([pullQueue(), pullReplies(), pullLosses()]);
-  }, [pullQueue, pullReplies, pullLosses]);
+    await Promise.all([pullQueue(), pullReplies(), pullLosses(), pullClosing()]);
+  }, [pullQueue, pullReplies, pullLosses, pullClosing]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -184,7 +200,8 @@ export function useTreasuryDesk(enabled = true): TreasuryDeskData {
     if (!enabled) return;
     void pullReplies();
     void pullLosses();
+    void pullClosing();
   }, 15000, { realtime: enabled });
 
-  return data;
+  return { ...data, reload: refreshAll };
 }

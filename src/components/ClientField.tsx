@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../lib/i18n';
 import { rpc } from '../lib/supabase';
 import { bankList, type ClientMatch } from '../lib/types';
+import ClientBrief from './ClientBrief';
 
 export interface ClientInfo {
   id: string;
@@ -387,6 +388,7 @@ export default function ClientField({ onInfo, tried }: Props) {
           </div>
         )}
       </div>
+      {resolved?.valid && <ClientBrief clientId={resolved.id} />}
     </>
   );
 }

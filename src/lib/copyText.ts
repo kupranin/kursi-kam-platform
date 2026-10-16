@@ -1,4 +1,4 @@
-import { fmtRate, fmtTime } from './format';
+import { fmtRate } from './format';
 
 /** Line a KAM pastes into chat after the client approves. Georgian, always. */
 export function chatHandoff(clientId: string, rate: number): string {
@@ -12,11 +12,8 @@ export function rateBooked(clientId: string, rate: number): string {
 
 /**
  * Message a KAM sends the client once treasury has given a rate.
- * Georgian, always. The validity clock is omitted when treasury did not set one.
+ * Georgian, always. A quote does not carry an acceptance countdown.
  */
-export function clientOffer(rate: number, validUntil: string | null | undefined): string {
-  const offer = `თქვენი კონვერტაციისთვის, კურსი რომელიც შეგვიძლია შემოგთავაზოთ არის ${fmtRate(rate)}`;
-  const time = fmtTime(validUntil);
-  if (!time) return offer;
-  return `${offer} კურსი ვალიდურია ${time}`;
+export function clientOffer(rate: number): string {
+  return `თქვენი კონვერტაციისთვის, კურსი რომელიც შეგვიძლია შემოგთავაზოთ არის ${fmtRate(rate)}`;
 }

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
-import { fmtRate, fmtTime, sideAmount } from '../lib/format';
+import { fmtRate, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { isQuotedProgress, isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
@@ -14,15 +14,12 @@ import RatePeople from '../components/RatePeople';
 const PAGE = 100;
 
 function progressPill(row: RequestRow, t: (ka: string, en: string) => string): { label: string; cls: string } {
-  const expired = row.quote_state === 'expired'
-    || (row.quote_status === 'quoted' && !!row.rate_valid_until && new Date(row.rate_valid_until).getTime() < Date.now());
   if (row.client_reply === 'better' && row.better_decision === 'corrected') {
     return { label: t('გასწორებული კურსი KAM-თანაა', 'Corrected rate is with the KAM'), cls: 'pill-ok' };
   }
   if (row.client_reply === 'better' && row.better_decision === 'accepted') {
     return { label: t('კურსი დაბრუნდა KAM-თან', 'Rate went back to the KAM'), cls: 'pill-ok' };
   }
-  if (expired) return { label: t('ვადა გაუვიდა', 'Quote expired'), cls: 'pill-wait' };
   return { label: t('კლიენტის პასუხს ელოდება', 'Waiting on the client'), cls: 'pill-warn' };
 }
 
@@ -117,7 +114,6 @@ export default function QuoteProgress() {
                   {rate != null && <div className="small" style={{ marginTop: 6 }}>{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(rate)}</div>}
                   <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                   {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
-                  {r.rate_valid_until && <div className="tiny muted">{t('მოქმედებს {time}-მდე', 'Valid until {time}', { time: fmtTime(r.rate_valid_until) })}</div>}
                   {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
                 </div>
                 <div className="actions">

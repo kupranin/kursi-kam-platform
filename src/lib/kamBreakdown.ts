@@ -1,3 +1,7 @@
+/**
+ * Older client-side request counts. The analytics page no longer calls this.
+ * KPIs come from public.analytics_request_kpis.
+ */
 import { lossReasonLabel } from './requestStatus';
 import { asAmount, requestGel } from './requestGel';
 import { supabase } from './supabase';

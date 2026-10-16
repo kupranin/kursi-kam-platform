@@ -5,6 +5,7 @@ import { useToast } from '../lib/toast';
 import { useViewAs } from '../lib/viewAs';
 import { downloadCsv, fmtAmount, fmtMinutes, fmtRate, parseRate, todayTbilisi } from '../lib/format';
 import { loadRatePeople } from '../lib/ratePeople';
+import { loadAbsValuations, type AbsValuation } from '../lib/requestKpis';
 import { formatBanks } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
 
@@ -130,6 +131,7 @@ export default function Analyst() {
   const [tried, setTried] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [absById, setAbsById] = useState<Map<number, AbsValuation>>(new Map());
 
   const from = isoDate(fromDate);
   const to = isoDate(toDate);
@@ -197,6 +199,33 @@ export default function Analyst() {
     })();
     return () => { gone = true; };
   }, [status, from, to, rangeInvalid, reloadKey]);
+
+  useEffect(() => {
+    const ids = rows
+      .filter((row) => row.gel_amount == null && row.sells_currency && row.gets_currency && row.sells_currency !== 'GEL' && row.gets_currency !== 'GEL')
+      .map((row) => row.id);
+    if (!ids.length) {
+      setAbsById(new Map());
+      return;
+    }
+    let gone = false;
+    loadAbsValuations(ids)
+      .then((list) => {
+        if (gone) return;
+        setAbsById(new Map(list.map((row) => [row.id, row])));
+      })
+      .catch(() => { if (!gone) setAbsById(new Map()); });
+    return () => { gone = true; };
+  }, [rows]);
+
+  function crossGel(row: Deal): string {
+    const cross = Boolean(row.sells_currency && row.gets_currency && row.sells_currency !== 'GEL' && row.gets_currency !== 'GEL');
+    if (!cross || row.gel_amount != null) return fmtAmount(row.amount_gel);
+    const abs = absById.get(row.id);
+    if (abs?.valuationStatus === 'calculated' && abs.requestAbsGel != null) return fmtAmount(abs.requestAbsGel);
+    if (abs) return '—';
+    return fmtAmount(row.amount_gel);
+  }
 
   function statusText(row: { status: Status; loss_phase?: string | null }): string {
     if (row.status === 'success') return t('წარმატებული', 'Success');
@@ -369,8 +398,8 @@ export default function Analyst() {
 
       <p className="small" style={{ color: 'var(--ink-2)', marginTop: 8 }}>
         {t(
-          'GEL თანხა, როცა შევსებულია, ლარის ციფრია. რუბლზე 1-ზე ნაკლები კურსი ლარია ერთ რუბლზე. რუბლის კურსი 1 ან მეტი ლარი არ არის, ამიტომ ლარი ცარიელი რჩება. ჩამოტვირთვა იღებს ამ ფილტრის ყველა სტრიქონს. თარიღიდან და თარიღამდე ცარიელი რომ დარჩეს, ყველა დღე შედის.',
-          'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. Download includes every row in this filter. Leave From and To empty to include every date.',
+          'GEL თანხა, როცა შევსებულია, ლარის ციფრია. რუბლზე 1-ზე ნაკლები კურსი ლარია ერთ რუბლზე. რუბლის კურსი 1 ან მეტი ლარი არ არის, ამიტომ ლარი ცარიელი რჩება. კროსზე, თუ ლარი ხელით არ არის ჩაწერილი, ჩანს მიღებული თანხის ABS GEL ისტორიული კურსით, ან ცარიელი რჩება თუ ეს კურსი არ არის. ჩამოტვირთვა კვლავ შენახულ ლარს იღებს. თარიღიდან და თარიღამდე ცარიელი რომ დარჩეს, ყველა დღე შედის.',
+          'When the GEL amount is filled, that is the lari figure. A ruble rate below 1 is lari per 1 ruble. A ruble rate of 1 or more is not a lari rate, so the lari figure stays empty. On a cross with no typed lari figure, the cell shows ABS GEL of the received amount at the historical rate, or stays empty when that rate is missing. Download still exports the stored lari figure. Leave From and To empty to include every date.',
         )}
         {canEdit && <> {t('ადმინს შეუძლია კურსის და თანხების გასწორება.', 'An admin can correct the rate and the amounts.')}</>}
         {' '}
@@ -451,7 +480,7 @@ export default function Analyst() {
                     <td className="num">
                       {open ? (
                         <input className={'input cell' + (tried && gelP && !gelP.ok ? ' invalid' : '')} inputMode="decimal" aria-label={t('თანხა GEL', 'Amount GEL')} value={draft.gel} onChange={(e) => setDraft({ ...draft, gel: e.target.value, gelTouched: true })} />
-                      ) : fmtAmount(r.amount_gel)}
+                      ) : crossGel(r)}
                     </td>
                     <td>
                       <span className={'pill ' + (r.status === 'success' ? 'pill-ok' : r.status === 'lost' ? 'pill-alert' : 'pill-wait')}>
