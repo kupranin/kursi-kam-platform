@@ -20,6 +20,8 @@ import { readRate } from './amounts';
 import { canAskAgain, mobileStatus, needsKamAction, pairLabel, quoteLive, waitingOnTreasury } from './kamBuckets';
 import KamEditForm from './KamEditForm';
 import { loadKamRequest } from './kamLoad';
+import { isRateWriteDeferred, useDeferWriteReady } from '../../lib/deferWrite';
+import DeferWriteBar from '../DeferWriteBar';
 
 type ReplyMode = 'approved' | 'better' | 'declined';
 
@@ -47,6 +49,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
   const [editing, setEditing] = useState(false);
   const [secondary, setSecondary] = useState(false);
   const lock = useRef(false);
+  const deferGate = useDeferWriteReady();
   const rateRef = useRef<HTMLInputElement>(null);
   const reasonRef = useRef<HTMLInputElement>(null);
 
@@ -102,7 +105,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     setRateText(next === 'approved' && row.rate != null ? fmtRate(row.rate) : '');
   }
 
-  async function sendReply() {
+  async function sendReply(defer = false) {
     if (!row || !mode || lock.current) return;
     setTried(true);
     const parsed = readRate(rateText);
@@ -115,13 +118,19 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     lock.current = true;
     setBusy(true);
     try {
-      await rpc('kam_client_reply', {
-        p_request_id: row.id,
-        p_reply: mode,
-        p_rate: mode === 'declined' ? null : parsed.value,
-        p_reason: mode === 'declined' ? why : null,
-      });
-      toast(mode === 'approved'
+      if (defer && mode === 'approved') {
+        await rpc('kam_defer_rate_write', { p_request_id: row.id, p_rate: parsed.value });
+      } else {
+        await rpc('kam_client_reply', {
+          p_request_id: row.id,
+          p_reply: mode,
+          p_rate: mode === 'declined' ? null : parsed.value,
+          p_reason: mode === 'declined' ? why : null,
+        });
+      }
+      toast(defer
+        ? t('კლიენტის დადასტურება შეინახა. ხაზინის რიგში ჯერ არ არის.', 'The client approval is saved. It is not on the treasury queue yet.')
+        : mode === 'approved'
         ? t('გაეგზავნა ხაზინას და მენეჯერებს.', 'Sent to treasury and managers.')
         : mode === 'better'
           ? t('გაეგზავნა ხაზინას.', 'Sent to treasury.')
@@ -202,9 +211,23 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <input id="reply-rate" ref={rateRef} className={'input m-amount' + (tried && !rateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={rateText} onChange={(e) => setRateText(e.target.value)} />
           </label>
           {tried && !rateOk && <span className="hint error">{t('ჩაწერეთ კურსი', 'Enter the rate')}</span>}
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { void sendReply(); }}>
-            {busy ? t('იგზავნება', 'Sending') : t('გაგზავნა', 'Send')}
-          </button>
+          {deferGate === 'unknown' && <LoadingLine compact />}
+          {deferGate === 'on' && (
+            <>
+              <p className="tiny muted">{t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი დადასტურებას ინახავს და ღია მოთხოვნაზე ტოვებს.', 'Write the rate sends it to the treasury queue. Do not write the rate yet saves the approval and keeps it on your open requests.')}</p>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { void sendReply(false); }}>
+                {busy ? t('იტვირთება', 'Loading') : t('გაწერეთ კურსი', 'Write the rate')}
+              </button>
+              <button type="button" className="btn" disabled={busy} onClick={() => { void sendReply(true); }}>
+                {t('ჯერ არ გაწეროთ კურსი', 'Do not write the rate yet')}
+              </button>
+            </>
+          )}
+          {deferGate === 'off' && (
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { void sendReply(false); }}>
+              {busy ? t('იტვირთება', 'Loading') : t('გაგზავნა', 'Send')}
+            </button>
+          )}
           <button type="button" className="m-text-btn" onClick={() => choose('approved')}>{t('უკან', 'Back')}</button>
         </>
       )}
@@ -270,7 +293,8 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
       )}
       {banks && <p>{t('ბანკი', 'Bank')}: {banks}</p>}
       {row.client_rate != null && <p className="small">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(row.client_rate)}</p>}
-      {row.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {row.note}</p>}
+      {row.note && !isRateWriteDeferred(row) && <p className="note-box">{t('კომენტარი', 'Comment')}: {row.note}</p>}
+      <DeferWriteBar row={row} onDone={() => { void reload(); }} />
       {lostPending && (
         <p className="small">
           {t('მიზეზი', 'Reason')}: {lossReasonLabel(row.loss_reason, lang)}

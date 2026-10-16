@@ -22,6 +22,7 @@ import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import SpecialRateMark from '../components/SpecialRateMark';
 import VenuePairLine from '../components/VenuePairLine';
+import { deferredIds } from '../lib/deferWrite';
 import { useSpecialRates } from '../lib/specialRates';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
@@ -189,6 +190,7 @@ interface DeskDayRow {
   note: string | null;
   quoted_by_name?: string | null;
   written_by_name?: string | null;
+  rate_write_deferred?: boolean | null;
 }
 
 function deskSeenAt(row: DeskDayRow): string {
@@ -256,6 +258,13 @@ function dayStatus(
   }
   if (row.client_reply === 'declined') {
     return { label: t('კლიენტმა უარი თქვა', 'Declined by client'), cls: 'pill-alert', detail: row.client_decline_reason ?? '' };
+  }
+  if (row.client_reply === 'approved' && row.rate_write_deferred) {
+    return {
+      label: t('კლიენტმა დაადასტურა — გაწერას ელოდება', 'Client confirmed — waiting to write the rate'),
+      cls: 'pill-warn',
+      detail: t('ხაზინის რიგში ჯერ არ არის.', 'Not on the treasury queue yet.'),
+    };
   }
   if (row.client_reply === 'approved') return { label: t('კურსი გასაწერია', 'Rate to write'), cls: 'pill-warn', detail: '' };
   if (row.client_reply === 'better' && !row.better_decision) return { label: t('უკეთესი კურსი', 'Better rate'), cls: 'pill-warn', detail: '' };
@@ -666,11 +675,12 @@ export default function RateDesk() {
         }));
       const ids = [...list.map((r) => r.request_id), ...extras.map((r) => r.request_id)];
       const closed = await closedIds(ids);
+      const held = await deferredIds(ids);
       const people = await loadRatePeople(ids);
       const stamp = (row: ClientReply): ClientReply => ({ ...row, ...ratePeopleFor(people, row.request_id) });
-      const stillHere = (row: ClientReply) => !closed.has(row.request_id) && row.client_reply !== 'declined';
+      const stillHere = (row: ClientReply) => !closed.has(row.request_id) && !held.has(row.request_id) && row.client_reply !== 'declined';
       const nextReplies = list.filter(stillHere).map(stamp);
-      const nextExtra = extras.filter((row) => !closed.has(row.request_id)).map(stamp);
+      const nextExtra = extras.filter((row) => !closed.has(row.request_id) && !held.has(row.request_id)).map(stamp);
       setReplies((prev) => replaceIfChanged(prev, nextReplies));
       setExtraAgreed((prev) => replaceIfChanged(prev, nextExtra));
     } catch {
@@ -691,7 +701,9 @@ export default function RateDesk() {
           setLossReasons((prev) => replaceIfChanged(prev, nextReasons));
         }
         const nextDay = applyRatePeople(raw, await loadRatePeople(raw.map((row) => row.id)));
-        setDayRows((prev) => replaceIfChanged(prev, nextDay));
+        const dayHeld = await deferredIds(nextDay.map((row) => row.id));
+        const stampedDay = nextDay.map((row) => ({ ...row, rate_write_deferred: dayHeld.has(row.id) }));
+        setDayRows((prev) => replaceIfChanged(prev, stampedDay));
         setDayNote('');
       } catch {
         setDayRows([]);

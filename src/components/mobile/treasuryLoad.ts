@@ -1,3 +1,4 @@
+import { deferredIds } from '../../lib/deferWrite';
 import { supabase, rpc } from '../../lib/supabase';
 import { todayTbilisi } from '../../lib/format';
 import { isMissingRead } from '../../lib/missingRead';
@@ -132,7 +133,8 @@ export async function loadActionReplies(): Promise<{ better: TreasuryReply[]; wr
     }));
   const ids = [...list.map((row) => row.request_id), ...extras.map((row) => row.request_id)];
   const closed = await closedIds(ids);
-  const stillHere = (row: TreasuryReply) => !closed.has(row.request_id) && row.client_reply !== 'declined';
+  const held = await deferredIds(ids);
+  const stillHere = (row: TreasuryReply) => !closed.has(row.request_id) && !held.has(row.request_id) && row.client_reply !== 'declined';
   const open = list.filter(stillHere);
   const better = open
     .filter((row) => row.client_reply === 'better' && !row.better_decision)
@@ -140,7 +142,7 @@ export async function loadActionReplies(): Promise<{ better: TreasuryReply[]; wr
   const betterIds = new Set(better.map((row) => row.request_id));
   const write = [
     ...open.filter((row) => row.client_reply === 'approved' && !betterIds.has(row.request_id)),
-    ...extras.filter((row) => !closed.has(row.request_id) && !betterIds.has(row.request_id)),
+    ...extras.filter((row) => !closed.has(row.request_id) && !held.has(row.request_id) && !betterIds.has(row.request_id)),
   ].sort(byOldestReply);
   return { better, write };
 }

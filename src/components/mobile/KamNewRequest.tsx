@@ -138,7 +138,7 @@ export default function KamNewRequest() {
         {!tried && banksFromClient && <span className="hint">{t('შენახული ბანკები ჩანს. ამ გარიგებისთვის შეგიძლიათ შეცვალოთ.', 'Saved banks are on. You can change them for this deal.')}</span>}
       </div>
 
-      <ClientSpecialTerms clientId={info?.valid ? info.id : null} idSuffix="phone" onDraft={(draft) => { specialRef.current = draft; }} />
+      <ClientSpecialTerms clientId={info?.valid ? info.id : null} idSuffix="phone" requestSells={sells} requestGets={gets} onDraft={(draft) => { specialRef.current = draft; }} />
 
       <div className="m-fields" id="new-pair">
         <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} idSuffix="new" />

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase, rpc } from '../lib/supabase';
+import { rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
-import { downloadCsv, fmtShort, fmtWhole, monthOptions } from '../lib/format';
-import type { PortfolioRow, Rules, SummaryRow, WinbackRow } from '../lib/types';
+import { downloadCsv, fmtWhole, monthOptions } from '../lib/format';
+import type { PortfolioRow, SummaryRow } from '../lib/types';
 import { IconDownload } from '../components/Icons';
 import LoadingLine from '../components/LoadingLine';
 
@@ -18,8 +18,6 @@ export default function Team() {
   const [month, setMonth] = useState(months[1]?.value ?? months[0].value);
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioRow[]>([]);
-  const [winback, setWinback] = useState<WinbackRow[]>([]);
-  const [rules, setRules] = useState<Rules | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -37,34 +35,22 @@ export default function Team() {
     return () => { alive = false; };
   }, [month]);
 
-  useEffect(() => {
-    supabase.from('rules').select('*').single().then(({ data }) => setRules(data as Rules));
-    rpc<WinbackRow[]>('winback_list').then(setWinback).catch(() => setWinback([]));
-  }, []);
-
   const visibleSummary = isKam ? summary.filter((r) => r.kam_id === profile!.id) : summary;
   const visiblePortfolio = isKam ? portfolio.filter((p) => p.owner_id === profile!.id) : portfolio;
-  const visibleWinback = isKam ? winback.filter((w) => w.owner_id === profile!.id) : winback;
   const total = visibleSummary.reduce(
     (a, r) => ({
       clients: a.clients + Number(r.clients),
-      turnover: a.turnover + Number(r.turnover),
-      tns: a.tns + Number(r.turnover_not_successful),
-      income: a.income + Number(r.income),
       judged: a.judged + Number(r.requests_judged),
       won: a.won + Number(r.requests_won),
     }),
-    { clients: 0, turnover: 0, tns: 0, income: 0, judged: 0, won: 0 },
+    { clients: 0, judged: 0, won: 0 },
   );
-  const maxTurnover = Math.max(1, ...visibleSummary.map((r) => Number(r.turnover)));
-  const failedShare = total.turnover > 0 ? Math.round((total.tns / total.turnover) * 100) : 0;
-  const biggestFailed = [...visiblePortfolio].sort((a, b) => Number(b.turnover_not_successful) - Number(a.turnover_not_successful)).filter((p) => Number(p.turnover_not_successful) > 0).slice(0, 3);
   const monthLabel = months.find((m) => m.value === month)?.label ?? month;
 
   function exportCsv() {
-    downloadCsv(`kam-portfolio-${month.slice(0, 7)}.csv`, [
-      ['კლიენტის ID', 'კლიენტი', 'KAM', 'მოთხოვნები პერიოდში', 'ბრუნვა GEL', 'აქედან არ გავიდა', 'შემოსავალი GEL', 'ტრანზაქციები'],
-      ...visiblePortfolio.map((p) => [p.client_id, p.client_name, p.owner_name, p.requests_in_window, p.turnover, p.turnover_not_successful, p.income, p.transactions]),
+    downloadCsv(`kam-requests-${month.slice(0, 7)}.csv`, [
+      ['კლიენტის ID', 'კლიენტი', 'KAM', 'მოთხოვნები პერიოდში'],
+      ...visiblePortfolio.map((p) => [p.client_id, p.client_name, p.owner_name, p.requests_in_window]),
     ]);
   }
 
@@ -73,7 +59,9 @@ export default function Team() {
       <div className="page-head">
         <div>
           <h1>{isKam ? t('ჩემი ციფრები', 'My numbers') : t('გუნდი', 'Team')}</h1>
-          <p>{isKam ? 'თქვენი პორტფელი, იგივე წესით, როგორც ყველასი' : 'ყველა KAM-ის პორტფელი, იგივე წესით'}</p>
+          <p>{isKam
+            ? t('თქვენი მოთხოვნები ამ თვეში. საბანკო ფაილის ბრუნვა აქ არ ჩანს.', 'Your requests this month. Bank-file turnover is not shown here.')
+            : t('KAM-ების მოთხოვნები ამ თვეში. საბანკო ფაილის ბრუნვა აქ არ ჩანს.', 'KAM requests this month. Bank-file turnover is not shown here.')}</p>
         </div>
         <div className="row">
           <label className="sr-only" htmlFor="month">თვე</label>
@@ -87,63 +75,42 @@ export default function Team() {
       {error && <p className="alert-box" role="alert">{error}</p>}
 
       <div className="stats big">
-        <div className="stat"><div className="label">კლიენტები</div><div className="value">{fmtWhole(total.clients)}</div></div>
-        <div className="stat"><div className="label">ბრუნვა</div><div className="value">GEL {fmtShort(total.turnover)}</div></div>
-        <div className="stat"><div className="label">შემოსავალი</div><div className="value">GEL {fmtWhole(total.income)}</div></div>
+        <div className="stat"><div className="label">{t('კლიენტები', 'Clients')}</div><div className="value">{fmtWhole(total.clients)}</div></div>
         <div className="stat">
-          <div className="label">ბრუნვა, რომელიც არ გავიდა</div>
-          <div className="value" style={{ color: failedShare > 0 ? 'var(--alert)' : undefined }}>{failedShare}%</div>
-          <div className="small muted">GEL {fmtShort(total.tns)}</div>
+          <div className="label">{t('მოთხოვნა, რომელიც გავიდა', 'Requests that went through')}</div>
+          <div className="value">{total.judged ? `${fmtWhole(total.won)} / ${fmtWhole(total.judged)}` : '—'}</div>
+          <div className="small muted">{t('მოთხოვნის შედეგი. დადასტურებული საბანკო ტრანზაქცია არ არის.', 'A request outcome. Not a confirmed bank transaction.')}</div>
         </div>
       </div>
 
       <section className="card flush" aria-labelledby="score-title">
         <div className="card-head">
           <h2 id="score-title">{isKam ? monthLabel : 'KAM-ის მიხედვით, ' + monthLabel}</h2>
-          <div className="legend"><span><i style={{ background: 'var(--aubergine)' }} />გავიდა</span><span><i style={{ background: 'var(--orange)' }} />არ გავიდა</span></div>
         </div>
         {loading && <LoadingLine />}
-        {!loading && !visibleSummary.length && <p className="empty">ამ თვეში მოთხოვნა ან ბრუნვა ჯერ არ არის.</p>}
+        {!loading && !visibleSummary.length && <p className="empty">{t('ამ თვეში მოთხოვნა ჯერ არ არის.', 'No request this month yet.')}</p>}
         {!loading && visibleSummary.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: 980 }}>
+            <table className="table" style={{ minWidth: 640 }}>
               <thead>
                 <tr>
-                  <th>KAM</th><th className="num">კლიენტები</th><th style={{ width: '28%' }}>ბრუნვა</th>
-                  <th className="num">არ გავიდა</th><th className="num">შემოსავალი</th><th className="num">შემოსავალი GEL 1 მლნ-ზე</th><th className="num">მოგებული მოთხოვნები</th>
+                  <th>KAM</th>
+                  <th className="num">{t('კლიენტები', 'Clients')}</th>
+                  <th className="num">{t('მოთხოვნა, რომელიც გავიდა', 'Requests that went through')}</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleSummary.map((r) => {
-                  const t = Number(r.turnover), ns = Number(r.turnover_not_successful);
-                  return (
-                    <tr key={r.kam_id}>
-                      <th scope="row">{r.kam_name}</th>
-                      <td className="num">{fmtWhole(r.clients)}</td>
-                      <td>
-                        <div className="row" style={{ gap: 12, flexWrap: 'nowrap' }}>
-                          <span className="strong" style={{ minWidth: 70, fontWeight: 500 }}>{fmtShort(t)}</span>
-                          <div className="bar" style={{ flex: 1 }} aria-hidden="true">
-                            <span className="ok" style={{ width: ((t - ns) / maxTurnover) * 100 + '%' }} />
-                            <span className="no" style={{ width: (ns / maxTurnover) * 100 + '%' }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="num">{fmtShort(ns)}</td>
-                      <td className="num">{fmtWhole(r.income)}</td>
-                      <td className="num strong">{r.income_per_1m_turnover != null ? fmtWhole(r.income_per_1m_turnover) : ''}</td>
-                      <td className="num">{r.requests_judged ? `${r.requests_won} / ${r.requests_judged} (${r.win_rate_pct}%)` : ''}</td>
-                    </tr>
-                  );
-                })}
+                {visibleSummary.map((r) => (
+                  <tr key={r.kam_id}>
+                    <th scope="row">{r.kam_name}</th>
+                    <td className="num">{fmtWhole(r.clients)}</td>
+                    <td className="num">{r.requests_judged ? `${r.requests_won} / ${r.requests_judged} (${r.win_rate_pct}%)` : ''}</td>
+                  </tr>
+                ))}
                 {visibleSummary.length > 1 && (
                   <tr>
-                    <th scope="row" className="strong">სულ</th>
+                    <th scope="row" className="strong">{t('სულ', 'Total')}</th>
                     <td className="num strong">{fmtWhole(total.clients)}</td>
-                    <td className="strong">GEL {fmtShort(total.turnover)}</td>
-                    <td className="num strong">{fmtShort(total.tns)}</td>
-                    <td className="num strong">{fmtWhole(total.income)}</td>
-                    <td className="num strong">{total.turnover ? fmtWhole(Math.round((total.income / total.turnover) * 1_000_000)) : ''}</td>
                     <td className="num strong">{total.judged ? `${total.won} / ${total.judged}` : ''}</td>
                   </tr>
                 )}
@@ -155,59 +122,24 @@ export default function Team() {
 
       <div className="cols">
         <div className="col-main">
-          <section className="card" aria-labelledby="fail-title">
-            <h2 id="fail-title">ყველაზე დიდი ბრუნვა, რომელიც არ გავიდა</h2>
-            <p className="small muted" style={{ margin: '4px 0 14px' }}>{monthLabel}</p>
-            {loading && <LoadingLine />}
-            {!loading && !biggestFailed.length && <p className="empty">ამ თვეში არ არის.</p>}
-            <div className="stack-sm">
-              {biggestFailed.map((p) => {
-                const t = Number(p.turnover), ns = Number(p.turnover_not_successful);
-                return (
-                  <div key={p.client_id}>
-                    <div className="row-between" style={{ marginBottom: 6 }}>
-                      <span className="strong" style={{ fontWeight: 500 }}>{p.client_name ?? p.client_id}{!isKam && <span className="muted small">, {p.owner_name}</span>}</span>
-                      <span className="small" style={{ color: 'var(--ink-2)' }}>GEL {fmtShort(ns)} {fmtShort(t)}-დან არ გავიდა</span>
-                    </div>
-                    <div className="bar" style={{ height: 12 }} aria-hidden="true">
-                      <span className="ok" style={{ width: ((t - ns) / t) * 100 + '%' }} />
-                      <span className="no" style={{ width: (ns / t) * 100 + '%' }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
           <section className="card row-between" aria-labelledby="wb-title" style={{ alignItems: 'center' }}>
             <div style={{ maxWidth: 520 }}>
-              <h2 id="wb-title">დაბრუნება</h2>
+              <h2 id="wb-title">{t('დაბრუნება', 'Follow-ups')}</h2>
               <p style={{ margin: '6px 0 0', color: 'var(--ink-2)' }}>
-                {visibleWinback.length} {visibleWinback.length === 1 ? 'კლიენტმა' : 'კლიენტებმა'} კურსი ითხოვა და მას შემდეგ წარმატებული ტრანზაქცია არ ჰქონია.
-                {' '}პრიორიტეტი A, ჯერ დაუკავშირებელი: {visibleWinback.filter((w) => w.tier === 'A' && w.step === 'not_contacted').length}.
+                {t('დაბრუნების სია ღია მოთხოვნებზეა. საბანკო ფაილის ბრუნვა ამ ბარათზე არ ჩანს.', 'The follow-up list is for open requests. Bank-file turnover is not on this card.')}
               </p>
             </div>
-            <Link to="/follow-ups" className="btn btn-dark">დაბრუნების გახსნა</Link>
+            <Link to="/follow-ups" className="btn btn-dark">{t('დაბრუნების გახსნა', 'Open follow-ups')}</Link>
           </section>
         </div>
 
         <section className="card tint col-side" aria-labelledby="rules-title">
-          <h2 id="rules-title">როგორ ითვლება ეს ციფრები</h2>
-          <p className="small" style={{ margin: '4px 0 16px', color: 'var(--ink-2)' }}>იგივე წესებია ყველა ეკრანზე და ყველა ექსპორტში.</p>
-          <dl className="stack-sm" style={{ margin: 0 }}>
-            <div><dt className="strong">ბრუნვა</dt><dd style={{ margin: '2px 0 0' }}>ABS GEL პლუს Cross GEL, ყველა გადახდის სტატუსი</dd></div>
-            <div><dt className="strong">შემოსავალი</dt><dd style={{ margin: '2px 0 0' }}>სრული შემოსავალი, ყველა გადახდის სტატუსი, ზემოდან არაფერი ემატება</dd></div>
-            <div><dt className="strong">გავიდა</dt><dd style={{ margin: '2px 0 0' }}>წარმატებული ტრანზაქცია იმავე კლიენტისგან მოთხოვნის დღეს</dd></div>
-            <div><dt className="strong">ვისი კლიენტია</dt><dd style={{ margin: '2px 0 0' }}>KAM, რომელსაც ამ თვეში ამ კლიენტზე ყველაზე მეტი მოთხოვნა აქვს; ფრე ბოლო მოთხოვნა წყვეტს</dd></div>
-            <div>
-              <dt className="strong">თვის ზღვარი</dt>
-              <dd style={{ margin: '2px 0 0' }}>
-                {rules?.month_grace_days == null
-                  ? <span className="warn-text">ჯერ არ არის გადაწყვეტილი, ითვლება კალენდარული თვე.</span>
-                  : rules.month_grace_days === 0 ? 'მხოლოდ კალენდარული თვე' : `თვე პლუს ${rules.month_grace_days} დღე`}
-              </dd>
-            </div>
+          <h2 id="rules-title">{t('როგორ ითვლება ეს ციფრები', 'How these figures are counted')}</h2>
+          <dl className="stack-sm" style={{ margin: '12px 0 0' }}>
+            <div><dt className="strong">{t('კლიენტები', 'Clients')}</dt><dd style={{ margin: '2px 0 0' }}>{t('კლიენტი, რომელზეც ამ თვეში მოთხოვნაა.', 'A client with a request this month.')}</dd></div>
+            <div><dt className="strong">{t('მოთხოვნა, რომელიც გავიდა', 'Requests that went through')}</dt><dd style={{ margin: '2px 0 0' }}>{t('მოთხოვნის შედეგი: გაწერილი კურსი, გადახდის ნიშანი, ან შედეგის ხედში უკვე დათვლილი დამთხვევა. ეს ატვირთული საბანკო ფაილის ბრუნვა არ არის.', 'The request outcome: a written rate, a payment mark, or a match the outcome view already counts. This is not uploaded bank-file turnover.')}</dd></div>
           </dl>
-          {role === 'admin' && <p className="small" style={{ marginTop: 16 }}><Link to="/admin#rules">წესების შეცვლა</Link></p>}
+          {role === 'admin' && <p className="small" style={{ marginTop: 16 }}><Link to="/admin#rules">{t('წესების შეცვლა', 'Change the rules')}</Link></p>}
         </section>
       </div>
     </>

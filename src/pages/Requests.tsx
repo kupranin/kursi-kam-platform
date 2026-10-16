@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../lib/activeRequest';
 import { isMissingRead } from '../lib/missingRead';
 import { EMPTY_SPECIAL_DRAFT, saveClientSpecialRate, type SpecialTermsDraft } from '../lib/specialRates';
+import { appendDeferredOpen, deferredOpenIds, isRateWriteDeferred, useDeferWriteReady } from '../lib/deferWrite';
+import DeferWriteBar from '../components/DeferWriteBar';
 import { supabase, rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
@@ -91,6 +93,9 @@ function historyStatus(r: RequestRow, went: string, missed: string, pending: str
 
 function clientReplyNote(r: RequestRow, t: (ka: string, en: string, vars?: Record<string, string | number>) => string): string | null {
   if (r.client_reply === 'approved' && r.approved_rate != null) {
+    if (isRateWriteDeferred(r)) {
+      return t('კლიენტმა დაამტკიცა {rate}. გაწერას ელოდება. ხაზინის რიგში ჯერ არ არის.', 'Client approved {rate}. Waiting to write the rate. Not on the treasury queue yet.', { rate: fmtRate(r.approved_rate) });
+    }
     return t('კლიენტმა დაამტკიცა {rate}. გაეგზავნა ხაზინას და მენეჯერებს.', 'Client approved {rate}. Sent to treasury and managers.', { rate: fmtRate(r.approved_rate) });
   }
   if (r.client_reply === 'better') {
@@ -141,6 +146,7 @@ export default function Requests() {
   const [replyReason, setReplyReason] = useState('');
   const [replyTried, setReplyTried] = useState(false);
   const [replyBusy, setReplyBusy] = useState(false);
+  const replyLock = useRef(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [editClientId, setEditClientId] = useState('');
   const [editName, setEditName] = useState('');
@@ -163,6 +169,7 @@ export default function Requests() {
   const bankClientKnown = useRef(false);
   const banksTouched = useRef(false);
   const specialRef = useRef<SpecialTermsDraft>(EMPTY_SPECIAL_DRAFT);
+  const deferGate = useDeferWriteReady();
   const months = monthOptions(12).map((m) => ({ value: m.value, label: m.label.replace(/, so far$|, ჯერჯერობით$/, '') }));
 
   const today = todayTbilisi();
@@ -183,7 +190,11 @@ export default function Requests() {
         .or(`request_date.eq.${today},quote_status.eq.asking`)
         .order('asked_at', { ascending: false });
       if (!error) {
-        const next = await withPeople((data ?? []) as RequestRow[]);
+        const next = await appendDeferredOpen(profile.id, await withPeople((data ?? []) as RequestRow[]), async (ids) => {
+          const more = await supabase.from('request_outcomes').select('*').in('id', ids);
+          if (more.error || !more.data) return [];
+          return withPeople(more.data as RequestRow[]);
+        });
         setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
         const went = next.filter((row) => row.went_through && row.request_date === today);
         setDoneRows((prev) => (JSON.stringify(prev) === JSON.stringify(went) ? prev : went));
@@ -204,7 +215,18 @@ export default function Requests() {
         } catch {
           freshnessDay = '';
         }
-        const next = await withPeople(fetched.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), matched)));
+        const next = await appendDeferredOpen(
+          profile.id,
+          await withPeople(fetched.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), matched))),
+          async (ids) => {
+            const more = await supabase.from('request_active').select(ACTIVE_COLUMNS).in('id', ids);
+            if (more.error || !more.data) return [];
+            const extra = more.data as unknown as ActiveSource[];
+            const extraMatched = await matchedSuccessIds(extra.map((row) => row.id));
+            if (!extraMatched) return [];
+            return withPeople(extra.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), extraMatched)));
+          },
+        );
         setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
         setDoneRows((prev) => (prev.length === 0 ? prev : []));
       }
@@ -233,7 +255,14 @@ export default function Requests() {
     if (ticket !== histReq.current) return;
     if (error) setHistError(error.message);
     else {
-      const written = await withPeople((data ?? []) as RequestRow[]);
+      let written = await withPeople((data ?? []) as RequestRow[]);
+      if (isKam && profile) {
+        const held = await deferredOpenIds(profile.id);
+        if (held.length) {
+          const skip = new Set(held);
+          written = written.filter((row) => !skip.has(row.id));
+        }
+      }
       if (ticket !== histReq.current) return;
       setHistory((prev) => (JSON.stringify(prev) === JSON.stringify(written) ? prev : written));
       setHistCount(count ?? 0);
@@ -526,8 +555,8 @@ export default function Requests() {
     setReplyTried(false);
   }
 
-  async function saveReply(r: RequestRow) {
-    if (!reply || reply.id !== r.id) return;
+  async function saveReply(r: RequestRow, defer = false) {
+    if (!reply || reply.id !== r.id || replyLock.current) return;
     setReplyTried(true);
     const parsed = readRate(replyRate);
     const reason = replyReason.trim();
@@ -536,15 +565,22 @@ export default function Requests() {
     } else if (!parsed.ok || parsed.value == null) {
       return;
     }
+    replyLock.current = true;
     setReplyBusy(true);
     try {
-      await rpc('kam_client_reply', {
-        p_request_id: r.id,
-        p_reply: reply.kind,
-        p_rate: reply.kind === 'declined' ? null : parsed.value,
-        p_reason: reply.kind === 'declined' ? reason : null,
-      });
-      toast(reply.kind === 'approved'
+      if (defer && reply.kind === 'approved') {
+        await rpc('kam_defer_rate_write', { p_request_id: r.id, p_rate: parsed.value });
+      } else {
+        await rpc('kam_client_reply', {
+          p_request_id: r.id,
+          p_reply: reply.kind,
+          p_rate: reply.kind === 'declined' ? null : parsed.value,
+          p_reason: reply.kind === 'declined' ? reason : null,
+        });
+      }
+      toast(defer
+        ? t('კლიენტის დადასტურება შეინახა. ხაზინის რიგში ჯერ არ არის.', 'The client approval is saved. It is not on the treasury queue yet.')
+        : reply.kind === 'approved'
         ? t('გაეგზავნა ხაზინას და მენეჯერებს.', 'Sent to treasury and managers.')
         : reply.kind === 'better'
           ? t('გაეგზავნა ხაზინას.', 'Sent to treasury.')
@@ -558,6 +594,7 @@ export default function Requests() {
     } catch (err) {
       toast((err as Error).message, 'error');
     }
+    replyLock.current = false;
     setReplyBusy(false);
   }
 
@@ -611,7 +648,7 @@ export default function Requests() {
               </span>
             </div>
           </div>
-          <ClientSpecialTerms key={clientForm} clientId={info?.valid ? info.id : null} idSuffix="desk" onDraft={(draft) => { specialRef.current = draft; }} />
+          <ClientSpecialTerms key={clientForm} clientId={info?.valid ? info.id : null} idSuffix="desk" requestSells={sells} requestGets={gets} onDraft={(draft) => { specialRef.current = draft; }} />
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
               <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />
@@ -675,6 +712,7 @@ export default function Requests() {
           const replyRateOk = parsedReply.ok && parsedReply.value != null;
           const replyReasonOk = replyReason.trim().length >= 2;
           const own = canChange(r);
+          const held = isRateWriteDeferred(r);
           const canAskAgain = !lostPending && (st === 'expired' || st === 'declined')
             && r.client_reply !== 'approved'
             && !(r.client_reply === 'better' && !r.better_decision);
@@ -711,9 +749,10 @@ export default function Requests() {
                     </div>
                   )}
               </div>
-              {lostPending && <span className="pill pill-alert">{t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury')}</span>}
-              {!lostPending && st === 'asking' && <span className="pill pill-wait"><IconClock />{t('ხაზინას ელოდება', 'Waiting on treasury')}</span>}
-              {!lostPending && st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
+              {held && <span className="pill pill-warn">{t('კლიენტმა დაადასტურა — გაწერას ელოდება', 'Client confirmed — waiting to write the rate')}</span>}
+              {!held && lostPending && <span className="pill pill-alert">{t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury')}</span>}
+              {!held && !lostPending && st === 'asking' && <span className="pill pill-wait"><IconClock />{t('ხაზინას ელოდება', 'Waiting on treasury')}</span>}
+              {!held && !lostPending && st === 'quoted' && <span className="pill pill-warn">{t('კურსი {rate}, მოქმედებს {time}-მდე', 'Rate {rate}, valid until {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
               {!lostPending && st === 'expired' && <span className="pill pill-wait">{t('კურსი {rate}, ვადა გაუვიდა {time}-ზე', 'Rate {rate}, expired at {time}', { rate: fmtRate(r.rate), time: fmtTime(r.rate_valid_until) })}</span>}
               {!lostPending && st === 'declined' && <span className="pill pill-alert">{t('ხაზინა', 'Treasury')}: {treasuryReason(r.decline_reason, lang)}</span>}
               <div className="actions">
@@ -731,19 +770,26 @@ export default function Requests() {
                 {own && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
               {editForm(r)}
+              <DeferWriteBar row={r} onDone={refresh} />
               <LossApproval row={r} onDone={refresh} />
               {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
               {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
               {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
               {offerText && <CopyLine label={t('ტექსტი კლიენტისთვის', 'Text for the client')} text={offerText} />}
               {replyOpen && (
-                <form onSubmit={(e) => { e.preventDefault(); saveReply(r); }} noValidate style={{ flex: '1 1 100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+                <form onSubmit={(e) => { e.preventDefault(); if (replyOpen === 'approved' && deferGate === 'unknown') return; void saveReply(r, false); }} noValidate style={{ flex: '1 1 100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
                   {replyOpen !== 'declined' ? (
                     <div className="field" style={{ flex: '1 1 200px', maxWidth: 280 }}>
                       <label htmlFor={'reply-rate-' + r.id}>{t('ჩაწერეთ კურსი', 'Enter the rate')}</label>
                       <input id={'reply-rate-' + r.id} className={'input' + (replyTried && !replyRateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={replyRate} onChange={(e) => setReplyRate(e.target.value)} />
                       <span className={'hint' + (replyTried && !replyRateOk ? ' error' : '')}>
-                        {replyTried && !replyRateOk ? t('ჩაწერეთ კურსი', 'Enter the rate') : replyOpen === 'approved' ? t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან.', 'This goes to treasury and to managers.') : t('მოთხოვნა მიდის მხოლოდ ხაზინასთან. ხაზინის პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
+                        {replyTried && !replyRateOk
+                          ? t('ჩაწერეთ კურსი', 'Enter the rate')
+                          : replyOpen === 'approved' && deferGate === 'on'
+                            ? t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი დადასტურებას ინახავს და ღია მოთხოვნაზე ტოვებს.', 'Write the rate sends it to the treasury queue. Do not write the rate yet saves the approval and keeps it on your open requests.')
+                            : replyOpen === 'approved'
+                              ? t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან.', 'This goes to treasury and to managers.')
+                              : t('მოთხოვნა მიდის მხოლოდ ხაზინასთან. ხაზინის პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
                       </span>
                     </div>
                   ) : (
@@ -755,7 +801,16 @@ export default function Requests() {
                       </span>
                     </div>
                   )}
-                  <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? t('იგზავნება…', 'Sending…') : replyOpen === 'declined' ? t('შენახვა', 'Save') : t('გაგზავნა', 'Send')}</button>
+                  {replyOpen === 'approved' && deferGate === 'unknown' && <LoadingLine compact />}
+                  {replyOpen === 'approved' && deferGate === 'on' && (
+                    <>
+                      <button type="button" className="btn btn-primary" disabled={replyBusy} onClick={() => { void saveReply(r, false); }}>{replyBusy ? t('იტვირთება', 'Loading') : t('გაწერეთ კურსი', 'Write the rate')}</button>
+                      <button type="button" className="btn" disabled={replyBusy} onClick={() => { void saveReply(r, true); }}>{t('ჯერ არ გაწეროთ კურსი', 'Do not write the rate yet')}</button>
+                    </>
+                  )}
+                  {(replyOpen !== 'approved' || deferGate === 'off') && (
+                    <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? t('იტვირთება', 'Loading') : replyOpen === 'declined' ? t('შენახვა', 'Save') : t('გაგზავნა', 'Send')}</button>
+                  )}
                   <button type="button" className="link" onClick={() => setReply(null)}>{t('უკან', 'Back')}</button>
                 </form>
               )}

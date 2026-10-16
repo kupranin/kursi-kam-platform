@@ -1,3 +1,5 @@
+import { lossReasonLabel } from './requestStatus';
+import { asAmount, requestGel } from './requestGel';
 import { supabase } from './supabase';
 
 /** One analysis row, only the fields the KAM breakdown counts. */
@@ -129,4 +131,100 @@ export async function loadKamDeals(month: string): Promise<DealSlice[]> {
     if (page.length < 1000) break;
   }
   return rows;
+}
+
+interface OwnRow {
+  id: number;
+  request_date: string;
+  kam_name: string | null;
+  went_through: boolean | null;
+  outcome: string | null;
+  loss_open: boolean | null;
+  loss_reason: string | null;
+  loss_reason_note: string | null;
+  client_decline_reason: string | null;
+  decline_reason: string | null;
+  sells_currency: string | null;
+  gets_currency: string | null;
+  amount: number | string | null;
+  gets_amount: number | string | null;
+  rate: number | string | null;
+  approved_rate: number | string | null;
+}
+
+const OWN_COLUMNS = 'id, request_date, kam_name, went_through, outcome, loss_open, loss_reason, loss_reason_note, client_decline_reason, decline_reason, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate';
+
+function ownStatus(row: OwnRow): 'success' | 'lost' | 'open' {
+  const success = row.went_through === true || row.outcome === 'went_through';
+  if (success) return 'success';
+  if (row.outcome === 'did_not_go_through' || row.loss_open === true || !!(row.loss_reason ?? '').trim()) return 'lost';
+  return 'open';
+}
+
+function ownReason(row: OwnRow): string {
+  const parts = [
+    lossReasonLabel(row.loss_reason, 'ka'),
+    (row.loss_reason_note ?? '').trim(),
+    (row.client_decline_reason ?? '').trim(),
+    (row.decline_reason ?? '').trim(),
+  ].filter(Boolean);
+  return parts.join('. ');
+}
+
+/**
+ * This KAM's requests only, from request_outcomes (their RLS).
+ * Does not read analyst_deals. GEL is the request lari figure on success,
+ * or requests.gel_amount when an admin has typed one. A blank lari adds nothing.
+ */
+export async function loadOwnKamDeals(month: string, kamId: string): Promise<DealSlice[]> {
+  const raw: OwnRow[] = [];
+  for (let start = 0; ; start += 1000) {
+    let query = supabase
+      .from('request_outcomes')
+      .select(OWN_COLUMNS)
+      .eq('kam_id', kamId)
+      .order('id', { ascending: true });
+    if (month !== 'all') {
+      query = query.gte('request_date', month).lt('request_date', nextMonth(month));
+    }
+    const { data, error } = await query.range(start, start + 999);
+    if (error) throw error;
+    const page = (data ?? []) as OwnRow[];
+    raw.push(...page);
+    if (page.length < 1000) break;
+  }
+
+  const successIds = raw.filter((row) => ownStatus(row) === 'success').map((row) => row.id);
+  const typed = new Map<number, number>();
+  for (let i = 0; i < successIds.length; i += 200) {
+    const slice = successIds.slice(i, i + 200);
+    const { data, error } = await supabase.from('requests').select('id, gel_amount').in('id', slice);
+    if (error || !data) continue;
+    for (const row of data as { id: number; gel_amount?: number | string | null }[]) {
+      const n = asAmount(row.gel_amount);
+      if (n != null) typed.set(Number(row.id), n);
+    }
+  }
+
+  return raw.map((row) => {
+    const status = ownStatus(row);
+    const typedGel = typed.get(row.id);
+    const gel = status === 'success'
+      ? (typedGel != null
+        ? typedGel
+        : requestGel(
+          row.sells_currency,
+          row.gets_currency,
+          asAmount(row.amount),
+          asAmount(row.gets_amount),
+          asAmount(row.approved_rate) ?? asAmount(row.rate),
+        ))
+      : null;
+    return {
+      kam_name: row.kam_name,
+      status,
+      loss_reason: status === 'lost' ? ownReason(row) : null,
+      amount_gel: gel,
+    };
+  });
 }

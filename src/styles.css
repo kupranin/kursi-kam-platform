@@ -727,6 +727,8 @@ html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; 
 .comp-points { max-height: 320px; overflow: auto; }
 
 .special-terms { margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--ground); min-width: 0; }
+.special-ref { margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: var(--paper, #fff); }
+.defer-write { flex: 1 1 100%; margin-top: 8px; padding: 12px 14px; border-radius: 12px; background: var(--ground); }
 .special-terms .checkbox { align-items: flex-start; height: auto; white-space: normal; }
 .special-terms-body { margin-top: 8px; min-width: 0; }
 .special-saved { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }

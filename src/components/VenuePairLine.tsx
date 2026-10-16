@@ -138,3 +138,51 @@ export default function VenuePairLine({
     </div>
   );
 }
+
+/**
+ * Provider reference next to the client's own special terms.
+ * Valuto is the stored TBC reference (source valuto, venue Valuto, board).
+ * It is shown only when a quote from the last two days is already stored.
+ * Express Online has no feed in fetch-market-rates. expresslombard is not used.
+ */
+export function BankSpecialReference({ sells, gets }: { sells: string; gets: string }) {
+  const { t } = useI18n();
+  const pair = dealPair(sells, gets);
+  const [valuto, setValuto] = useState<QuoteLine | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    loadLines(pair.base, pair.quote, ['valuto'])
+      .then((next) => { if (live) setValuto(next.find((line) => line.key === 'valuto') ?? null); })
+      .catch(() => { if (live) setValuto(null); });
+    return () => { live = false; };
+  }, [pair.base, pair.quote]);
+
+  return (
+    <div className="special-ref">
+      <p className="tiny muted" style={{ margin: '0 0 6px' }}>
+        {t(
+          'ეს პროვაიდერის ორიენტირია. კლიენტის შენახული პირობა ცალკე რჩება და აქ არ იცვლება.',
+          'This is a provider reference. The client’s saved terms stay separate and are not changed here.',
+        )}
+      </p>
+      {valuto ? (
+        <p className="small" style={{ margin: '0 0 6px' }}>
+          <span className="strong">Valuto</span>
+          {' · '}
+          {t('TBC-ის სპეციალური კურსის ორიენტირი', 'TBC special-rate reference')}
+          {valuto.buy != null ? ` · ${t('ყიდვა', 'Buy')} ${fmtRate(valuto.buy)}` : ''}
+          {valuto.sell != null ? ` · ${t('გაყიდვა', 'Sell')} ${fmtRate(valuto.sell)}` : ''}
+          {valuto.fetched_at ? <span className="tiny muted"> · {fmtDateTime(valuto.fetched_at)}</span> : null}
+        </p>
+      ) : null}
+      <p className="small" style={{ margin: 0 }}>
+        <span className="strong">Express Online</span>
+        {' · '}
+        {t('BOG-ის სპეციალური კურსის ორიენტირი', 'BOG special-rate reference')}
+        {' · '}
+        {t('კურსი ხელმისაწვდომი არ არის. ეს არხი მიერთებული არ არის.', 'No rate is available. This feed is not connected.')}
+      </p>
+    </div>
+  );
+}

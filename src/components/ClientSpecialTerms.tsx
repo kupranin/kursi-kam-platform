@@ -11,11 +11,15 @@ import {
   type SpecialTermsDraft,
 } from '../lib/specialRates';
 import LoadingLine from './LoadingLine';
+import { BankSpecialReference } from './VenuePairLine';
 
 interface Props {
   clientId: string | null;
   idSuffix: string;
   onDraft: (draft: SpecialTermsDraft) => void;
+  /** The request pair, used for the provider reference when the terms pair is blank. */
+  requestSells?: string;
+  requestGets?: string;
 }
 
 function rateText(rate: number | null): string {
@@ -35,7 +39,7 @@ function latest(rows: SpecialRateRow[]): SpecialRateRow {
 }
 
 /** Optional client-reported bank terms on the new-request form. Hidden when setup 42 is absent. */
-export default function ClientSpecialTerms({ clientId, idSuffix, onDraft }: Props) {
+export default function ClientSpecialTerms({ clientId, idSuffix, onDraft, requestSells = '', requestGets = '' }: Props) {
   const { t } = useI18n();
   const [gate, setGate] = useState<'unknown' | 'on' | 'off'>('unknown');
   const [rows, setRows] = useState<SpecialRateRow[]>([]);
@@ -129,6 +133,7 @@ export default function ClientSpecialTerms({ clientId, idSuffix, onDraft }: Prop
         <input id={checkId} type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
         <span>{t('კლიენტს აქვს ბანკის სპეციალური კურსი', 'The client has a special bank rate')}</span>
       </label>
+      {on && <BankSpecialReference sells={sells && gets && sells !== gets ? sells : requestSells} gets={sells && gets && sells !== gets ? gets : requestGets} />}
       {on && (
         <div className="special-terms-body">
           <p className="hint" style={{ margin: '4px 0 8px' }}>{t('ეს არ არის ბანკი, სადაც კლიენტი აგზავნის. ცარიელი ველი შენახულ პირობას არ შლის.', 'This is not the bank the client is sending to. A blank field does not erase a saved term.')}</p>

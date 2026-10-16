@@ -15,8 +15,9 @@ import {
   openChatPartner,
   readChatMarks,
 } from '../lib/chatNotice';
-import { rpc, supabase } from '../lib/supabase';
-import { fmtDateTime, todayTbilisi } from '../lib/format';
+import { supabase } from '../lib/supabase';
+import { todayTbilisi } from '../lib/format';
+import { deferWriteReady } from '../lib/deferWrite';
 import { useToast } from '../lib/toast';
 import { useLive } from '../lib/useLive';
 import { useViewAs } from '../lib/viewAs';
@@ -31,7 +32,6 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { t, lang, roleName } = useI18n();
   const toast = useToast();
   const location = useLocation();
-  const [fresh, setFresh] = useState<string | null>(null);
   const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [counts, setCounts] = useState<Record<PhoneBadge, number>>({ followups: 0, queue: 0, losses: 0, chat: 0, action: 0 });
   const chatReady = useRef(false);
@@ -78,20 +78,23 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const loadCounts = useCallback(async () => {
     try {
-      if (!phone) setFresh(await rpc<string | null>('data_freshness'));
       if (items.some((i) => i.badge === 'queue')) {
+        const holdOff = await deferWriteReady();
+        const approved = holdOff
+          ? 'and(client_reply.eq.approved,rate_write_deferred.eq.false)'
+          : 'client_reply.eq.approved';
         const queueCount = supabase.from('requests').select('id', { count: 'exact', head: true })
           .eq('source', 'app')
           .is('rate_written_at', null)
           .is('payment_confirmed_at', null)
-          .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null),client_reply.eq.approved');
+          .or(`quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null),${approved}`);
         const withLost = await queueCount.is('marked_lost_at', null);
         const counted = withLost.error
           ? await supabase.from('requests').select('id', { count: 'exact', head: true })
             .eq('source', 'app')
             .is('rate_written_at', null)
             .is('payment_confirmed_at', null)
-            .or('quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null),client_reply.eq.approved')
+            .or(`quote_status.eq.asking,and(client_reply.eq.better,better_decision.is.null),${approved}`)
           : withLost;
         setCounts((c) => ({ ...c, queue: counted.count ?? 0 }));
       }
@@ -204,7 +207,6 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="topbar-right">
             {!phone && <ViewSwitch />}
             {!phone && <LangSwitch />}
-            {!phone && <span className="freshness">{fresh ? t('ტრანზაქციები განახლდა {when}', 'Transactions updated {when}', { when: fmtDateTime(fresh) }) : t('ტრანზაქციები ჯერ არ არის სინქრონიზებული', 'Transactions are not synced yet')}</span>}
             <NotificationBell />
             <div className="user-menu" ref={menuRef}>
               <button type="button" className="avatar" aria-haspopup="menu" aria-expanded={menuOpen} aria-label={t('შესული ხართ: {name}', 'Signed in as {name}', { name: profile!.full_name })} onClick={() => setMenuOpen((o) => !o)}>

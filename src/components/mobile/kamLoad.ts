@@ -1,4 +1,5 @@
 import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../../lib/activeRequest';
+import { appendDeferredOpen, deferredIds, deferredOpenIds } from '../../lib/deferWrite';
 import { isMissingRead } from '../../lib/missingRead';
 import { applyRatePeople, loadRatePeople } from '../../lib/ratePeople';
 import { rpc, supabase } from '../../lib/supabase';
@@ -63,7 +64,11 @@ export async function loadKamDesk(profileId: string, previous: KamDeskData | nul
       .or(`request_date.eq.${today},quote_status.eq.asking`)
       .order('asked_at', { ascending: false });
     if (!error) {
-      const next = await withPeople((data ?? []) as RequestRow[]);
+      const next = await appendDeferredOpen(profileId, await withPeople((data ?? []) as RequestRow[]), async (ids) => {
+        const more = await supabase.from('request_outcomes').select('*').in('id', ids);
+        if (more.error || !more.data) return [];
+        return withPeople(more.data as RequestRow[]);
+      });
       openRows = next;
       doneRows = next.filter((row) => row.went_through && row.request_date === today);
     }
@@ -78,7 +83,18 @@ export async function loadKamDesk(profileId: string, previous: KamDeskData | nul
       } catch {
         freshnessDay = '';
       }
-      openRows = await withPeople(fetched.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), matched)));
+      openRows = await appendDeferredOpen(
+        profileId,
+        await withPeople(fetched.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), matched))),
+        async (ids) => {
+          const more = await supabase.from('request_active').select(ACTIVE_COLUMNS).in('id', ids);
+          if (more.error || !more.data) return [];
+          const extra = more.data as unknown as ActiveSource[];
+          const extraMatched = await matchedSuccessIds(extra.map((row) => row.id));
+          if (!extraMatched) return [];
+          return withPeople(extra.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), extraMatched)));
+        },
+      );
       doneRows = [];
     }
   }
@@ -96,7 +112,10 @@ export async function loadKamDesk(profileId: string, previous: KamDeskData | nul
     .order('request_date', { ascending: false })
     .order('requested_at', { ascending: false })
     .limit(8);
-  if (!recent.error) older = (recent.data ?? []) as RequestRow[];
+  if (!recent.error) {
+    const held = new Set(await deferredOpenIds(profileId));
+    older = ((recent.data ?? []) as RequestRow[]).filter((row) => !held.has(row.id));
+  }
 
   const groups = groupKamRows(split.open, split.done, older);
   return { ...groups, loaded: true };
@@ -116,12 +135,16 @@ export async function loadKamRequest(id: number): Promise<RequestRow | null> {
     }
     const row = decorateActiveRow(source, freshnessDay);
     const [withName] = await withPeople([matched ? applyMatchedSuccess(row, matched) : row]);
-    return withName ?? null;
+    if (!withName) return null;
+    const held = await deferredIds([id]);
+    return { ...withName, rate_write_deferred: held.has(id) };
   }
   const outcome = await supabase.from('request_outcomes').select('*').eq('id', id).maybeSingle();
   if (outcome.error || !outcome.data) return null;
   const [withName] = await withPeople([outcome.data as RequestRow]);
-  return withName ?? null;
+  if (!withName) return null;
+  const held = await deferredIds([id]);
+  return { ...withName, rate_write_deferred: held.has(id) };
 }
 
 export async function loadKamEarlier(profileId: string, limit: number): Promise<{ rows: RequestRow[]; done: boolean }> {
@@ -135,6 +158,7 @@ export async function loadKamEarlier(profileId: string, limit: number): Promise<
     .order('requested_at', { ascending: false })
     .range(0, limit - 1);
   if (error) throw new Error(error.message);
-  const rows = await withPeople((data ?? []) as RequestRow[]);
-  return { rows, done: rows.length < limit };
+  const held = new Set(await deferredOpenIds(profileId));
+  const raw = await withPeople((data ?? []) as RequestRow[]);
+  return { rows: raw.filter((row) => !held.has(row.id)), done: raw.length < limit };
 }

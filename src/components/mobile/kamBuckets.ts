@@ -54,6 +54,9 @@ export function mobileStatus(row: RequestRow, t: T, now = Date.now()): MobileSta
     return { label: t('დასრულებული', 'Finished'), cls: 'pill-ok' };
   }
   if (isPendingLoss(row)) return { label: t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury'), cls: 'pill-alert' };
+  if (row.client_reply === 'approved' && row.rate_write_deferred && !row.rate_written_at && !row.payment_confirmed_at && !row.went_through && !row.loss_reason && !row.marked_lost_at && !row.loss_approved_at) {
+    return { label: t('კლიენტმა დაადასტურა — გაწერას ელოდება', 'Client confirmed — waiting to write the rate'), cls: 'pill-warn' };
+  }
   if (row.client_reply === 'approved') return { label: t('დასაწერია', 'To write'), cls: 'pill-warn' };
   if (row.client_reply === 'better' && !row.better_decision) {
     return { label: t('უკეთეს კურსს ელოდება', 'Waiting on a better rate'), cls: 'pill-wait' };
