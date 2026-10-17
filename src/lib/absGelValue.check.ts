@@ -107,6 +107,8 @@ export interface ValueInput {
   quoteRate: number | null;
   quoteStatus: string | null;
   quotedAt: string | null;
+  /** Clock time of the quote write. Used only when quotedAt is null. */
+  quoteRecordedAt: string | null;
   at: string;
   board: Record<string, BoardLeg | undefined>;
   /** Sticky snapshot. Null on the first attempt, or after the received currency changes. */
@@ -171,7 +173,7 @@ export function valueAbsGel(input: ValueInput): AbsResult {
         source: 'treasury_quote',
         status: 'calculated',
         rate: round8(input.quoteRate),
-        rateAt: input.quotedAt,
+        rateAt: input.quotedAt ?? input.quoteRecordedAt,
         path: 'treasury_quote',
         reason: null,
         ...board,
@@ -257,7 +259,7 @@ const later = '2026-10-17T08:00:00.000Z';
 
 const received = valueAbsGel({
   sells: 'USD', gets: 'GEL', sellAmt: 1000, getsAmt: 2700,
-  quoteRate: 2.8, quoteStatus: 'quoted', quotedAt: later, at,
+  quoteRate: 2.8, quoteStatus: 'quoted', quotedAt: later, quoteRecordedAt: null, at,
   board: { 'USD/GEL': { sell: 2.7, at } },
   keptBoard: null, lookupBoard: true,
 });
@@ -266,7 +268,7 @@ assert(received.rate === 1, 'received GEL does not apply the quote');
 
 const direct = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'USD/GEL': { sell: 2.7, at } },
   keptBoard: null, lookupBoard: true,
 });
@@ -275,7 +277,7 @@ assert(direct.boardRate === 2.7 && direct.boardAt === at, 'snapshot keeps the ra
 
 const sticky = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'USD/GEL': { sell: 2.9, at: later } },
   keptBoard: { rate: 2.7, at, path: 'direct' },
   lookupBoard: false,
@@ -284,7 +286,7 @@ assert(sticky.absGel === 2700 && sticky.boardRate === 2.7, 'a later board change
 
 const quoted = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
-  quoteRate: 2.65, quoteStatus: 'quoted', quotedAt: later, at,
+  quoteRate: 2.65, quoteStatus: 'quoted', quotedAt: later, quoteRecordedAt: null, at,
   board: { 'USD/GEL': { sell: 2.9, at: later } },
   keptBoard: { rate: 2.7, at, path: 'direct' },
   lookupBoard: false,
@@ -293,7 +295,7 @@ assert(quoted.absGel === 2650 && quoted.source === 'treasury_quote' && quoted.bo
 
 const crossQuote = valueAbsGel({
   sells: 'USD', gets: 'EUR', sellAmt: 1000, getsAmt: 900,
-  quoteRate: 1.08, quoteStatus: 'quoted', quotedAt: later, at,
+  quoteRate: 1.08, quoteStatus: 'quoted', quotedAt: later, quoteRecordedAt: null, at,
   board: {},
   keptBoard: null, lookupBoard: true,
 });
@@ -301,7 +303,7 @@ assert(crossQuote.absGel === null && crossQuote.status === 'pending_admin' && cr
 
 const crossLeavesProvisional = valueAbsGel({
   sells: 'USD', gets: 'EUR', sellAmt: 1000, getsAmt: 100,
-  quoteRate: 1.08, quoteStatus: 'quoted', quotedAt: later, at,
+  quoteRate: 1.08, quoteStatus: 'quoted', quotedAt: later, quoteRecordedAt: null, at,
   board: { 'EUR/GEL': { sell: 9, at: later } },
   keptBoard: { rate: 3.2, at, path: 'direct' },
   lookupBoard: false,
@@ -315,7 +317,7 @@ assert(
 
 const rub = valueAbsGel({
   sells: 'GEL', gets: 'RUB', sellAmt: 100, getsAmt: 1000,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'RUB/GEL': { sell: 84.7, at } },
   keptBoard: null, lookupBoard: true,
 });
@@ -323,7 +325,7 @@ assert(rub.absGel === null && rub.status === 'pending_admin' && rub.boardRate ==
 
 const rubOk = valueAbsGel({
   sells: 'GEL', gets: 'RUB', sellAmt: 30, getsAmt: 1000,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'RUB/GEL': { sell: 0.03, at } },
   keptBoard: null, lookupBoard: true,
 });
@@ -331,7 +333,7 @@ assert(rubOk.absGel === 30 && rubOk.path === 'direct', 'RUB below 1 inside the b
 
 const eurCross = valueAbsGel({
   sells: 'USD', gets: 'EUR', sellAmt: 100, getsAmt: 100,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: {
     'EUR/USD': { sell: 1.1, at },
     'USD/GEL': { sell: 2.7, at: later },
@@ -342,7 +344,7 @@ assert(eurCross.absGel === 297 && eurCross.path === 'cross:EUR/USD*USD/GEL', 'EU
 
 const usdCross = valueAbsGel({
   sells: 'EUR', gets: 'USD', sellAmt: 100, getsAmt: 100,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: {
     'EUR/GEL': { sell: 3, at },
     'EUR/USD': { sell: 1.1, at: later },
@@ -353,7 +355,7 @@ assert(usdCross.absGel === 272.73 && usdCross.path === 'cross:EUR/GEL/EUR/USD', 
 
 const noInvert = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 270, getsAmt: 100,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'GEL/USD': { sell: 0.37, at } },
   keptBoard: null, lookupBoard: true,
 });
@@ -361,7 +363,7 @@ assert(noInvert.status === 'pending_admin' && noInvert.absGel === null, 'a recip
 
 const derived = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: null,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'USD/GEL': { sell: 2.7, at } },
   keptBoard: null, lookupBoard: true,
 });
@@ -369,7 +371,7 @@ assert(derived.absGel === 2700 && derived.path === 'direct', 'selling GEL agains
 
 const noDerive = valueAbsGel({
   sells: 'GEL', gets: 'EUR', sellAmt: 2700, getsAmt: null,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: {
     'EUR/USD': { sell: 1.1, at },
     'USD/GEL': { sell: 2.7, at },
@@ -397,7 +399,7 @@ assert(sumAbs([{ absGel: null, status: 'pending_admin' }]) === null, 'a pending-
 
 const declined = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
-  quoteRate: 2.65, quoteStatus: 'declined', quotedAt: later, at,
+  quoteRate: 2.65, quoteStatus: 'declined', quotedAt: later, quoteRecordedAt: null, at,
   board: {},
   keptBoard: { rate: 2.7, at, path: 'direct' },
   lookupBoard: false,
@@ -406,7 +408,7 @@ assert(declined.absGel === 2700 && declined.source === 'provisional_board', 'a d
 
 const noLaterBoard = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
-  quoteRate: null, quoteStatus: 'asking', quotedAt: null, at,
+  quoteRate: null, quoteStatus: 'asking', quotedAt: null, quoteRecordedAt: null, at,
   board: { 'USD/GEL': { sell: 2.7, at: later } },
   keptBoard: null,
   lookupBoard: false,
@@ -421,7 +423,7 @@ assert(
 
 const quoteAfterMiss = valueAbsGel({
   sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
-  quoteRate: 2.65, quoteStatus: 'quoted', quotedAt: later, at,
+  quoteRate: 2.65, quoteStatus: 'quoted', quotedAt: later, quoteRecordedAt: '2026-10-17T09:30:00.000Z', at,
   board: { 'USD/GEL': { sell: 2.7, at: later } },
   keptBoard: null,
   lookupBoard: false,
@@ -432,6 +434,21 @@ assert(
     && quoteAfterMiss.rateAt === later
     && quoteAfterMiss.boardRate === null,
   'a usable quote values a pending request without storing the later board',
+);
+
+const recorded = '2026-10-17T09:30:00.000Z';
+const nullQuotedAt = valueAbsGel({
+  sells: 'GEL', gets: 'USD', sellAmt: 2700, getsAmt: 1000,
+  quoteRate: 2.65, quoteStatus: 'quoted', quotedAt: null, quoteRecordedAt: recorded, at,
+  board: { 'USD/GEL': { sell: 2.7, at } },
+  keptBoard: { rate: 2.7, at, path: 'direct' },
+  lookupBoard: false,
+});
+assert(
+  nullQuotedAt.absGel === 2650
+    && nullQuotedAt.source === 'treasury_quote'
+    && nullQuotedAt.rateAt === recorded,
+  'a usable quote with no quoted_at stores the quote-recording time',
 );
 
 console.log('abs gel branches ok');

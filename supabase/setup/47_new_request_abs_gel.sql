@@ -273,7 +273,8 @@ begin
       abs_source := 'treasury_quote';
       abs_status := 'calculated';
       abs_rate := round(p_rate, 8);
-      abs_rate_at := coalesce(p_quoted_at, p_at);
+      -- Prefer quoted_at. A missing quote time is this write, not the request time in p_at.
+      abs_rate_at := coalesce(p_quoted_at, now());
       abs_path := 'treasury_quote';
       abs_reason := null;
       return next;

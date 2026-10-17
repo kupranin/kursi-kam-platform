@@ -85,6 +85,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .comment-edit .btn { flex: none; }
 .deal-comment { display: inline-block; max-width: 16rem; overflow-wrap: anywhere; white-space: pre-wrap; }
 .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; }
+.card-primary { border-color: var(--gold); }
+.workspace-stage h3 { font-size: 16px; margin: 8px 24px 0; }
 .card.flush { padding: 22px 0 6px; }
 .card.flush > .card-head { padding: 0 24px 12px; }
 .card.tint { background: var(--lavender-pale); border-color: transparent; }
@@ -463,6 +465,7 @@ button.fx-line:hover, button.fx-line[aria-expanded="true"] { background: #F6F1F8
   .date-range .btn { width: 100%; }
   .card { padding: 16px 14px; }
   .card.flush > .card-head, .list-row, .chat-pick, .chat-people button.person { padding-left: 14px; padding-right: 14px; }
+  .workspace-stage h3 { margin-left: 14px; margin-right: 14px; }
   .card-head, .page-head .row, .req-card .row-between { align-items: stretch; }
   .table-wrap { -webkit-overflow-scrolling: touch; }
   .table th:first-child, .table td:first-child, .table tbody th:first-child { padding-left: 14px; }
@@ -518,6 +521,8 @@ html.kb-open .page { padding-bottom: calc(var(--keyboard-inset, 0px) + env(safe-
 .menu-lang .lang-switch button[aria-pressed="true"] { background: var(--aubergine); color: #fff; }
 
 .m-home, .m-form, .m-detail, .m-more { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.m-home-new { display: flex; flex-direction: column; gap: 10px; background: #fff; border: 1.5px solid var(--gold); border-radius: 14px; padding: 12px; }
+.m-home-new .m-block-title { margin: 0; }
 .m-block { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 12px; }
 .m-block-title { font-size: 18px; }
 .m-block.is-compact .m-block-title { font-size: 15px; font-weight: 500; color: var(--ink-2); }

@@ -3,7 +3,17 @@ import { useAuth } from '../../lib/auth';
 import { useLive, useTick } from '../../lib/useLive';
 import { loadKamDesk, type KamDeskData } from './kamLoad';
 
-const EMPTY: KamDeskData = { action: [], waiting: [], active: [], recent: [], loaded: false };
+const EMPTY: KamDeskData = {
+  awaitingClient: [],
+  awaitingTreasury: [],
+  held: [],
+  followUp: [],
+  stillOpen: [],
+  writtenToday: [],
+  paidToday: [],
+  lostToday: [],
+  loaded: false,
+};
 
 export function useKamDesk(enabled = true) {
   const { profile } = useAuth();

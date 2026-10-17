@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../lib/activeRequest';
 import { isMissingRead } from '../lib/missingRead';
 import { EMPTY_SPECIAL_DRAFT, saveClientSpecialRate, type SpecialTermsDraft } from '../lib/specialRates';
@@ -31,6 +32,8 @@ import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/Requ
 import CorrectStatusButton from '../components/CorrectStatusButton';
 import RequestKamLine from '../components/RequestKamLine';
 import RequestSearch from '../components/RequestSearch';
+import { loadKamWorkspaceExtras } from '../components/mobile/kamLoad';
+import { groupKamRows } from '../lib/kamWorkspace';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
 const PAGE_SIZE = 100;
@@ -169,6 +172,8 @@ export default function Requests() {
   const [approvedLoaded, setApprovedLoaded] = useState(false);
   const [approvedError, setApprovedError] = useState('');
   const [doneRows, setDoneRows] = useState<RequestRow[]>([]);
+  const [activityRows, setActivityRows] = useState<RequestRow[]>([]);
+  const [followRows, setFollowRows] = useState<RequestRow[]>([]);
   const histReq = useRef(0);
   const appliedClient = useRef<string | null>(null);
   const bankClient = useRef<string | null>(null);
@@ -182,6 +187,16 @@ export default function Requests() {
 
   const load = useCallback(async () => {
     if (!isKam || !profile) { setLoaded(true); return; }
+    const extras = loadKamWorkspaceExtras(profile.id, today);
+    const paintExtras = async () => {
+      try {
+        const next = await extras;
+        setActivityRows((prev) => (JSON.stringify(prev) === JSON.stringify(next.activity) ? prev : next.activity));
+        setFollowRows((prev) => (JSON.stringify(prev) === JSON.stringify(next.followUp) ? prev : next.followUp));
+      } catch {
+        /* the open list still paints */
+      }
+    };
     const active = await supabase
       .from('request_active')
       .select(ACTIVE_COLUMNS)
@@ -205,6 +220,7 @@ export default function Requests() {
         const went = next.filter((row) => row.went_through && row.request_date === today);
         setDoneRows((prev) => (JSON.stringify(prev) === JSON.stringify(went) ? prev : went));
       }
+      await paintExtras();
       setLoaded(true);
       return;
     }
@@ -237,6 +253,7 @@ export default function Requests() {
         setDoneRows((prev) => (prev.length === 0 ? prev : []));
       }
     }
+    await paintExtras();
     setLoaded(true);
   }, [profile, today, isKam]);
 
@@ -609,7 +626,46 @@ export default function Requests() {
   const stateOf = (r: RequestRow) =>
     r.quote_state === 'quoted' && r.rate_valid_until && new Date(r.rate_valid_until) < new Date() ? 'expired' : r.quote_state;
 
-  const { open, done, todayCount } = splitKamRequests(rows, doneRows, today);
+  const { open, todayCount } = splitKamRequests(rows, doneRows, today);
+  const workspace = groupKamRows(open, [...rows, ...doneRows, ...activityRows], followRows, today);
+  const openStages = [
+    { id: 'kam-action', title: t('კლიენტს ელოდება', 'Awaiting client'), rows: workspace.awaitingClient, empty: t('კლიენტის პასუხს არაფერი ელოდება.', 'Nothing is awaiting the client.') },
+    { id: 'kam-waiting', title: t('ხაზინას ელოდება', 'Awaiting treasury'), rows: workspace.awaitingTreasury, empty: t('ხაზინას არაფერი ელოდება.', 'Nothing is waiting on treasury.') },
+    { id: 'kam-held', title: t('შეჩერებული', 'Held'), rows: workspace.held, empty: t('შეჩერებული კურსი არ არის.', 'No rate is held.') },
+    { id: 'kam-follow', title: t('დაბრუნება', 'Follow-up'), rows: workspace.followUp, empty: t('ბოლო 7 დღეში დასაბრუნებელი არ არის.', 'No follow-up in the last 7 days.') },
+    ...(workspace.stillOpen.length
+      ? [{ id: 'kam-still', title: t('სხვა ღია', 'Other open'), rows: workspace.stillOpen, empty: '' }]
+      : []),
+  ];
+
+  function activityLine(r: RequestRow, label: string, cls: string) {
+    const transferText = bookedLine(r);
+    return (
+      <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
+        <span className="when muted">{fmtTime(r.requested_at)}</span>
+        <div className="who">
+          <div className="strong">{r.client_name ?? r.client_id}</div>
+          <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
+        </div>
+        <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
+          {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
+          {r.payment_confirmed_at && <div className="tiny muted">{t('გადახდა დადასტურდა {when}', 'Payment confirmed {when}', { when: fmtTime(r.payment_confirmed_at) })}</div>}
+        </span>
+        <span className={'pill ' + cls} style={{ marginLeft: 'auto' }}>{label}</span>
+        {canChange(r) && (
+          <div className="actions">
+            <CorrectStatusButton row={r} onDone={refresh} />
+            <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
+            {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+          </div>
+        )}
+        {editForm(r)}
+        <LossApproval row={r} onDone={refresh} />
+        {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
+        {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -621,13 +677,11 @@ export default function Requests() {
         {isKam && <div className="stats">
           <div className="stat"><div className="label">{t('დღეს', 'Today')}</div><div className="value">{todayCount}</div></div>
           <div className="stat"><div className="label">{t('ღია', 'Open')}</div><div className="value" style={{ color: 'var(--aubergine)' }}>{open.length}</div></div>
-          <div className="stat"><div className="label">{t('გავიდა', 'Went through')}</div><div className="value ok-text">{done.length}</div></div>
+          <div className="stat"><div className="label">{t('გადახდა', 'Paid')}</div><div className="value ok-text">{workspace.paidToday.length}</div></div>
         </div>}
       </div>
 
-      {isKam && <RequestSearch variant="desk" />}
-
-      {isKam && <section className="card" aria-labelledby="new-title">
+      {isKam && <section className="card card-primary" aria-labelledby="new-title">
         <h2 id="new-title" style={{ marginBottom: 16 }}>{t('ახალი მოთხოვნა', 'New request')}</h2>
         <form onSubmit={submit} noValidate>
           <div className="form-row">
@@ -706,8 +760,16 @@ export default function Requests() {
           <span className="small muted">{t('ხაზინის კურსი აქ ჩნდება. ღია მოთხოვნაზე შეგიძლიათ მონიშნოთ, რომ ტრანზაქცია გავიდა, ან რომ დაიკარგა.', 'Treasury’s rate appears here. On an open request you can mark that the transaction went through, or that it was lost.')}</span>
         </div>
         {!loaded && <LoadingLine />}
-        {loaded && !open.length && <p className="empty">{t('ღია მოთხოვნა არ არის. მოთხოვნა აქ ჩნდება, როგორც კი ხაზინას გაუგზავნით.', 'No open requests. A request appears here as soon as you send it to treasury.')}</p>}
-        {open.map((r) => {
+        {loaded && openStages.map((stage) => (
+          <div key={stage.id} className="workspace-stage" id={stage.id}>
+            <h3>{stage.title}</h3>
+            {stage.rows.length === 0 && <p className="empty">{stage.empty}</p>}
+            {stage.id === 'kam-follow' && stage.rows.length > 0 && (
+              <p className="empty" style={{ borderTop: 'none', paddingTop: 0 }}>
+                <Link to="/follow-ups" className="btn">{t('მიზეზის ჩაწერა', 'Record the reason')}</Link>
+              </p>
+            )}
+            {stage.rows.map((r) => {
           const st = stateOf(r);
           const answer = clientReplyNote(r, t);
           const chatText = r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
@@ -828,40 +890,38 @@ export default function Requests() {
               )}
             </div>
           );
-        })}
+            })}
+          </div>
+        ))}
       </section>}
 
-      {isKam && <section className="card flush" aria-labelledby="done-title">
-        <div className="card-head"><h2 id="done-title" style={{ fontSize: 18 }}>{t('დღეს გავიდა', 'Went through today')}</h2></div>
+      {isKam && <RequestSearch variant="desk" />}
+
+      {isKam && <section className="card flush" aria-labelledby="today-title">
+        <div className="card-head">
+          <h2 id="today-title" style={{ fontSize: 18 }}>{t('დღევანდელი აქტივობა', "Today's activity")}</h2>
+          <span className="small muted">{t('გაწერილი კურსი გადახდა არ არის. შეთანხმების ფაილი აქ არ ჩანს მხოლოდ იმიტომ, რომ დღეს შემოვიდა.', 'A written rate is not a payment. An agreement file is not listed here only because it was imported today.')}</span>
+        </div>
         {!loaded && <LoadingLine />}
-        {loaded && !done.length && <p className="empty">{t('დღეს ჯერ არაფერია.', 'Nothing yet today.')}</p>}
-        {done.map((r) => {
-          const transferText = bookedLine(r);
-          return (
-          <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
-            <span className="when muted">{fmtTime(r.requested_at)}</span>
-            <div className="who">
-              <div className="strong">{r.client_name ?? r.client_id}</div>
-              <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
+        {loaded && (
+          <>
+            <div className="workspace-stage" id="kam-written">
+              <h3>{t('დღეს გაწერილი კურსი', 'Rate written today')}</h3>
+              {workspace.writtenToday.length === 0 && <p className="empty">{t('დღეს გაწერილი კურსი არ არის.', 'No rate was written today.')}</p>}
+              {workspace.writtenToday.map((r) => activityLine(r, t('გაწერილია', 'Written'), 'pill-warn'))}
             </div>
-            <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
-              {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
-            </span>
-            <span className="pill pill-ok" style={{ marginLeft: 'auto' }}><IconCheck />{t('გავიდა', 'Went through')}</span>
-            {canChange(r) && (
-              <div className="actions">
-                <CorrectStatusButton row={r} onDone={refresh} />
-                <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
-              </div>
-            )}
-            {editForm(r)}
-            <LossApproval row={r} onDone={refresh} />
-            {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
-            {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
-          </div>
-          );
-        })}
+            <div className="workspace-stage" id="kam-paid">
+              <h3>{t('დღეს დადასტურებული გადახდა', 'Payment confirmed today')}</h3>
+              {workspace.paidToday.length === 0 && <p className="empty">{t('დღეს დადასტურებული გადახდა არ არის.', 'No payment was confirmed today.')}</p>}
+              {workspace.paidToday.map((r) => activityLine(r, t('გადახდა დადასტურდა', 'Payment confirmed'), 'pill-ok'))}
+            </div>
+            <div className="workspace-stage" id="kam-lost">
+              <h3>{t('დღეს უარი ან დაკარგული', 'Declined or lost today')}</h3>
+              {workspace.lostToday.length === 0 && <p className="empty">{t('დღეს უარი ან დაკარგული არ არის.', 'Nothing was declined or lost today.')}</p>}
+              {workspace.lostToday.map((r) => activityLine(r, t('უარი ან დაკარგული', 'Declined or lost'), 'pill-alert'))}
+            </div>
+          </>
+        )}
       </section>}
 
       {seeAll && <section className="card flush" aria-labelledby="approved-title">

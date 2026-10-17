@@ -13,11 +13,12 @@ import { BANKS, CURRENCIES, bankList } from '../../lib/types';
 import { readAmount, readRate } from './amounts';
 import StickyBar from './StickyBar';
 
-export default function KamNewRequest() {
+export default function KamNewRequest({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
   const lock = useRef(false);
+  const [formKey, setFormKey] = useState(0);
 
   const [info, setInfo] = useState<ClientInfo | null>(null);
   const [sells, setSells] = useState('USD');
@@ -109,6 +110,28 @@ export default function KamNewRequest() {
       } else {
         toast(t('გაეგზავნა ხაზინას.', 'Sent to treasury.'));
       }
+      if (embedded) {
+        setSells('USD');
+        setGets('GEL');
+        setSellsAmount('');
+        setGetsAmount('');
+        setShowGets(false);
+        setClientRate('');
+        setBanks([]);
+        setBanksFromClient(false);
+        setNote('');
+        setTried(false);
+        setHistoryOpen(false);
+        setInfo(null);
+        appliedClient.current = null;
+        bankClient.current = null;
+        bankClientKnown.current = false;
+        banksTouched.current = false;
+        specialRef.current = EMPTY_SPECIAL_DRAFT;
+        setFormKey((key) => key + 1);
+        lock.current = false;
+        setBusy(false);
+      }
       navigate('/requests#kam-waiting', { replace: true });
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -119,11 +142,10 @@ export default function KamNewRequest() {
 
   const clientReady = Boolean(info?.valid && info.id);
 
-  return (
-    <form className="m-form m-dock" onSubmit={submit} noValidate>
-      <div className="m-scroll">
+  const fields = (
+    <>
       <div className="m-fields">
-        <ClientField tried={tried} onInfo={onInfo} />
+        <ClientField key={formKey} tried={tried} onInfo={onInfo} />
       </div>
 
       <div className="m-fields">
@@ -139,8 +161,8 @@ export default function KamNewRequest() {
         {!tried && banksFromClient && <span className="hint">{t('შენახული ბანკები ჩანს. ამ გარიგებისთვის შეგიძლიათ შეცვალოთ.', 'Saved banks are on. You can change them for this deal.')}</span>}
       </div>
 
-      <ClientSpecialTerms clientId={info?.valid ? info.id : null} idSuffix="phone" requestSells={sells} requestGets={gets} onDraft={(draft) => { specialRef.current = draft; }} />
-      <DynamicActiveNegotiatedRates clientId={info?.valid ? info.id : null} idSuffix="phone" />
+      <ClientSpecialTerms key={formKey} clientId={info?.valid ? info.id : null} idSuffix={embedded ? 'home' : 'phone'} requestSells={sells} requestGets={gets} onDraft={(draft) => { specialRef.current = draft; }} />
+      <DynamicActiveNegotiatedRates clientId={info?.valid ? info.id : null} idSuffix={embedded ? 'home' : 'phone'} />
 
       <div className="m-fields" id="new-pair">
         <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} idSuffix="new" />
@@ -217,13 +239,23 @@ export default function KamNewRequest() {
         </button>
         {historyOpen && clientReady && info?.id && <ClientHistory clientId={info.id} />}
       </div>
-      </div>
+    </>
+  );
 
-      <StickyBar>
+  return (
+    <form className={embedded ? 'm-form' : 'm-form m-dock'} onSubmit={submit} noValidate>
+      {embedded ? fields : <div className="m-scroll">{fields}</div>}
+      {embedded ? (
         <button type="submit" className="btn btn-primary m-send" disabled={busy}>
           {busy ? t('იგზავნება', 'Sending') : t('კურსის თხოვნა ხაზინას', 'Ask treasury for a rate')}
         </button>
-      </StickyBar>
+      ) : (
+        <StickyBar>
+          <button type="submit" className="btn btn-primary m-send" disabled={busy}>
+            {busy ? t('იგზავნება', 'Sending') : t('კურსის თხოვნა ხაზინას', 'Ask treasury for a rate')}
+          </button>
+        </StickyBar>
+      )}
     </form>
   );
 }

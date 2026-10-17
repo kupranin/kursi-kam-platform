@@ -97,38 +97,3 @@ export function treasuryRate(row: RequestRow): string {
   return fmtRate(row.rate);
 }
 
-function byExpiry(a: RequestRow, b: RequestRow): number {
-  const ta = a.rate_valid_until ? new Date(a.rate_valid_until).getTime() : Number.POSITIVE_INFINITY;
-  const tb = b.rate_valid_until ? new Date(b.rate_valid_until).getTime() : Number.POSITIVE_INFINITY;
-  return ta - tb;
-}
-
-function byAsked(a: RequestRow, b: RequestRow): number {
-  return new Date(a.asked_at || a.requested_at).getTime() - new Date(b.asked_at || b.requested_at).getTime();
-}
-
-function isClosedActivity(row: RequestRow): boolean {
-  if (row.went_through || row.outcome === 'went_through' || row.rate_written_at || row.payment_confirmed_at) return true;
-  if (row.outcome === 'did_not_go_through' || row.loss_reason || row.loss_approved_at) return true;
-  if (row.quote_status === 'declined' || row.quote_state === 'declined' || row.client_reply === 'declined') return true;
-  return false;
-}
-
-export interface KamGroups {
-  action: RequestRow[];
-  waiting: RequestRow[];
-  active: RequestRow[];
-  recent: RequestRow[];
-}
-
-/** Home blocks. A row is in one block only. Recent stays short. */
-export function groupKamRows(open: RequestRow[], done: RequestRow[], older: RequestRow[], now = Date.now()): KamGroups {
-  const action = open.filter((row) => needsKamAction(row, now)).sort(byExpiry);
-  const waiting = open.filter((row) => waitingOnTreasury(row, now)).sort(byAsked);
-  const active = open.filter((row) => !needsKamAction(row, now) && !waitingOnTreasury(row, now));
-  const seen = new Set<number>([...open, ...done].map((row) => row.id));
-  const recent = [...done, ...older.filter((row) => !seen.has(row.id) && isClosedActivity(row))]
-    .sort((a, b) => new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime())
-    .slice(0, 5);
-  return { action, waiting, active, recent };
-}

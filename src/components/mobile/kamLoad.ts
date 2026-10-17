@@ -4,9 +4,9 @@ import { appendDeferredOpen, deferFlags, deferredOpenIds } from '../../lib/defer
 import { isMissingRead } from '../../lib/missingRead';
 import { applyRatePeople, loadRatePeople } from '../../lib/ratePeople';
 import { rpc, supabase } from '../../lib/supabase';
-import { tbilisiDay, todayTbilisi } from '../../lib/format';
+import { tbilisiDay, tbilisiDayStart, todayTbilisi } from '../../lib/format';
+import { groupKamRows, type KamGroups } from '../../lib/kamWorkspace';
 import type { RequestRow } from '../../lib/types';
-import { groupKamRows, type KamGroups } from './kamBuckets';
 
 /** One quiet report per failure streak. A later success arms it again. */
 let matchedFailureLogged = false;
@@ -38,11 +38,61 @@ export interface KamDeskData extends KamGroups {
   loaded: boolean;
 }
 
-const EMPTY: KamDeskData = { action: [], waiting: [], active: [], recent: [], loaded: false };
+const EMPTY: KamDeskData = {
+  awaitingClient: [],
+  awaitingTreasury: [],
+  held: [],
+  followUp: [],
+  stillOpen: [],
+  writtenToday: [],
+  paidToday: [],
+  lostToday: [],
+  loaded: false,
+};
+
+function quoteStamp(start: string): string {
+  return `"${start}"`;
+}
+
+/** Rates written, payments, declines, and the 7-day follow-up list. Reads only. */
+export async function loadKamWorkspaceExtras(profileId: string, today: string): Promise<{ activity: RequestRow[]; followUp: RequestRow[] }> {
+  const since = quoteStamp(tbilisiDayStart(today));
+  const activityQuery = await supabase
+    .from('request_active')
+    .select(ACTIVE_COLUMNS)
+    .eq('kam_id', profileId)
+    .or([
+      `rate_written_at.gte.${since}`,
+      `payment_confirmed_at.gte.${since}`,
+      `marked_lost_at.gte.${since}`,
+      `loss_reason_at.gte.${since}`,
+      `and(client_reply.eq.declined,client_replied_at.gte.${since})`,
+      `and(quote_status.eq.declined,quoted_at.gte.${since})`,
+    ].join(','));
+
+  let activity: RequestRow[] = [];
+  if (!activityQuery.error && activityQuery.data) {
+    const fetched = activityQuery.data as unknown as ActiveSource[];
+    activity = await withClientContext(await withPeople(fetched.map((row) => decorateActiveRow(row, ''))));
+  }
+
+  const follow = await supabase
+    .from('request_outcomes')
+    .select('*')
+    .eq('kam_id', profileId)
+    .eq('outcome', 'did_not_go_through')
+    .is('loss_reason', null)
+    .gte('request_date', todayTbilisi(-7))
+    .order('request_date', { ascending: false });
+  const followUp = follow.error
+    ? []
+    : await withClientContext(await withPeople((follow.data ?? []) as RequestRow[]));
+  return { activity, followUp };
+}
 
 /**
- * The KAM phone home. Same active read as the desktop list, plus a short
- * recent slice. It does not page through the full history.
+ * The KAM phone home. Same active read as the desktop list, plus today's
+ * activity and the 7-day follow-up list. It does not page through the full history.
  */
 export async function loadKamDesk(profileId: string, previous: KamDeskData | null): Promise<KamDeskData> {
   const today = todayTbilisi();
@@ -105,23 +155,12 @@ export async function loadKamDesk(profileId: string, previous: KamDeskData | nul
   }
 
   const split = splitKamRequests(openRows, doneRows, today);
-  let older: RequestRow[] = keep.recent;
-  const recent = await supabase
-    .from('request_outcomes')
-    .select('*')
-    .eq('kam_id', profileId)
-    .order('request_date', { ascending: false })
-    .order('requested_at', { ascending: false })
-    .limit(8);
-  if (!recent.error) {
-    const held = new Set(await deferredOpenIds(profileId));
-    older = ((recent.data ?? []) as RequestRow[]).filter((row) => !held.has(row.id));
-  }
-
+  const extras = await loadKamWorkspaceExtras(profileId, today);
   const groups = groupKamRows(
     await withClientContext(split.open),
-    await withClientContext(split.done),
-    await withClientContext(older),
+    await withClientContext([...openRows, ...extras.activity]),
+    extras.followUp,
+    today,
   );
   return { ...groups, loaded: true };
 }
