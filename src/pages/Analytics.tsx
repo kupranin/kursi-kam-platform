@@ -59,6 +59,17 @@ function gelText(value: number | null): string {
   return 'GEL ' + fmtShort(value);
 }
 
+function absExtra(
+  unavailable: number,
+  pending: number,
+  t: (ka: string, en: string, vars?: { n: string }) => string,
+): string {
+  const parts: string[] = [];
+  if (pending > 0) parts.push(t('ელოდება ადმინს {n}', 'Waiting for an admin {n}', { n: fmtWhole(pending) }));
+  if (unavailable > 0) parts.push(t('არ არის {n}', 'Unavailable {n}', { n: fmtWhole(unavailable) }));
+  return parts.join(' · ');
+}
+
 export default function Analytics() {
   const { role, realRole } = useViewAs();
   if (role === 'kam') return <OwnKamAnalytics />;
@@ -256,8 +267,8 @@ function RequestKpiCards({
 }) {
   const { t } = useI18n();
   const note = t(
-    'მოგებული მხოლოდ გაწერილი კურსია. გადახდის ნიშანი, ტრანზაქცია და ძველი ფაილის სტატუსი არც მოგებაა და არც დანაკარგი. დაკარგული: დანაკარგის ნიშანი, მიზეზი, ან კლიენტის თუ ხაზინის უარი. ღია დანარჩენია. პროცენტის მნიშვნელი ამ პერიოდის ყველა მოთხოვნაა. მოთხოვნების ABS GEL მიღებული თანხის ლარის ექვივალენტია, დადასტურებული საბანკო ბრუნვა არ არის. სადაც ABS GEL არ არის, ის ჯამში ნულად არ შედის.',
-    'Won is only a written rate. A payment mark, a transaction, and a legacy file status are neither a win nor a loss. Lost is a loss mark, a reason, or a client or treasury decline. Open is the rest. The percentage denominator is every request in this period. Request ABS GEL is the lari equivalent of the received amount, not confirmed bank turnover. A request with no ABS GEL is not added as zero.',
+    'მოგებული მხოლოდ გაწერილი კურსია. გადახდის ნიშანი, ტრანზაქცია და ძველი ფაილის სტატუსი არც მოგებაა და არც დანაკარგი. დაკარგული: დანაკარგის ნიშანი, მიზეზი, ან კლიენტის თუ ხაზინის უარი. ღია დანარჩენია. პროცენტის მნიშვნელი ამ პერიოდის ყველა მოთხოვნაა. მოთხოვნების ABS GEL მიღებული თანხის ლარის ექვივალენტია, დადასტურებული საბანკო ბრუნვა არ არის. სადაც ABS GEL არ არის, ის ჯამში ნულად არ შედის. როცა ახალი მოთხოვნა ადმინს ელოდება, ის ცალკე ჩანს და ნულად არ იკრიბება.',
+    'Won is only a written rate. A payment mark, a transaction, and a legacy file status are neither a win nor a loss. Lost is a loss mark, a reason, or a client or treasury decline. Open is the rest. The percentage denominator is every request in this period. Request ABS GEL is the lari equivalent of the received amount, not confirmed bank turnover. A request with no ABS GEL is not added as zero. A new request waiting for an admin is shown separately and is not added as zero.',
   );
 
   return (
@@ -276,23 +287,20 @@ function RequestKpiCards({
             <Stat
               label={t('მოთხოვნების ABS GEL', 'Request ABS GEL')}
               value={stats.absGel == null ? '—' : 'GEL ' + fmtShort(stats.absGel)}
-              hint={stats.absUnavailable > 0
-                ? t('ABS GEL არ არის {n} მოთხოვნაზე. ჯამი სრული არ არის.', 'ABS GEL is unavailable on {n} requests. The total is not complete.', { n: fmtWhole(stats.absUnavailable) })
-                : t('მიღებული თანხის ლარის ექვივალენტი. საბანკო ბრუნვა არ არის.', 'Lari equivalent of the received amount. Not bank turnover.')}
+              hint={absExtra(stats.absUnavailable, stats.absPending, t)
+                || t('მიღებული თანხის ლარის ექვივალენტი. საბანკო ბრუნვა არ არის.', 'Lari equivalent of the received amount. Not bank turnover.')}
             />
             <Stat
               label={t('მოგებული ABS GEL', 'Won ABS GEL')}
               value={stats.wonAbsGel == null ? '—' : 'GEL ' + fmtShort(stats.wonAbsGel)}
-              hint={stats.wonAbsUnavailable > 0
-                ? t('არ არის {n} მოგებულზე', 'Unavailable on {n} won', { n: fmtWhole(stats.wonAbsUnavailable) })
-                : t('მხოლოდ მოგებული მოთხოვნები', 'Won requests only')}
+              hint={absExtra(stats.wonAbsUnavailable, stats.wonAbsPending, t)
+                || t('მხოლოდ მოგებული მოთხოვნები', 'Won requests only')}
             />
             <Stat
               label={t('დაკარგული ABS GEL', 'Lost ABS GEL')}
               value={stats.lostAbsGel == null ? '—' : 'GEL ' + fmtShort(stats.lostAbsGel)}
-              hint={stats.lostAbsUnavailable > 0
-                ? t('არ არის {n} დაკარგულზე', 'Unavailable on {n} lost', { n: fmtWhole(stats.lostAbsUnavailable) })
-                : t('მხოლოდ დაკარგული მოთხოვნები', 'Lost requests only')}
+              hint={absExtra(stats.lostAbsUnavailable, stats.lostAbsPending, t)
+                || t('მხოლოდ დაკარგული მოთხოვნები', 'Lost requests only')}
             />
             {showBankGap && (
               <Stat label={t('დადასტურებული საბანკო ბრუნვა', 'Confirmed bank turnover')} value="—" hint={t('ჯერ არ არის', 'Not available yet')} />
@@ -344,7 +352,7 @@ function LostReasons({ stats }: { stats: RequestKpis }) {
                     <td className="num">{pct(reason.count, stats.lost)} · {fmtWhole(reason.count)} / {fmtWhole(stats.lost)}</td>
                     <td className="num">
                       {reason.lostAbsGel == null ? '—' : 'GEL ' + fmtShort(reason.lostAbsGel)}
-                      {reason.absUnavailable > 0 ? ` · ${t('არ არის', 'unavailable')} ${fmtWhole(reason.absUnavailable)}` : ''}
+                      {absExtra(reason.absUnavailable, reason.absPending, t) ? ` · ${absExtra(reason.absUnavailable, reason.absPending, t)}` : ''}
                     </td>
                   </tr>
                 ))}
@@ -453,7 +461,7 @@ function KamTable({ stats }: { stats: RequestKpis }) {
                 <td className="num">{fmtWhole(kam.lost)}</td>
                 <td className="num">{pct(kam.lost, kam.total)}</td>
                 <td className="num">{fmtWhole(kam.open)}</td>
-                <td className="num">{gelText(kam.absGel)}{kam.absUnavailable > 0 ? ` · ${t('არ არის', 'unavailable')} ${fmtWhole(kam.absUnavailable)}` : ''}</td>
+                <td className="num">{gelText(kam.absGel)}{absExtra(kam.absUnavailable, kam.absPending, t) ? ` · ${absExtra(kam.absUnavailable, kam.absPending, t)}` : ''}</td>
                 <td className="num">{kam.wonAbsGel == null ? '—' : 'GEL ' + fmtShort(kam.wonAbsGel)}</td>
                 <td className="num">{kam.lostAbsGel == null ? '—' : 'GEL ' + fmtShort(kam.lostAbsGel)}</td>
               </tr>

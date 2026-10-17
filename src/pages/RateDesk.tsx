@@ -21,6 +21,7 @@ import { applyRatePeople, loadRatePeople, ratePeopleFor } from '../lib/ratePeopl
 import { chatHandoff } from '../lib/copyText';
 import PairBoard from '../components/PairBoard';
 import SpecialRateMark from '../components/SpecialRateMark';
+import DynamicActiveNegotiatedRates from '../components/DynamicActiveNegotiatedRates';
 import VenuePairLine from '../components/VenuePairLine';
 import { deferFlags, deferredIds, extrasOffWriteQueue, loadClosingQueue, type ClosingDeal } from '../lib/deferWrite';
 import ClosingQueue from '../components/ClosingQueue';
@@ -1011,6 +1012,7 @@ export default function RateDesk() {
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
                     </div>
                     <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
+                    <DynamicActiveNegotiatedRates clientId={r.client_id} idSuffix={'quote-' + r.request_id} />
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
                     {r.note && <p className="note-box">კომენტარი ხაზინისთვის: {r.note}</p>}
                     {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
@@ -1271,6 +1273,7 @@ export default function RateDesk() {
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                   <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
                 </div>
+                <DynamicActiveNegotiatedRates clientId={r.client_id} idSuffix={'write-' + r.request_id} />
                 <div className="what">
                   <div>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(r.sells_currency, r.amount)}</div>
                   <div>{t('კლიენტი იღებს', 'Client gets')} {sideAmount(r.gets_currency, r.gets_amount)}</div>

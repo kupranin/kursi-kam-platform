@@ -223,6 +223,7 @@ export default function Analyst() {
     if (!cross || row.gel_amount != null) return fmtAmount(row.amount_gel);
     const abs = absById.get(row.id);
     if (abs?.valuationStatus === 'calculated' && abs.requestAbsGel != null) return fmtAmount(abs.requestAbsGel);
+    if (abs?.valuationStatus === 'pending_admin') return t('ელოდება ადმინს', 'Waiting for an admin');
     if (abs) return '—';
     return fmtAmount(row.amount_gel);
   }

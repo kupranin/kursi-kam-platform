@@ -768,5 +768,14 @@ html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; 
 .special-saved .link { text-align: left; white-space: normal; }
 .special-rate { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: var(--ground); min-width: 0; }
 .special-rate p { overflow-wrap: anywhere; }
+.negotiated-warn { margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--ink); min-width: 0; }
+.negotiated-warn h3 { margin: 0; color: var(--warn); }
+.negotiated-warn p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.negotiated-warn-pair { margin-top: 8px; }
+.negotiated-warn-facts { margin: 6px 0 0; }
+.negotiated-warn-facts div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.negotiated-warn-facts dt { font-size: 13px; color: var(--ink-2); }
+.negotiated-warn-facts dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.list-row > .negotiated-warn { flex: 1 1 100%; }
 .venue-pair { margin-top: 8px; min-width: 0; }
 .m-card-hit .pill { margin-top: 6px; margin-left: 0; max-width: 100%; white-space: normal; }

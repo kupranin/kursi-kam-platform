@@ -9,6 +9,7 @@ import { useLive } from '../../lib/useLive';
 import LoadingLine from '../LoadingLine';
 import WrittenRateNote from '../WrittenRateNote';
 import SpecialRateMark from '../SpecialRateMark';
+import DynamicActiveNegotiatedRates from '../DynamicActiveNegotiatedRates';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText } from './TreasuryBits';
 import { loadActionReplies, type TreasuryReply } from './treasuryLoad';
@@ -110,6 +111,7 @@ export default function TreasuryWrite({ id }: { id: number }) {
           </p>
         </div>
         <SpecialRateMark clientId={row.client_id} variant="detail" />
+        <DynamicActiveNegotiatedRates clientId={row.client_id} idSuffix={'phone-write-' + row.request_id} />
         <WrittenRateNote />
         <p className="note-box">{t(
           'კლიენტმა ეს კურსი დაამტკიცა. „კურსი ჩაიწერა“ ნიშნავს, რომ კურსი ძირითად სისტემაში ჩაიწერა. გადახდა ამით არ დასტურდება და გარიგება წარმატებულად არ ითვლება.',

@@ -9,26 +9,41 @@
 -- value of one unit of the received currency (requests.gets_currency).
 -- requests.amount is the amount the client sells. It is not used here.
 -- When gets_amount is empty, the status is missing_amount. The sell
--- amount is not converted through the negotiated rate.
+-- amount is not converted through the negotiated rate. A cross quote
+-- (EUR/USD, USD/EUR, and the rest) is not that GEL multiplier.
 --
--- The GEL value is a historical board snapshot in market_rates.
--- fetch-market-rates stores a batch every 30 minutes (cron */30),
--- and each source in that run gets its own fetched_at. A snapshot is
--- used only when fetched_at is at or before requested_at and not more
--- than 30 minutes earlier. Older than that is missing_rate, not zero,
--- and today's rate is not used. reference_rates is current only and
--- is not read.
--- A cross uses two legs from that same 30-minute window. The same
--- fetched_at is preferred, because one source batch shares it. If the
--- legs are more than 30 minutes apart, the cross is not calculated.
+-- Treasury's quote is requests.rate. treasury_quote writes it and sets
+-- quote_status to quoted. A decline sets quote_status to declined and
+-- clears the rate. A declined quote, or a null rate, is missing.
+-- The quote is used first only when the client sells GEL and the figure
+-- is already lari per 1 unit of the currency received, inside the lari
+-- band. A cross between two non-GEL currencies is not that figure.
+-- RUB at 1 or above is not that figure and is not divided. A figure
+-- outside the band is not inverted. Either case falls through.
+--
+-- When that quote is missing or unusable, the standard rate for that
+-- time is used. ჩვენი სტანდარტი
+-- on the desk is reference_rates source standard (buy / sell). That
+-- table keeps only the current row, so it is not read: today's
+-- standard is not applied to an older request. The historical standard
+-- series is the Kursi board in market_rates (source kursi, venue_kind
+-- board), not a competitor buy or sell and not a Kursi bank row.
+-- The side is sell: lari per 1 unit of the currency the client receives.
+-- Official, the mid, and buy are not that standard side.
+-- fetch-market-rates stores a batch every 30 minutes (cron */30).
+-- market_rates keeps each fetch (fetched_at is part of the key).
+-- The latest Kursi board sell with fetched_at at or before
+-- requested_at is used. A later fetch is not. An older stored
+-- snapshot is kept: a gap longer than 30 minutes is not a miss.
+-- reference_rates is the current row only and is not read.
+-- A missing direct Kursi GEL pair is not rebuilt from a cross.
+-- No stored sell at or before requested_at is missing_rate, not zero.
 --
 -- Supported direct pairs are the board pairs already stored as lari
 -- per 1 unit: USD/GEL, EUR/GEL, RUB/GEL, CNY/GEL. RUB is used only
 -- when the stored figure is already below 1. A ruble figure of 1 or
 -- more is not inverted and is not divided by a constant.
--- If EUR/GEL or CNY/GEL is missing, one intermediate path is allowed:
--- EUR/USD × USD/GEL, or USD/GEL ÷ USD/CNY. The product must land in
--- the same lari band. GBP and any other currency have no stored path.
+-- GBP and any other currency have no stored path.
 --
 -- Money is rounded to 2 decimal places (tetri). The rate is rounded
 -- to 8 decimal places. Both use PostgreSQL numeric round (half away
@@ -103,42 +118,12 @@ as $$
   end
 $$;
 
--- Quote per 1 base, inside an explicit band.
--- Used by the cross lookup. Defined first so that function can call it.
-create or replace function private.pair_in_band(
-  p_base text,
-  p_quote text,
-  p_row_ccy text,
-  p_row_quote text,
-  p_value numeric,
-  p_low numeric,
-  p_high numeric
-)
-returns numeric
-language sql
-immutable
-set search_path = ''
-as $$
-  select case
-    when p_value is null or p_value <= 0 or p_low is null or p_high is null then null
-    when p_row_ccy = p_base and p_row_quote = p_quote and p_value >= p_low and p_value <= p_high
-      then round(p_value, 8)
-    when p_row_ccy = p_quote and p_row_quote = p_base
-     and (1 / p_value) >= p_low and (1 / p_value) <= p_high
-      then round(1 / p_value, 8)
-    when p_row_ccy = p_base and p_row_quote = p_quote
-     and not (p_value >= p_low and p_value <= p_high)
-     and (1 / p_value) >= p_low and (1 / p_value) <= p_high
-      then round(1 / p_value, 8)
-    else null
-  end
-$$;
-
--- Latest usable lari-per-unit snapshot in the 30 minutes at or before p_at.
--- Official (NBG stored on the row) beats a board side.
--- The latest such official wins. Valuto breaks a tie.
--- If no official is in band, the latest usable board side is used.
--- A snapshot older than one fetch interval is not returned.
+-- Latest Kursi-board sell at or before p_at. Not after.
+-- Sell is lari per 1 unit of the currency the client receives.
+-- market_rates is the stored history. An older row is used when the
+-- last 30 minutes have no fetch. reference_rates has no history and
+-- is not read. Competitors, Kursi bank rows, official, mid, and buy
+-- are not this standard side.
 create or replace function private.historical_gel_rate(p_currency text, p_at timestamptz)
 returns table (rate numeric, rate_at timestamptz, source text)
 language sql
@@ -146,178 +131,47 @@ stable
 security definer
 set search_path = ''
 as $$
-  select picked.gel_rate, picked.fetched_at, picked.source || ':' || picked.kind
+  select picked.gel_rate, picked.fetched_at, picked.source || ':sell'
   from (
     select
       r.fetched_at,
       r.source,
-      coalesce(o.rate, m.rate, b.rate, s.rate) as gel_rate,
-      case
-        when o.rate is not null then 'official'
-        when m.rate is not null then 'mid'
-        when b.rate is not null then 'buy'
-        else 'sell'
-      end as kind,
-      case when r.source = 'valuto' and r.venue = 'Valuto' then 0 else 1 end as valuto_rank
+      private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.sell) as gel_rate
     from public.market_rates r
-    cross join lateral (
-      select private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.official) as rate
-    ) o
-    cross join lateral (
-      select private.orient_gel_rate(
-        p_currency, r.currency, r.quote_currency,
-        case when r.buy > 0 and r.sell > 0 then (r.buy + r.sell) / 2 else null end
-      ) as rate
-    ) m
-    cross join lateral (
-      select private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.buy) as rate
-    ) b
-    cross join lateral (
-      select private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.sell) as rate
-    ) s
-    where r.fetched_at <= p_at
-      and r.fetched_at > p_at - interval '30 minutes'
-      and r.venue_kind in ('board', 'bank')
+    where r.source = 'kursi'
+      and r.venue_kind = 'board'
       and r.venue not like '% app'
+      and r.fetched_at <= p_at
       and (
         (r.currency = p_currency and r.quote_currency = 'GEL')
         or (r.currency = 'GEL' and r.quote_currency = p_currency)
       )
-      and coalesce(o.rate, m.rate, b.rate, s.rate) is not null
+      and private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.sell) is not null
   ) picked
-  order by
-    case when picked.kind = 'official' then 0 else 1 end,
-    picked.fetched_at desc,
-    picked.valuto_rank
-  limit 1
-$$;
-
--- Same pair rules, but only the snapshot stored at p_exact.
--- One source batch shares fetched_at, so a cross can use that batch.
-create or replace function private.historical_gel_rate_exact(p_currency text, p_exact timestamptz)
-returns table (rate numeric, rate_at timestamptz, source text)
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select picked.gel_rate, picked.fetched_at, picked.source || ':' || picked.kind
-  from (
-    select
-      r.fetched_at,
-      r.source,
-      coalesce(o.rate, m.rate, b.rate, s.rate) as gel_rate,
-      case
-        when o.rate is not null then 'official'
-        when m.rate is not null then 'mid'
-        when b.rate is not null then 'buy'
-        else 'sell'
-      end as kind,
-      case when r.source = 'valuto' and r.venue = 'Valuto' then 0 else 1 end as valuto_rank
-    from public.market_rates r
-    cross join lateral (
-      select private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.official) as rate
-    ) o
-    cross join lateral (
-      select private.orient_gel_rate(
-        p_currency, r.currency, r.quote_currency,
-        case when r.buy > 0 and r.sell > 0 then (r.buy + r.sell) / 2 else null end
-      ) as rate
-    ) m
-    cross join lateral (
-      select private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.buy) as rate
-    ) b
-    cross join lateral (
-      select private.orient_gel_rate(p_currency, r.currency, r.quote_currency, r.sell) as rate
-    ) s
-    where r.fetched_at = p_exact
-      and r.venue_kind in ('board', 'bank')
-      and r.venue not like '% app'
-      and (
-        (r.currency = p_currency and r.quote_currency = 'GEL')
-        or (r.currency = 'GEL' and r.quote_currency = p_currency)
-      )
-      and coalesce(o.rate, m.rate, b.rate, s.rate) is not null
-  ) picked
-  order by
-    case when picked.kind = 'official' then 0 else 1 end,
-    picked.valuto_rank
-  limit 1
-$$;
-
--- Latest quote per 1 base in the 30 minutes at or before p_at, inside the band.
--- Used only for EUR/USD and USD/CNY. Older than one fetch interval is not returned.
-create or replace function private.historical_pair_rate(
-  p_base text,
-  p_quote text,
-  p_at timestamptz,
-  p_low numeric,
-  p_high numeric
-)
-returns table (rate numeric, rate_at timestamptz, source text)
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select picked.pair_rate, picked.fetched_at, picked.source || ':' || picked.kind
-  from (
-    select
-      r.fetched_at,
-      r.source,
-      coalesce(o.rate, m.rate, b.rate, s.rate) as pair_rate,
-      case
-        when o.rate is not null then 'official'
-        when m.rate is not null then 'mid'
-        when b.rate is not null then 'buy'
-        else 'sell'
-      end as kind,
-      case when r.source = 'valuto' and r.venue = 'Valuto' then 0 else 1 end as valuto_rank
-    from public.market_rates r
-    cross join lateral (
-      select private.pair_in_band(p_base, p_quote, r.currency, r.quote_currency, r.official, p_low, p_high) as rate
-    ) o
-    cross join lateral (
-      select private.pair_in_band(
-        p_base, p_quote, r.currency, r.quote_currency,
-        case when r.buy > 0 and r.sell > 0 then (r.buy + r.sell) / 2 else null end,
-        p_low, p_high
-      ) as rate
-    ) m
-    cross join lateral (
-      select private.pair_in_band(p_base, p_quote, r.currency, r.quote_currency, r.buy, p_low, p_high) as rate
-    ) b
-    cross join lateral (
-      select private.pair_in_band(p_base, p_quote, r.currency, r.quote_currency, r.sell, p_low, p_high) as rate
-    ) s
-    where r.fetched_at <= p_at
-      and r.fetched_at > p_at - interval '30 minutes'
-      and r.venue_kind in ('board', 'bank')
-      and r.venue not like '% app'
-      and (
-        (r.currency = p_base and r.quote_currency = p_quote)
-        or (r.currency = p_quote and r.quote_currency = p_base)
-      )
-      and coalesce(o.rate, m.rate, b.rate, s.rate) is not null
-  ) picked
-  order by
-    case when picked.kind = 'official' then 0 else 1 end,
-    picked.fetched_at desc,
-    picked.valuto_rank
+  order by picked.fetched_at desc
   limit 1
 $$;
 
 revoke all on function private.gel_scale_ok(text, numeric) from public, anon, authenticated;
 revoke all on function private.orient_gel_rate(text, text, text, numeric) from public, anon, authenticated;
-revoke all on function private.pair_in_band(text, text, text, text, numeric, numeric, numeric) from public, anon, authenticated;
 revoke all on function private.historical_gel_rate(text, timestamptz) from public, anon, authenticated;
-revoke all on function private.historical_gel_rate_exact(text, timestamptz) from public, anon, authenticated;
-revoke all on function private.historical_pair_rate(text, text, timestamptz, numeric, numeric) from public, anon, authenticated;
 
--- Received amount × historical lari per 1 unit of the received currency.
+-- Received amount × lari per 1 unit of the received currency.
+-- The old function calls the cross helpers, so it is removed first.
+-- This is not a view.
+drop function if exists private.request_abs_valuation(text, numeric, timestamptz);
+drop function if exists private.request_abs_valuation(text, text, numeric, numeric, text, timestamptz, timestamptz);
+drop function if exists private.historical_pair_rate(text, text, timestamptz, numeric, numeric);
+drop function if exists private.historical_gel_rate_exact(text, timestamptz);
+drop function if exists private.pair_in_band(text, text, text, text, numeric, numeric, numeric);
+
 create or replace function private.request_abs_valuation(
+  p_sells_currency text,
   p_gets_currency text,
   p_gets_amount numeric,
+  p_rate numeric,
+  p_quote_status text,
+  p_quoted_at timestamptz,
   p_at timestamptz
 )
 returns table (
@@ -334,17 +188,11 @@ security definer
 set search_path = ''
 as $$
 declare
+  v_sells text := upper(btrim(coalesce(p_sells_currency, '')));
   v_ccy text := upper(btrim(coalesce(p_gets_currency, '')));
   v_rate numeric;
   v_at timestamptz;
   v_source text;
-  v_leg_rate numeric;
-  v_leg_at timestamptz;
-  v_leg_source text;
-  v_usd_rate numeric;
-  v_usd_at timestamptz;
-  v_usd_source text;
-  v_product numeric;
 begin
   request_abs_gel := null;
   valuation_currency := nullif(v_ccy, '');
@@ -377,8 +225,27 @@ begin
     return;
   end if;
 
+  -- requests.rate is the treasury quote: lari per 1 unit received only
+  -- when the client sells GEL and the figure is inside the lari band.
+  -- A decline or a null rate is missing. A cross, RUB at 1 or above,
+  -- and any figure outside the band are not divided and fall through.
+  if p_rate is not null
+     and p_rate > 0
+     and p_quote_status is distinct from 'declined'
+     and v_sells = 'GEL'
+     and private.gel_scale_ok(v_ccy, p_rate)
+  then
+    request_abs_gel := round(abs(p_gets_amount) * p_rate, 2);
+    valuation_rate := round(p_rate, 8);
+    valuation_timestamp := coalesce(p_quoted_at, p_at);
+    valuation_source := 'treasury_quote';
+    valuation_status := 'calculated';
+    return next;
+    return;
+  end if;
+
   if p_at is null then
-    valuation_status := case when v_ccy in ('USD', 'EUR', 'RUB', 'CNY') then 'missing_rate' else 'unsupported_currency' end;
+    valuation_status := 'missing_rate';
     return next;
     return;
   end if;
@@ -387,78 +254,24 @@ begin
     into v_rate, v_at, v_source
   from private.historical_gel_rate(v_ccy, p_at) h;
 
-  if v_rate is null and v_ccy = 'EUR' then
-    select h.rate, h.rate_at, h.source
-      into v_leg_rate, v_leg_at, v_leg_source
-    from private.historical_pair_rate('EUR', 'USD', p_at, 0.95, 1.55) h;
-    if v_leg_at is not null then
-      select h.rate, h.rate_at, h.source
-        into v_usd_rate, v_usd_at, v_usd_source
-      from private.historical_gel_rate_exact('USD', v_leg_at) h;
-    end if;
-    if v_usd_rate is null then
-      select h.rate, h.rate_at, h.source
-        into v_usd_rate, v_usd_at, v_usd_source
-      from private.historical_gel_rate('USD', p_at) h;
-    end if;
-    if v_leg_rate is not null and v_usd_rate is not null
-       and v_leg_at is not null and v_usd_at is not null
-       and abs(v_leg_at - v_usd_at) <= interval '30 minutes'
-    then
-      v_product := round(v_leg_rate * v_usd_rate, 8);
-      if private.gel_scale_ok('EUR', v_product) then
-        v_rate := v_product;
-        v_at := least(v_leg_at, v_usd_at);
-        v_source := 'cross:EUR/USD*USD/GEL:' || v_usd_source;
-      end if;
-    end if;
-  elsif v_rate is null and v_ccy = 'CNY' then
-    select h.rate, h.rate_at, h.source
-      into v_leg_rate, v_leg_at, v_leg_source
-    from private.historical_pair_rate('USD', 'CNY', p_at, 4.5, 12) h;
-    if v_leg_at is not null then
-      select h.rate, h.rate_at, h.source
-        into v_usd_rate, v_usd_at, v_usd_source
-      from private.historical_gel_rate_exact('USD', v_leg_at) h;
-    end if;
-    if v_usd_rate is null then
-      select h.rate, h.rate_at, h.source
-        into v_usd_rate, v_usd_at, v_usd_source
-      from private.historical_gel_rate('USD', p_at) h;
-    end if;
-    if v_leg_rate is not null and v_leg_rate <> 0 and v_usd_rate is not null
-       and v_leg_at is not null and v_usd_at is not null
-       and abs(v_leg_at - v_usd_at) <= interval '30 minutes'
-    then
-      v_product := round(v_usd_rate / v_leg_rate, 8);
-      if private.gel_scale_ok('CNY', v_product) then
-        v_rate := v_product;
-        v_at := least(v_leg_at, v_usd_at);
-        v_source := 'cross:USD/GEL/USD/CNY:' || v_usd_source;
-      end if;
-    end if;
-  end if;
-
   if v_rate is not null then
     request_abs_gel := round(abs(p_gets_amount) * v_rate, 2);
     valuation_rate := v_rate;
     valuation_timestamp := v_at;
     valuation_source := v_source;
     valuation_status := 'calculated';
-  elsif v_ccy in ('USD', 'EUR', 'RUB', 'CNY') then
-    valuation_status := 'missing_rate';
   else
-    valuation_status := 'unsupported_currency';
+    valuation_status := 'missing_rate';
   end if;
 
   return next;
 end;
 $$;
 
-comment on function private.request_abs_valuation(text, numeric, timestamptz) is
-  'ABS GEL of the amount the client receives. gets_amount null is missing_amount. GEL uses the amount. Other currencies use a market_rates snapshot no more than 30 minutes before p_at. A cross requires both legs in that window, same fetched_at first. Never today''s reference_rates row, never a missing rate as zero, never a ruble figure of 1 or more.';
+comment on function private.request_abs_valuation(text, text, numeric, numeric, text, timestamptz, timestamptz) is
+  'ABS GEL of the amount the client receives. gets_amount null is missing_amount. GEL received uses the amount and does not apply a rate. requests.rate is the treasury quote and is used first when quote_status is not declined, the rate is not null, the client sells GEL, and the figure is lari per 1 unit of the received currency inside the lari band. A cross quote, a decline, a null rate, and a figure outside the band, including RUB at 1 or more, are not used and are not divided. Otherwise the latest Kursi board sell in market_rates with fetched_at at or before p_at. An older stored snapshot is used. A fetch after p_at is not. reference_rates is current only and is not read. Official, buy, and a competitor rate are not read. Never a missing rate as zero.';
 
-revoke all on function private.request_abs_valuation(text, numeric, timestamptz) from public, anon, authenticated;
+revoke all on function private.request_abs_valuation(text, text, numeric, numeric, text, timestamptz, timestamptz) from public, anon, authenticated;
 
 -- Request-status class for the analytics KPIs. Not request_outcomes.
 create or replace function private.request_kpi_class(
@@ -587,7 +400,9 @@ begin
     from public.requests r
     left join public.profiles p on p.id = r.kam_id
     left join public.loss_reasons lr on lr.code = r.loss_reason
-    cross join lateral private.request_abs_valuation(r.gets_currency, r.gets_amount, r.requested_at) v
+    cross join lateral private.request_abs_valuation(
+      r.sells_currency, r.gets_currency, r.gets_amount, r.rate, r.quote_status, r.quoted_at, r.requested_at
+    ) v
     where (p_from is null or r.request_date >= p_from)
       and (p_to is null or r.request_date < p_to)
       and (v_kam is null or r.kam_id = v_kam)
@@ -905,7 +720,9 @@ begin
   from public.requests r
   left join public.profiles p on p.id = r.kam_id
   left join public.loss_reasons lr on lr.code = r.loss_reason
-  cross join lateral private.request_abs_valuation(r.gets_currency, r.gets_amount, r.requested_at) v
+  cross join lateral private.request_abs_valuation(
+      r.sells_currency, r.gets_currency, r.gets_amount, r.rate, r.quote_status, r.quoted_at, r.requested_at
+    ) v
   where r.client_id = v_id
   order by r.requested_at desc, r.id desc
   offset v_offset
@@ -960,7 +777,9 @@ begin
     v.valuation_source,
     v.valuation_status
   from public.requests r
-  cross join lateral private.request_abs_valuation(r.gets_currency, r.gets_amount, r.requested_at) v
+  cross join lateral private.request_abs_valuation(
+      r.sells_currency, r.gets_currency, r.gets_amount, r.rate, r.quote_status, r.quoted_at, r.requested_at
+    ) v
   where r.id = any (p_ids[1:200]);
 end;
 $$;

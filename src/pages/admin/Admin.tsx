@@ -4,6 +4,7 @@ import { useI18n } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
 import LangSwitch from '../../components/LangSwitch';
 import ViewSwitch from '../../components/ViewSwitch';
+import AbsGelPanel from './AbsGelPanel';
 import People from './People';
 import RulesPanel from './RulesPanel';
 import MessagesPanel from './MessagesPanel';
@@ -36,7 +37,7 @@ export default function Admin() {
       <div className="page-head">
         <div>
           <h1>{t('ადმინი', 'Admin')}</h1>
-          <p className="muted" style={{ margin: '6px 0 0', fontSize: 17 }}>{t('ხალხი, დათვლის წესები და შეტყობინებები', 'People, counting rules and messages')}</p>
+          <p className="muted" style={{ margin: '6px 0 0', fontSize: 17 }}>{t('ლარის რიგი, ხალხი, დათვლის წესები და შეტყობინებები', 'Lari queue, people, counting rules and messages')}</p>
         </div>
         <div className="row">
           <ViewSwitch onPage />
@@ -45,12 +46,14 @@ export default function Admin() {
       </div>
       <div>
         <nav className="page-links" aria-label={t('ამ გვერდზე', 'On this page')}>
+          <a href="#abs-gel">{t('ABS GEL', 'ABS GEL')}</a>
           <a href="#people">{t('ხალხი', 'People')}</a>
           <a href="#rules">{t('დათვლის წესები', 'Counting rules')}</a>
           <a href="#messages">{t('შეტყობინებები', 'Messages')}</a>
           <a href="#activity">{t('აქტივობა', 'Activity')}</a>
         </nav>
       </div>
+      <AbsGelPanel />
       <People />
       <RulesPanel names={names} />
       <MessagesPanel />

@@ -6,6 +6,7 @@ export interface ReasonStat {
   count: number;
   lostAbsGel: number | null;
   absUnavailable: number;
+  absPending: number;
 }
 
 export interface KamKpi {
@@ -18,10 +19,13 @@ export interface KamKpi {
   open: number;
   absGel: number | null;
   absUnavailable: number;
+  absPending: number;
   wonAbsGel: number | null;
   wonAbsUnavailable: number;
+  wonAbsPending: number;
   lostAbsGel: number | null;
   lostAbsUnavailable: number;
+  lostAbsPending: number;
 }
 
 export interface RequestKpis {
@@ -31,10 +35,13 @@ export interface RequestKpis {
   open: number;
   absGel: number | null;
   absUnavailable: number;
+  absPending: number;
   wonAbsGel: number | null;
   wonAbsUnavailable: number;
+  wonAbsPending: number;
   lostAbsGel: number | null;
   lostAbsUnavailable: number;
+  lostAbsPending: number;
   reasons: ReasonStat[];
   kams: KamKpi[];
 }
@@ -77,6 +84,8 @@ export interface ClientHistoryRow {
   kpiClass: string;
   lossReason: string | null;
   kamName: string | null;
+  ownerName: string | null;
+  legacyStatus: string | null;
 }
 
 function num(value: unknown): number | null {
@@ -104,10 +113,13 @@ interface RawKam {
   open?: number | string | null;
   abs_gel?: number | string | null;
   abs_unavailable?: number | string | null;
+  abs_pending?: number | string | null;
   won_abs_gel?: number | string | null;
   won_abs_unavailable?: number | string | null;
+  won_abs_pending?: number | string | null;
   lost_abs_gel?: number | string | null;
   lost_abs_unavailable?: number | string | null;
+  lost_abs_pending?: number | string | null;
 }
 
 interface RawReason {
@@ -115,6 +127,7 @@ interface RawReason {
   count?: number | string | null;
   lost_abs_gel?: number | string | null;
   abs_unavailable?: number | string | null;
+  abs_pending?: number | string | null;
 }
 
 function asKpis(raw: Record<string, unknown> | null): RequestKpis {
@@ -127,15 +140,19 @@ function asKpis(raw: Record<string, unknown> | null): RequestKpis {
     open: whole(raw?.open),
     absGel: num(raw?.abs_gel),
     absUnavailable: whole(raw?.abs_unavailable),
+    absPending: whole(raw?.abs_pending),
     wonAbsGel: num(raw?.won_abs_gel),
     wonAbsUnavailable: whole(raw?.won_abs_unavailable),
+    wonAbsPending: whole(raw?.won_abs_pending),
     lostAbsGel: num(raw?.lost_abs_gel),
     lostAbsUnavailable: whole(raw?.lost_abs_unavailable),
+    lostAbsPending: whole(raw?.lost_abs_pending),
     reasons: reasons.map((row) => ({
       label: row.label ?? '',
       count: whole(row.count),
       lostAbsGel: num(row.lost_abs_gel),
       absUnavailable: whole(row.abs_unavailable),
+      absPending: whole(row.abs_pending),
     })),
     kams: kams.map((row) => ({
       kamId: row.kam_id ?? null,
@@ -147,10 +164,13 @@ function asKpis(raw: Record<string, unknown> | null): RequestKpis {
       open: whole(row.open),
       absGel: num(row.abs_gel),
       absUnavailable: whole(row.abs_unavailable),
+      absPending: whole(row.abs_pending),
       wonAbsGel: num(row.won_abs_gel),
       wonAbsUnavailable: whole(row.won_abs_unavailable),
+      wonAbsPending: whole(row.won_abs_pending),
       lostAbsGel: num(row.lost_abs_gel),
       lostAbsUnavailable: whole(row.lost_abs_unavailable),
+      lostAbsPending: whole(row.lost_abs_pending),
     })),
   };
 }
@@ -222,5 +242,7 @@ export async function loadClientHistory(clientId: string, offset: number): Promi
     kpiClass: String(row.kpi_class ?? 'open'),
     lossReason: (row.loss_reason as string | null) ?? null,
     kamName: (row.kam_name as string | null) ?? null,
+    ownerName: (row.owner_name as string | null) ?? null,
+    legacyStatus: (row.legacy_status as string | null) ?? null,
   }));
 }

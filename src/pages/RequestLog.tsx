@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
@@ -13,6 +14,7 @@ import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 
 export default function RequestLog() {
+  const location = useLocation();
   const { profile } = useAuth();
   const { role, realRole } = useViewAs();
   const { t, lang } = useI18n();
@@ -42,6 +44,10 @@ export default function RequestLog() {
   }, [mine, profile]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!loaded || !location.hash.startsWith('#request-')) return;
+    document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'center' });
+  }, [loaded, location.hash, rows.length]);
   useLive(['requests'], load, 30000);
 
   function label(code: LogCode): string {
@@ -110,7 +116,7 @@ export default function RequestLog() {
                       ? lossReasonLabel(status.reason, lang)
                       : (status.reason ?? '');
                   return (
-                    <tr key={row.id}>
+                    <tr key={row.id} id={'request-' + row.id}>
                       <td className="nowrap">{fmtDateTime(row.requested_at)}</td>
                       <td>
                         <div className="strong">{row.client_name ?? row.client_id}</div>

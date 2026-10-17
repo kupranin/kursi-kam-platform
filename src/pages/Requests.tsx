@@ -19,6 +19,7 @@ import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossR
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientSpecialTerms from '../components/ClientSpecialTerms';
+import DynamicActiveNegotiatedRates from '../components/DynamicActiveNegotiatedRates';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
@@ -655,6 +656,7 @@ export default function Requests() {
             </div>
           </div>
           <ClientSpecialTerms key={clientForm} clientId={info?.valid ? info.id : null} idSuffix="desk" requestSells={sells} requestGets={gets} onDraft={(draft) => { specialRef.current = draft; }} />
+          <DynamicActiveNegotiatedRates clientId={info?.valid ? info.id : null} idSuffix="desk" />
           <div className="form-row" style={{ marginTop: 16 }}>
             <div className="deal-side">
               <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} />

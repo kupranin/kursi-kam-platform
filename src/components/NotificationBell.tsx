@@ -89,6 +89,7 @@ export default function NotificationBell() {
 
   const unread = notes.filter((n) => !read.has(n.id)).length;
   const href = (n: Note) => {
+    if (n.event_type === 'abs_gel.pending') return '/admin#abs-gel';
     if (role === 'kam') return '/requests';
     if (role === 'treasury') return '/rate-desk';
     if (n.event_type === 'client.approved') return '/requests';

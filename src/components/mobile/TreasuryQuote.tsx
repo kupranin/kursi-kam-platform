@@ -9,6 +9,7 @@ import { useToast } from '../../lib/toast';
 import type { QueueRow } from '../../lib/types';
 import LoadingLine from '../LoadingLine';
 import SpecialRateMark from '../SpecialRateMark';
+import DynamicActiveNegotiatedRates from '../DynamicActiveNegotiatedRates';
 import VenuePairLine from '../VenuePairLine';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText, WaitClock } from './TreasuryBits';
@@ -195,6 +196,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
         {row.note && <p className="note-box">{t('კომენტარი ხაზინისთვის', 'Comment for treasury')}: {row.note}</p>}
         {row.loss_reason_note && <p className="note-box">{t('სხვა მიზეზი', 'Other reason')}: {row.loss_reason_note}</p>}
         <SpecialRateMark clientId={row.client_id} variant="detail" />
+        <DynamicActiveNegotiatedRates clientId={row.client_id} idSuffix={'phone-quote-' + row.request_id} />
         {refs.length > 0 && !declining && (
           <div className="m-refs" aria-label={t('კურსები ამ გარიგებაზე', 'Rates for this deal')}>
             {refs.map((item) => (

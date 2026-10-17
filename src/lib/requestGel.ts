@@ -1,8 +1,10 @@
 /**
  * Older request-lari figure. Same branches as private.request_gel.
  * Analytics ABS GEL does not use this. That figure is
- * private.request_abs_valuation: the received amount times a historical
- * lari rate. A blank amount or a rate that is not lari stays empty.
+ * private.request_abs_valuation: the received amount times lari per 1
+ * unit of the received currency. A treasury quote is used only when it
+ * is already that lari rate. Otherwise the Kursi board at request time
+ * is used. A blank amount or a rate that is not lari stays empty.
  * RUB at 1 or above is not lari. RUB below 1 is lari per 1 ruble.
  * Nothing here is multiplied by a fixed dollar or ruble constant.
  * A cross with no GEL side stays empty.

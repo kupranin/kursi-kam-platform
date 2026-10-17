@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ClientField, { type ClientInfo } from '../ClientField';
 import ClientHistory from '../ClientHistory';
 import ClientSpecialTerms from '../ClientSpecialTerms';
+import DynamicActiveNegotiatedRates from '../DynamicActiveNegotiatedRates';
 import CurrencyPicker from '../CurrencyPicker';
 import { useI18n } from '../../lib/i18n';
 import { EMPTY_SPECIAL_DRAFT, saveClientSpecialRate, type SpecialTermsDraft } from '../../lib/specialRates';
@@ -139,6 +140,7 @@ export default function KamNewRequest() {
       </div>
 
       <ClientSpecialTerms clientId={info?.valid ? info.id : null} idSuffix="phone" requestSells={sells} requestGets={gets} onDraft={(draft) => { specialRef.current = draft; }} />
+      <DynamicActiveNegotiatedRates clientId={info?.valid ? info.id : null} idSuffix="phone" />
 
       <div className="m-fields" id="new-pair">
         <CurrencyPicker label={t('კლიენტი ყიდის', 'Client sells')} value={sells} onChange={pickSells} idSuffix="new" />
