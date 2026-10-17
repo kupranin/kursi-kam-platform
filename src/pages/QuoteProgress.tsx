@@ -5,7 +5,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtRate, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import { isQuotedProgress, isWrittenHistory } from '../lib/requestStatus';
+import { isQuotedProgress } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
@@ -118,7 +118,7 @@ export default function QuoteProgress() {
                 </div>
                 <div className="actions">
                   <span className={'pill ' + pill.cls}>{pill.label}</span>
-                  {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
+                  {realRole === 'admin' && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
                 </div>
               </div>
             </article>

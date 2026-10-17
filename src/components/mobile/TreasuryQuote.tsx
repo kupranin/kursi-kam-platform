@@ -2,8 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import { useNavigate } from 'react-router-dom';
 import { fmtRate, parseRate, rateUnit } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
+import { loadMarketRateData } from '../../lib/marketBoard';
+import type { CurrentBoard } from '../../lib/rateGrid';
 import { treasuryReason } from '../../lib/requestStatus';
 import { rpc } from '../../lib/supabase';
+import { midpointWarningText, treasuryMidpointWarning } from '../../lib/treasuryMidpoint';
 import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import type { QueueRow } from '../../lib/types';
@@ -27,6 +30,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
   const [rateText, setRateText] = useState('');
   const [tried, setTried] = useState(false);
   const [confirmFar, setConfirmFar] = useState(false);
+  const [board, setBoard] = useState<CurrentBoard>({ pairs: [], rows: [], updatedAt: null });
   const [declining, setDeclining] = useState(false);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -70,6 +74,21 @@ export default function TreasuryQuote({ id }: { id: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    let live = true;
+    const run = () => {
+      loadMarketRateData()
+        .then((view) => { if (live) setBoard(view.board); })
+        .catch(() => { /* a missing Kursi board does not warn */ });
+    };
+    run();
+    const timer = window.setInterval(run, 5 * 60 * 1000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (declining || !loaded) return;
     const field = document.getElementById('treasury-rate');
@@ -108,6 +127,8 @@ export default function TreasuryQuote({ id }: { id: number }) {
   const rateOk = parsed.ok && parsed.value != null;
   const standard = row.standard_rate != null ? Number(row.standard_rate) : null;
   const dev = rateOk && parsed.value != null && standard ? Math.abs(parsed.value - standard) / standard * 100 : 0;
+  const mid = rateOk && parsed.value != null ? treasuryMidpointWarning(board, row.sells_currency, row.gets_currency, parsed.value) : null;
+  const midCopy = mid ? midpointWarningText(mid.direction) : null;
   const refs = [
     standard != null && { label: t('ჩვენი სტანდარტი', 'Our standard'), value: standard },
     row.nbg_rate != null && { label: 'NBG', value: Number(row.nbg_rate) },
@@ -127,7 +148,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
     if (lock.current) return;
     setTried(true);
     if (!rateOk || parsed.value == null) return;
-    if (standard && dev > FAR_PCT && !confirmFar) {
+    if (((standard && dev > FAR_PCT) || mid) && !confirmFar) {
       setConfirmFar(true);
       return;
     }
@@ -170,7 +191,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
     }
   }
 
-  const sendLabel = dev > FAR_PCT && confirmFar
+  const sendLabel = (dev > FAR_PCT || mid) && confirmFar
     ? t('მაინც გაგზავნა', 'Send anyway')
     : t('კურსის გაგზავნა', 'Send rate');
 
@@ -235,6 +256,9 @@ export default function TreasuryQuote({ id }: { id: number }) {
                 'Check the rate: {rate} is {pct}% away from the standard rate {standard}. If it is right, press Send anyway.',
                 { rate: rateText, standard: fmtRate(standard), pct: dev.toFixed(1) },
               )}</p>
+            )}
+            {mid && midCopy && confirmFar && (
+              <p className="alert-box" role="alert">{t(midCopy.ka, midCopy.en, { rate: rateText, mid: fmtRate(mid.midpoint) })}</p>
             )}
           </>
         )}

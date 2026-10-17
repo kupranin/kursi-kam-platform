@@ -10,6 +10,7 @@ import {
   type SpecialRateRow,
   type SpecialTermsDraft,
 } from '../lib/specialRates';
+import { specialRateBoxChecked, specialTermsNeedClear } from '../lib/specialRateStatus';
 import LoadingLine from './LoadingLine';
 import { BankSpecialReference } from './VenuePairLine';
 
@@ -44,6 +45,7 @@ export default function ClientSpecialTerms({ clientId, idSuffix, onDraft, reques
   const [gate, setGate] = useState<'unknown' | 'on' | 'off'>('unknown');
   const [rows, setRows] = useState<SpecialRateRow[]>([]);
   const [on, setOn] = useState(false);
+  const [loadedActive, setLoadedActive] = useState(false);
   const [bank, setBank] = useState<SpecialBank | ''>('');
   const [providerLabel, setProviderLabel] = useState('');
   const [comment, setComment] = useState('');
@@ -67,6 +69,7 @@ export default function ClientSpecialTerms({ clientId, idSuffix, onDraft, reques
   useEffect(() => {
     let live = true;
     setOn(false);
+    setLoadedActive(false);
     setRows([]);
     fill(null);
     loadSpecialRates(clientId ? [clientId] : [])
@@ -78,7 +81,9 @@ export default function ClientSpecialTerms({ clientId, idSuffix, onDraft, reques
         }
         setGate('on');
         setRows(result.rows);
-        if (result.rows.length) {
+        const active = specialRateBoxChecked(result.rows.length);
+        setLoadedActive(active);
+        if (active) {
           setOn(true);
           fill(latest(result.rows));
         }
@@ -101,13 +106,15 @@ export default function ClientSpecialTerms({ clientId, idSuffix, onDraft, reques
     || !sameRate(rate, saved.rate)
   );
 
+  const clear = specialTermsNeedClear(loadedActive, on);
+
   useEffect(() => {
     if (gate === 'off') {
       onDraftRef.current(EMPTY_SPECIAL_DRAFT);
       return;
     }
-    onDraftRef.current({ on, bank, providerLabel, comment, sells, gets, rate, dirty });
-  }, [gate, on, bank, providerLabel, comment, sells, gets, rate, dirty]);
+    onDraftRef.current({ on, bank, providerLabel, comment, sells, gets, rate, dirty, clear });
+  }, [gate, on, bank, providerLabel, comment, sells, gets, rate, dirty, clear]);
 
   function pickBank(code: SpecialBank) {
     const row = rows.find((item) => item.bank === code) ?? null;
@@ -133,6 +140,7 @@ export default function ClientSpecialTerms({ clientId, idSuffix, onDraft, reques
         <input id={checkId} type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
         <span>{t('კლიენტს აქვს ბანკის სპეციალური კურსი', 'The client has a special bank rate')}</span>
       </label>
+      {clear && <p className="hint" style={{ margin: '4px 0 0' }}>{t('მონიშვნის მოხსნა მოთხოვნის გაგზავნისას ინახება. ბანკები აქტიურ პირობად აღარ ჩანს.', 'Unchecking is saved when the request is sent. The banks are no longer shown as active terms.')}</p>}
       {on && <BankSpecialReference sells={sells && gets && sells !== gets ? sells : requestSells} gets={sells && gets && sells !== gets ? gets : requestGets} />}
       {on && (
         <div className="special-terms-body">

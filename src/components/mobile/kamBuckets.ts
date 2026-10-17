@@ -61,8 +61,10 @@ export function mobileStatus(row: RequestRow, t: T, now = Date.now()): MobileSta
     if (displayClass(row) === 'won') return { label: t('მოგებული', 'Won'), cls: 'pill-ok' };
     return { label: t('დაკარგული', 'Lost'), cls: 'pill-alert' };
   }
-  if (row.went_through || row.outcome === 'went_through' || row.rate_written_at || row.payment_confirmed_at) {
-    return { label: t('დასრულებული', 'Finished'), cls: 'pill-ok' };
+  if (row.payment_confirmed_at) return { label: t('გავიდა', 'Went through'), cls: 'pill-ok' };
+  if (row.rate_written_at && !row.payment_confirmed_at) return { label: t('გაწერილია', 'Written'), cls: 'pill-warn' };
+  if (row.went_through || row.outcome === 'went_through') {
+    return { label: t('გავიდა', 'Went through'), cls: 'pill-ok' };
   }
   if (isPendingLoss(row)) return { label: t('დაიკარგა, ხაზინას ელოდება', 'Lost, waiting on treasury'), cls: 'pill-alert' };
   if (row.client_reply === 'approved' && row.rate_write_deferred && !row.rate_written_at && !row.payment_confirmed_at && !row.went_through && !row.loss_reason && !row.marked_lost_at && !row.loss_approved_at) {

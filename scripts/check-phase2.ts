@@ -215,7 +215,7 @@ assert(beforeOutcomes.open.some((row) => row.id === 3), '3 accepted card stays o
 assert(beforeOutcomes.open.some((row) => row.id === 4), '4 better rate stays open');
 assert(!lossOpenWithoutPaymentMatch(active({ id: 4, client_reply: 'better', better_decision: null }), ''), '4 better rate is not a loss while treasury has not answered');
 assert(beforeOutcomes.open.some((row) => row.id === 5), '5 answered better rate stays open');
-assert(!beforeOutcomes.open.some((row) => row.id === 6) && beforeOutcomes.done.some((row) => row.id === 6), '6 written rate leaves open and is went-through today');
+assert(beforeOutcomes.open.some((row) => row.id === 6) && !beforeOutcomes.done.some((row) => row.id === 6) && !openWritten.went_through, '6 a written rate stays open until the client is notified');
 assert(!beforeOutcomes.open.some((row) => row.id === 7) && beforeOutcomes.done.some((row) => row.id === 7), '7 confirmed payment leaves open without a transaction lookup');
 assert(txOnly.loss_open && !txOnly.went_through && beforeOutcomes.open.some((row) => row.id === 70), '7b an uncorrected payment match can look like an open loss');
 

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import CurrencyPicker from '../CurrencyPicker';
 import DeleteRequestButton from '../DeleteRequestButton';
 import { useI18n } from '../../lib/i18n';
+import { useViewAs } from '../../lib/viewAs';
 import { rpc } from '../../lib/supabase';
 import { useToast } from '../../lib/toast';
 import { BANKS, CURRENCIES, bankList, type RequestRow } from '../../lib/types';
@@ -26,6 +27,7 @@ export default function KamEditForm({
   onDeleted: () => void;
 }) {
   const { t } = useI18n();
+  const { realRole } = useViewAs();
   const toast = useToast();
   const [clientId, setClientId] = useState(row.client_id);
   const [name, setName] = useState(row.client_name ?? '');
@@ -119,7 +121,7 @@ export default function KamEditForm({
       </div>
       <button type="submit" className="btn btn-primary m-send" disabled={busy}>{busy ? t('ინახება', 'Saving') : t('შენახვა', 'Save')}</button>
       <button type="button" className="m-text-btn" onClick={onClose}>{t('გაუქმება', 'Cancel')}</button>
-      {!isWrittenHistory(row) && <DeleteRequestButton requestId={row.id} onDeleted={onDeleted} />}
+      {(realRole === 'admin' || !isWrittenHistory(row)) && <DeleteRequestButton requestId={row.id} onDeleted={onDeleted} />}
     </form>
   );
 }

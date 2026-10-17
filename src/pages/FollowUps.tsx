@@ -7,10 +7,9 @@ import { useToast } from '../lib/toast';
 import { kamMayEditRequest } from '../lib/clientOwnership';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import { isWrittenHistory } from '../lib/requestStatus';
 import type { LossReason, RequestRow, Role, WinbackRow } from '../lib/types';
 import { IconCheck } from '../components/Icons';
-import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import DeleteRequestButton, { mayDeleteRequestRow } from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
@@ -198,7 +197,7 @@ export default function FollowUps() {
                   )) : <span className="pill pill-wait">KAM-ს ელოდება</span>}
                 </div>
               )}
-              {canDeleteRequest(realRole, profile?.id, a.kam_id) && !isWrittenHistory(a) && (
+              {mayDeleteRequestRow(realRole, profile?.id, a.kam_id, a) && (
                 <DeleteRequestButton requestId={a.id} onDeleted={load} />
               )}
             </div>

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useLive } from '../lib/useLive';
+import { useViewAs } from '../lib/viewAs';
 import { fmtDateTime, fmtDay, fmtRate, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { isWrittenHistory } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
+import DeleteRequestButton, { mayDeleteRequestRow } from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 import WrittenRateNote from '../components/WrittenRateNote';
@@ -15,6 +18,8 @@ const PAGE = 100;
 /** Deals whose quoted rate was written in the core. They leave the rate desk. */
 export default function DeskHistory() {
   const { t } = useI18n();
+  const { profile } = useAuth();
+  const { realRole } = useViewAs();
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [total, setTotal] = useState(0);
   const [shown, setShown] = useState(PAGE);
@@ -99,6 +104,9 @@ export default function DeskHistory() {
               </div>
               <div className="actions">
                 <span className="pill pill-ok">{t('კურსი გაწერილია', 'Rate is written')}</span>
+                {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && (
+                  <DeleteRequestButton requestId={r.id} onDeleted={reload} />
+                )}
               </div>
             </div>
           </article>

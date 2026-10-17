@@ -7,9 +7,9 @@ import { useViewAs } from '../lib/viewAs';
 import { useLive } from '../lib/useLive';
 import { fmtDateTime, fmtRate, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import { classifyRequest, isWrittenHistory, lossReasonLabel, treasuryReason, type LogCode } from '../lib/requestStatus';
+import { classifyRequest, lossReasonLabel, treasuryReason, type LogCode } from '../lib/requestStatus';
 import type { RequestRow } from '../lib/types';
-import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import DeleteRequestButton, { mayDeleteRequestRow } from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 
@@ -138,7 +138,7 @@ export default function RequestLog() {
                       </td>
                       {showDelete && (
                         <td>
-                          {canDeleteRequest(realRole, profile?.id, row.kam_id) && !isWrittenHistory(row) && (
+                          {mayDeleteRequestRow(realRole, profile?.id, row.kam_id, row) && (
                             <DeleteRequestButton requestId={row.id} onDeleted={load} />
                           )}
                         </td>

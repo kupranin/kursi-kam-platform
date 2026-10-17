@@ -7,6 +7,7 @@ import { fmtAmount, fmtDateTime, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, 
 import { isMissingRead } from '../lib/missingRead';
 import { loadMarketRateData } from '../lib/marketBoard';
 import type { CurrentBoard } from '../lib/rateGrid';
+import { midpointWarningText, treasuryMidpointWarning } from '../lib/treasuryMidpoint';
 import { useI18n } from '../lib/i18n';
 import { usePhone } from '../lib/usePhone';
 import { useViewAs } from '../lib/viewAs';
@@ -60,24 +61,39 @@ function DeskBanks({ codes, label }: { codes: string[] | undefined; label: strin
 }
 const FAR_PCT = 3;
 
-function QuotedRateEditor({ requestId, rate, onChanged }: { requestId: number; rate: number | null; onChanged: () => void }) {
+function QuotedRateEditor({ requestId, rate, sells, gets, board, onChanged }: {
+  requestId: number;
+  rate: number | null;
+  sells: string;
+  gets: string;
+  board: CurrentBoard;
+  onChanged: () => void;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const [text, setText] = useState(rate != null ? fmtRate(rate) : '');
   const [tried, setTried] = useState(false);
+  const [confirmFar, setConfirmFar] = useState(false);
   const [busy, setBusy] = useState(false);
   const parsed = parseRate(text);
   const rateOk = parsed.ok && parsed.value != null;
+  const mid = rateOk && parsed.value != null ? treasuryMidpointWarning(board, sells, gets, parsed.value) : null;
+  const midCopy = mid ? midpointWarningText(mid.direction) : null;
 
   useEffect(() => {
     setText(rate != null ? fmtRate(rate) : '');
     setTried(false);
+    setConfirmFar(false);
   }, [requestId, rate]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
     setTried(true);
     if (!rateOk || parsed.value == null) return;
+    if (mid && !confirmFar) {
+      setConfirmFar(true);
+      return;
+    }
     setBusy(true);
     try {
       await rpc('treasury_set_rate', { p_request_id: requestId, p_rate: parsed.value });
@@ -106,23 +122,28 @@ function QuotedRateEditor({ requestId, rate, onChanged }: { requestId: number; r
   }
 
   return (
-    <form onSubmit={save} noValidate className="form-row" style={{ marginTop: 12 }}>
-      <div className="field" style={{ flex: '0 1 190px' }}>
-        <label htmlFor={'quoted-rate-' + requestId}>{t('ხაზინის კურსი', 'Treasury rate')}</label>
-        <input
-          id={'quoted-rate-' + requestId}
-          className={'input' + (tried && !rateOk ? ' invalid' : '')}
-          inputMode="decimal"
-          autoComplete="off"
-          value={text}
-          onChange={(e) => { setText(e.target.value.replace(/,/g, '.')); setTried(false); }}
-        />
-        {tried && !rateOk && <span className="hint error">{t('ჩაწერეთ კურსი', 'Enter the rate')}</span>}
+    <form onSubmit={save} noValidate style={{ marginTop: 12 }}>
+      <div className="form-row">
+        <div className="field" style={{ flex: '0 1 190px' }}>
+          <label htmlFor={'quoted-rate-' + requestId}>{t('ხაზინის კურსი', 'Treasury rate')}</label>
+          <input
+            id={'quoted-rate-' + requestId}
+            className={'input' + (tried && !rateOk ? ' invalid' : '')}
+            inputMode="decimal"
+            autoComplete="off"
+            value={text}
+            onChange={(e) => { setText(e.target.value.replace(/,/g, '.')); setTried(false); setConfirmFar(false); }}
+          />
+          {tried && !rateOk && <span className="hint error">{t('ჩაწერეთ კურსი', 'Enter the rate')}</span>}
+        </div>
+        <div className="row" style={{ paddingTop: 27, gap: 12 }}>
+          <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('ინახება…', 'Saving…') : mid && confirmFar ? t('მაინც გაგზავნა', 'Send anyway') : t('კურსის შენახვა', 'Save rate')}</button>
+          <button type="button" className="link danger" disabled={busy} onClick={clear}>{t('კურსის წაშლა', 'Remove rate')}</button>
+        </div>
       </div>
-      <div className="row" style={{ paddingTop: 27, gap: 12 }}>
-        <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('ინახება…', 'Saving…') : t('კურსის შენახვა', 'Save rate')}</button>
-        <button type="button" className="link danger" disabled={busy} onClick={clear}>{t('კურსის წაშლა', 'Remove rate')}</button>
-      </div>
+      {mid && midCopy && confirmFar && (
+        <p className="alert-box" role="alert">{t(midCopy.ka, midCopy.en, { rate: text, mid: fmtRate(mid.midpoint) })}</p>
+      )}
     </form>
   );
 }
@@ -823,7 +844,9 @@ export default function RateDesk() {
     const parsed = parseRate(draftRate.current[r.request_id] ?? c.rate);
     if (!parsed.text || parsed.value == null) { patch(r.request_id, { tried: true }); return; }
     const rate = parsed.value;
-    if (r.standard_rate && Math.abs(rate - r.standard_rate) / r.standard_rate * 100 > FAR_PCT && !c.confirmFar) {
+    const far = !!(r.standard_rate && Math.abs(rate - r.standard_rate) / r.standard_rate * 100 > FAR_PCT);
+    const mid = treasuryMidpointWarning(marketBoard, r.sells_currency, r.gets_currency, rate);
+    if ((far || mid) && !c.confirmFar) {
       patch(r.request_id, { confirmFar: true });
       return;
     }
@@ -977,6 +1000,9 @@ export default function RateDesk() {
                 const rateNum = Number(c.rate);
                 const rateOk = c.rate.trim() !== '' && rateNum > 0;
                 const dev = rateOk && r.standard_rate ? Math.abs(rateNum - r.standard_rate) / r.standard_rate * 100 : 0;
+                const mid = rateOk ? treasuryMidpointWarning(marketBoard, r.sells_currency, r.gets_currency, rateNum) : null;
+                const midCopy = mid ? midpointWarningText(mid.direction) : null;
+                const needsConfirm = (dev > FAR_PCT || mid != null) && c.confirmFar;
                 const refs = [
                   r.standard_rate != null && { label: 'ჩვენი სტანდარტი', value: r.standard_rate },
                   r.nbg_rate != null && { label: 'NBG', value: r.nbg_rate },
@@ -1048,11 +1074,14 @@ export default function RateDesk() {
                           </div>
                           <div className="row" style={{ flex: '1 1 auto', justifyContent: 'flex-end', paddingTop: 27 }}>
                             <button type="button" className="btn btn-quiet" style={{ minHeight: 52 }} onClick={() => patch(r.request_id, { declining: true })}>{t('კურსს ვერ ვიძლევი', 'I cannot give a rate')}</button>
-                            <button type="button" className="btn btn-primary btn-big" onClick={() => send(r)}>{dev > FAR_PCT && c.confirmFar ? t('მაინც გაგზავნა', 'Send anyway') : t('კურსის გაგზავნა', 'Send rate')}</button>
+                            <button type="button" className="btn btn-primary btn-big" onClick={() => send(r)}>{needsConfirm ? t('მაინც გაგზავნა', 'Send anyway') : t('კურსის გაგზავნა', 'Send rate')}</button>
                           </div>
                         </div>
                         {dev > FAR_PCT && c.confirmFar && (
                           <p className="alert-box" role="alert">შეამოწმეთ კურსი: {c.rate} სტანდარტულ კურსს {fmtRate(r.standard_rate)} {dev.toFixed(1)}%-ით შორდება. თუ სწორია, დააჭირეთ „მაინც გაგზავნა“.</p>
+                        )}
+                        {mid && midCopy && c.confirmFar && (
+                          <p className="alert-box" role="alert">{t(midCopy.ka, midCopy.en, { rate: c.rate, mid: fmtRate(mid.midpoint) })}</p>
                         )}
                       </>
                     )}
@@ -1190,7 +1219,16 @@ export default function RateDesk() {
                     <p className="note-box">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
                     <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                     {r.note && <p className="note-box">{t('კომენტარი', 'Comment')}: {r.note}</p>}
-                    {r.rate != null && <QuotedRateEditor requestId={r.request_id} rate={r.rate} onChanged={load} />}
+                    {r.rate != null && (
+                      <QuotedRateEditor
+                        requestId={r.request_id}
+                        rate={r.rate}
+                        sells={r.sells_currency}
+                        gets={r.gets_currency}
+                        board={marketBoard}
+                        onChanged={load}
+                      />
+                    )}
                     <PairBoard sells={r.sells_currency} gets={r.gets_currency} />
                     <div className="form-row" style={{ marginTop: 12 }}>
                       <div style={{ paddingTop: 27 }}>

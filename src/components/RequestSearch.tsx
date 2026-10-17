@@ -12,11 +12,10 @@ import {
   type SearchStatus,
 } from '../lib/requestSearch';
 import { useRequestSearch } from '../lib/useRequestSearch';
-import { isWrittenHistory } from '../lib/requestStatus';
 import { useViewAs } from '../lib/viewAs';
 import type { RequestRow } from '../lib/types';
 import CorrectStatusButton from './CorrectStatusButton';
-import DeleteRequestButton, { canDeleteRequest } from './DeleteRequestButton';
+import DeleteRequestButton, { canDeleteRequest, mayDeleteRequestRow } from './DeleteRequestButton';
 import LoadingLine from './LoadingLine';
 import LossApproval from './LossApproval';
 import RequestOutcomeButtons from './RequestOutcomeButtons';
@@ -178,7 +177,7 @@ function SearchDetail({
           <RequestOutcomeButtons row={shown} onDone={() => { void reload(false); }} />
           <CorrectStatusButton row={shown} onDone={() => { void reload(true); }} />
           {own && <button type="button" className="btn" onClick={() => setEditing(true)}>{t('რედაქტირება', 'Edit')}</button>}
-          {own && !isWrittenHistory(shown) && <DeleteRequestButton requestId={shown.id} onDeleted={() => onRemove(shown.id)} />}
+          {mayDeleteRequestRow(realRole, profile?.id, shown.kam_id, shown) && <DeleteRequestButton requestId={shown.id} onDeleted={() => onRemove(shown.id)} />}
         </div>
       )}
       {ready && editing && (

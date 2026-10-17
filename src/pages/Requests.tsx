@@ -16,7 +16,7 @@ import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, tbilisiDay, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { withClientContext } from '../lib/requestContext';
-import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
+import { hideEarlierDeals, isOpenRequest, isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientSpecialTerms from '../components/ClientSpecialTerms';
@@ -24,7 +24,7 @@ import DynamicActiveNegotiatedRates from '../components/DynamicActiveNegotiatedR
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import CurrencyPicker from '../components/CurrencyPicker';
-import DeleteRequestButton, { canDeleteRequest } from '../components/DeleteRequestButton';
+import DeleteRequestButton, { canDeleteRequest, mayDeleteRequestRow } from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
 import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
@@ -82,6 +82,13 @@ function readRate(text: string): { ok: boolean; value: number | null } {
   if (!/^\d+(\.\d+)?$/.test(clean)) return { ok: false, value: null };
   const n = Number(clean);
   return n > 0 ? { ok: true, value: n } : { ok: false, value: null };
+}
+
+/** Treasury quote already stored on the request. The KAM does not type this. */
+function treasuryQuote(rate: number | null | undefined): number | null {
+  if (rate == null) return null;
+  const n = Number(rate);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 function nextMonth(isoDate: string): string {
@@ -150,9 +157,8 @@ export default function Requests() {
   const [kamFilter, setKamFilter] = useState('all');
   const [kams, setKams] = useState<{ id: string; full_name: string; email: string }[]>([]);
   const [shown, setShown] = useState(PAGE_SIZE);
-  const [reply, setReply] = useState<{ id: number; kind: 'approved' | 'better' | 'declined' } | null>(null);
+  const [reply, setReply] = useState<{ id: number; kind: 'approved' | 'better' } | null>(null);
   const [replyRate, setReplyRate] = useState('');
-  const [replyReason, setReplyReason] = useState('');
   const [replyTried, setReplyTried] = useState(false);
   const [replyBusy, setReplyBusy] = useState(false);
   const replyLock = useRef(false);
@@ -558,7 +564,7 @@ export default function Requests() {
           <div className="row" style={{ paddingTop: 27, gap: 12 }}>
             <button type="submit" className="btn btn-primary" disabled={editBusy}>{editBusy ? t('ინახება…', 'Saving…') : t('შენახვა', 'Save')}</button>
             <button type="button" className="link" onClick={() => setEditId(null)}>{t('გაუქმება', 'Cancel')}</button>
-            {canChange(r) && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { setEditId(null); refresh(); }} />}
+            {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { setEditId(null); refresh(); }} />}
           </div>
         </div>
         {idOk && !hideEarlierDeals(r) && <ClientHistory clientId={editClientId.trim()} excludeId={r.id} />}
@@ -572,20 +578,22 @@ export default function Requests() {
     loadApproved();
   }
 
-  function openReply(id: number, kind: 'approved' | 'better' | 'declined') {
+  function openReply(id: number, kind: 'approved' | 'better') {
     setReply((cur) => (cur?.id === id && cur.kind === kind ? null : { id, kind }));
     setReplyRate('');
-    setReplyReason('');
     setReplyTried(false);
   }
 
   async function saveReply(r: RequestRow, defer = false) {
     if (!reply || reply.id !== r.id || replyLock.current) return;
     setReplyTried(true);
+    const quoted = treasuryQuote(r.rate);
     const parsed = readRate(replyRate);
-    const reason = replyReason.trim();
-    if (reply.kind === 'declined') {
-      if (reason.length < 2) return;
+    if (reply.kind === 'approved') {
+      if (quoted == null) {
+        toast(t('ხაზინის კურსი არ ჩანს.', 'The treasury rate is not on this request.'), 'error');
+        return;
+      }
     } else if (!parsed.ok || parsed.value == null) {
       return;
     }
@@ -593,25 +601,22 @@ export default function Requests() {
     setReplyBusy(true);
     try {
       if (defer && reply.kind === 'approved') {
-        await rpc('kam_defer_rate_write', { p_request_id: r.id, p_rate: parsed.value });
+        await rpc('kam_defer_rate_write', { p_request_id: r.id, p_rate: quoted });
       } else {
         await rpc('kam_client_reply', {
           p_request_id: r.id,
           p_reply: reply.kind,
-          p_rate: reply.kind === 'declined' ? null : parsed.value,
-          p_reason: reply.kind === 'declined' ? reason : null,
+          p_rate: reply.kind === 'approved' ? quoted : parsed.value,
+          p_reason: null,
         });
       }
       toast(defer
         ? t('კლიენტის დადასტურება შეინახა. ხაზინის რიგში ჯერ არ არის.', 'The client approval is saved. It is not on the treasury queue yet.')
         : reply.kind === 'approved'
         ? t('გაეგზავნა ხაზინას და მენეჯერებს.', 'Sent to treasury and managers.')
-        : reply.kind === 'better'
-          ? t('გაეგზავნა ხაზინას.', 'Sent to treasury.')
-          : t('მიზეზი შენახულია.', 'Reason saved.'));
+        : t('გაეგზავნა ხაზინას.', 'Sent to treasury.'));
       setReply(null);
       setReplyRate('');
-      setReplyReason('');
       setReplyTried(false);
       load();
       loadApproved();
@@ -652,13 +657,16 @@ export default function Requests() {
           {r.payment_confirmed_at && <div className="tiny muted">{t('გადახდა დადასტურდა {when}', 'Payment confirmed {when}', { when: fmtTime(r.payment_confirmed_at) })}</div>}
         </span>
         <span className={'pill ' + cls} style={{ marginLeft: 'auto' }}>{label}</span>
-        {canChange(r) && (
-          <div className="actions">
+        <div className="actions">
+          <RequestOutcomeButtons row={r} onDone={refresh} />
+          {canChange(r) && (
+            <>
             <CorrectStatusButton row={r} onDone={refresh} />
             <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-            {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
-          </div>
-        )}
+            {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+            </>
+          )}
+        </div>
         {editForm(r)}
         <LossApproval row={r} onDone={refresh} />
         {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
@@ -757,7 +765,7 @@ export default function Requests() {
       {isKam && <section className="card flush" aria-labelledby="open-title">
         <div className="card-head">
           <h2 id="open-title" style={{ fontSize: 22 }}>{t('ღია მოთხოვნები', 'Open requests')}</h2>
-          <span className="small muted">{t('ხაზინის კურსი აქ ჩნდება. ღია მოთხოვნაზე შეგიძლიათ მონიშნოთ, რომ ტრანზაქცია გავიდა, ან რომ დაიკარგა.', 'Treasury’s rate appears here. On an open request you can mark that the transaction went through, or that it was lost.')}</span>
+          <span className="small muted">{t('ხაზინის კურსი აქ ჩნდება. კურსის გაწერის შემდეგ შეგიძლიათ მონიშნოთ, რომ კლიენტს ეცნობა.', 'Treasury’s rate appears here. After the rate is written, you can mark that the client was notified.')}</span>
         </div>
         {!loaded && <LoadingLine />}
         {loaded && openStages.map((stage) => (
@@ -780,7 +788,6 @@ export default function Requests() {
           const replyOpen = canAnswer && reply?.id === r.id ? reply.kind : null;
           const parsedReply = readRate(replyRate);
           const replyRateOk = parsedReply.ok && parsedReply.value != null;
-          const replyReasonOk = replyReason.trim().length >= 2;
           const own = canChange(r);
           const held = isRateWriteDeferred(r);
           const canAskAgain = !lostPending && (st === 'expired' || st === 'declined')
@@ -801,6 +808,7 @@ export default function Requests() {
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
+                {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
                 {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {lostPending && (
@@ -832,59 +840,56 @@ export default function Requests() {
               <div className="actions">
                 {canAnswer && (
                   <>
-                    <button type="button" className="btn btn-primary" aria-pressed={replyOpen === 'approved'} onClick={() => openReply(r.id, 'approved')}>{t('კლიენტმა დაამტკიცა', 'Client approved')}</button>
-                    <button type="button" className="btn" aria-pressed={replyOpen === 'better'} onClick={() => openReply(r.id, 'better')}>{t('კლიენტს უკეთესი კურსი სურს', 'Client wants a better rate')}</button>
-                    <button type="button" className="btn btn-quiet" aria-pressed={replyOpen === 'declined'} onClick={() => openReply(r.id, 'declined')}>{t('კლიენტმა უარი თქვა', 'Client declined')}</button>
+                    <button type="button" className="btn btn-primary" aria-pressed={replyOpen === 'approved'} onClick={() => openReply(r.id, 'approved')}>{t('კლიენტი დაეთანხმა', 'Client approved')}</button>
+                    <button type="button" className="btn" aria-pressed={replyOpen === 'better'} onClick={() => openReply(r.id, 'better')}>{t('კლიენტმა უარი თქვა — უკეთესი კურსი შეგიძლიათ?', 'Client declined — can you give a better rate?')}</button>
+                    <RequestOutcomeButtons row={r} onDone={refresh} showSuccess={false} clientLost />
                   </>
                 )}
-                {canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
-                <RequestOutcomeButtons row={r} onDone={refresh} />
-                <CorrectStatusButton row={r} onDone={refresh} />
-                {own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
-                {own && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+                {!canAnswer && canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
+                {!canAnswer && <RequestOutcomeButtons row={r} onDone={refresh} />}
+                {!canAnswer && <CorrectStatusButton row={r} onDone={refresh} />}
+                {!canAnswer && own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
+                {!canAnswer && mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
-              {editForm(r)}
+              {!canAnswer && editForm(r)}
               <DeferWriteBar row={r} onDone={refresh} />
               <LossApproval row={r} onDone={refresh} />
               {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
               {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
               {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
               {offerText && <CopyLine label={t('ტექსტი კლიენტისთვის', 'Text for the client')} text={offerText} />}
-              {replyOpen && (
-                <form onSubmit={(e) => { e.preventDefault(); if (replyOpen === 'approved' && deferGate === 'unknown') return; void saveReply(r, false); }} noValidate style={{ flex: '1 1 100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-                  {replyOpen !== 'declined' ? (
-                    <div className="field" style={{ flex: '1 1 200px', maxWidth: 280 }}>
-                      <label htmlFor={'reply-rate-' + r.id}>{t('ჩაწერეთ კურსი', 'Enter the rate')}</label>
-                      <input id={'reply-rate-' + r.id} className={'input' + (replyTried && !replyRateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={replyRate} onChange={(e) => setReplyRate(e.target.value)} />
-                      <span className={'hint' + (replyTried && !replyRateOk ? ' error' : '')}>
-                        {replyTried && !replyRateOk
-                          ? t('ჩაწერეთ კურსი', 'Enter the rate')
-                          : replyOpen === 'approved' && deferGate === 'on'
-                            ? t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი შეთანხმებულ კურსს ინახავს და ღია მოთხოვნაზე ტოვებს. მოგვიანებით გაწერა იმავე კურსს აგზავნის.', 'Write the rate sends it to the treasury queue. Do not write the rate yet keeps the agreed rate on your open requests. A later write sends that same rate.')
-                            : replyOpen === 'approved'
-                              ? t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან.', 'This goes to treasury and to managers.')
-                              : t('მოთხოვნა მიდის მხოლოდ ხაზინასთან. ხაზინის პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="field" style={{ flex: '1 1 280px' }}>
-                      <label htmlFor={'reply-reason-' + r.id}>{t('მიზეზი', 'Reason')}</label>
-                      <input id={'reply-reason-' + r.id} className={'input' + (replyTried && !replyReasonOk ? ' invalid' : '')} autoComplete="off" value={replyReason} onChange={(e) => setReplyReason(e.target.value)} />
-                      <span className={'hint' + (replyTried && !replyReasonOk ? ' error' : '')}>
-                        {replyTried && !replyReasonOk ? t('ჩაწერეთ მიზეზი', 'Enter a reason') : t('ხაზინა დაინახავს მიზეზს.', 'Treasury will see the reason.')}
-                      </span>
-                    </div>
-                  )}
-                  {replyOpen === 'approved' && deferGate === 'unknown' && <LoadingLine compact />}
-                  {replyOpen === 'approved' && deferGate === 'on' && (
+              {replyOpen === 'approved' && (
+                <form onSubmit={(e) => { e.preventDefault(); if (deferGate === 'unknown') return; void saveReply(r, false); }} noValidate style={{ flex: '1 1 100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+                  <p className="tiny muted" style={{ flex: '1 1 100%', margin: 0 }}>
+                    {deferGate === 'on'
+                      ? t('გაწერეთ კურსი ხაზინის რიგში აგზავნის. ჯერ არ გაწეროთ კურსი შეთანხმებულ კურსს ინახავს და ღია მოთხოვნაზე ტოვებს. მოგვიანებით გაწერა იმავე კურსს აგზავნის.', 'Write the rate sends it to the treasury queue. Do not write the rate yet keeps the agreed rate on your open requests. A later write sends that same rate.')
+                      : t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან. კურსი ხაზინის კურსია.', 'This goes to treasury and to managers. The rate is the treasury rate.')}
+                  </p>
+                  {deferGate === 'unknown' && <LoadingLine compact />}
+                  {deferGate === 'on' && (
                     <>
                       <button type="button" className="btn btn-primary" disabled={replyBusy} onClick={() => { void saveReply(r, false); }}>{replyBusy ? t('იტვირთება', 'Loading') : t('გაწერეთ კურსი', 'Write the rate')}</button>
                       <button type="button" className="btn" disabled={replyBusy} onClick={() => { void saveReply(r, true); }}>{t('ჯერ არ გაწეროთ კურსი', 'Do not write the rate yet')}</button>
                     </>
                   )}
-                  {(replyOpen !== 'approved' || deferGate === 'off') && (
-                    <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? t('იტვირთება', 'Loading') : replyOpen === 'declined' ? t('შენახვა', 'Save') : t('გაგზავნა', 'Send')}</button>
+                  {deferGate === 'off' && (
+                    <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? t('იტვირთება', 'Loading') : t('გაგზავნა', 'Send')}</button>
                   )}
+                  <button type="button" className="link" onClick={() => setReply(null)}>{t('უკან', 'Back')}</button>
+                </form>
+              )}
+              {replyOpen === 'better' && (
+                <form onSubmit={(e) => { e.preventDefault(); void saveReply(r, false); }} noValidate style={{ flex: '1 1 100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+                  <div className="field" style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                    <label htmlFor={'reply-rate-' + r.id}>{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}</label>
+                    <input id={'reply-rate-' + r.id} className={'input' + (replyTried && !replyRateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={replyRate} onChange={(e) => setReplyRate(e.target.value)} />
+                    <span className={'hint' + (replyTried && !replyRateOk ? ' error' : '')}>
+                      {replyTried && !replyRateOk
+                        ? t('ჩაწერეთ კურსი', 'Enter the rate')
+                        : t('მოთხოვნა მიდის მხოლოდ ხაზინასთან. ხაზინის პასუხის შემდეგ იგივე სამი პასუხი ისევ გამოჩნდება.', 'This goes only to treasury. After treasury answers, the same three replies appear again.')}
+                    </span>
+                  </div>
+                  <button type="submit" className="btn btn-primary" disabled={replyBusy}>{replyBusy ? t('იტვირთება', 'Loading') : t('გაგზავნა', 'Send')}</button>
                   <button type="button" className="link" onClick={() => setReply(null)}>{t('უკან', 'Back')}</button>
                 </form>
               )}
@@ -911,9 +916,9 @@ export default function Requests() {
               {workspace.writtenToday.map((r) => activityLine(r, t('გაწერილია', 'Written'), 'pill-warn'))}
             </div>
             <div className="workspace-stage" id="kam-paid">
-              <h3>{t('დღეს დადასტურებული გადახდა', 'Payment confirmed today')}</h3>
-              {workspace.paidToday.length === 0 && <p className="empty">{t('დღეს დადასტურებული გადახდა არ არის.', 'No payment was confirmed today.')}</p>}
-              {workspace.paidToday.map((r) => activityLine(r, t('გადახდა დადასტურდა', 'Payment confirmed'), 'pill-ok'))}
+              <h3>{t('დღეს გავიდა', 'Went through today')}</h3>
+              {workspace.paidToday.length === 0 && <p className="empty">{t('დღეს გასული არ არის.', 'Nothing went through today.')}</p>}
+              {workspace.paidToday.map((r) => activityLine(r, t('გავიდა', 'Went through'), 'pill-ok'))}
             </div>
             <div className="workspace-stage" id="kam-lost">
               <h3>{t('დღეს უარი ან დაკარგული', 'Declined or lost today')}</h3>
@@ -956,7 +961,7 @@ export default function Requests() {
                 <RequestOutcomeButtons row={r} onDone={refresh} />
                 <CorrectStatusButton row={r} onDone={refresh} />
                 <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
-                {!isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+                {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
             )}
             {editForm(r)}
@@ -1046,7 +1051,7 @@ export default function Requests() {
                   <RequestOutcomeButtons row={r} onDone={refresh} />
                   <CorrectStatusButton row={r} onDone={refresh} />
                   {canChange(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
-                  {canChange(r) && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
+                  {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
                 </div>
               )}
               {editForm(r)}

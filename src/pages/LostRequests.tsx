@@ -6,7 +6,7 @@ import { useLive } from '../lib/useLive';
 import { fmtDay, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { loadPendingLossPage } from '../lib/pendingLoss';
-import { isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
+import { isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import type { LossReason, RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
@@ -132,7 +132,7 @@ export default function LostRequests() {
                   )}</p>
                 )}
               </div>
-              {realRole === 'admin' && !isWrittenHistory(r) && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
+              {realRole === 'admin' && <DeleteRequestButton requestId={r.id} onDeleted={reload} />}
             </div>
             <LossApproval row={r} onDone={reload} />
           </article>

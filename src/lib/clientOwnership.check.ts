@@ -102,12 +102,14 @@ assert(ownerSourceCaption('unresolved', 'en').includes('no single winner'), 'no 
 assert(ownerSourceCaption('computed', 'ka').includes('გადაფარვა არ არის'), 'a counted owner says there is no override');
 
 assert(kamMayReadSpecialRates({ role: 'kam', canViewClient: true }), 'a KAM can read special rates for a client they can open');
-assert(!kamMayWriteSpecialRates({ role: 'kam', isMyClient: false }), 'a KAM cannot write special rates for a client they do not own');
-assert(kamMayWriteSpecialRates({ role: 'kam', isMyClient: true }), 'a KAM can still write special rates for their own client');
+assert(kamMayWriteSpecialRates({ role: 'kam', canViewClient: true }), 'a KAM can write special rates for a client they can open');
+assert(!kamMayWriteSpecialRates({ role: 'kam', canViewClient: false }), 'a KAM cannot write special rates for a client they cannot open');
 assert(!kamMayReadSpecialRates({ role: 'analyst', canViewClient: true }), 'an analyst is not added');
+assert(!kamMayWriteSpecialRates({ role: 'analyst', canViewClient: true }), 'an analyst cannot write special rates');
 assert(!kamMayReadSpecialRates({ role: 'kam', canViewClient: false }), 'a client the KAM cannot open stays hidden');
-assert(kamMayWriteSpecialRates({ role: 'admin', isMyClient: false }), 'an admin can still write special rates');
-assert(!kamMayWriteSpecialRates({ role: 'manager', isMyClient: true }), 'a manager still cannot write');
+assert(kamMayWriteSpecialRates({ role: 'admin', canViewClient: true }), 'an admin can write special rates for a client they can open');
+assert(kamMayWriteSpecialRates({ role: 'treasury', canViewClient: true }), 'treasury can write special rates for a client they can open');
+assert(!kamMayWriteSpecialRates({ role: 'manager', canViewClient: true }), 'a manager still cannot write');
 
 assert(!kamMayEditRequest('kam', 'kam-a', 'kam-b'), 'a KAM cannot edit another KAM request');
 assert(kamMayEditRequest('kam', 'kam-a', 'kam-a'), 'a KAM can edit their own request');

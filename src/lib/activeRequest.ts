@@ -121,9 +121,13 @@ export function lossOpenWithoutPaymentMatch(row: ActiveSource, freshnessDay: str
   return false;
 }
 
-/** Local success flags that do not need a transactions lookup. */
+/**
+ * Desk success is a payment confirmation, or an agreement-file win.
+ * Writing the rate notifies the KAM and leaves the request in progress.
+ * Display class still counts a written rate as won. This flag does not.
+ */
 export function decorateActiveRow(row: ActiveSource, freshnessDay: string): RequestRow {
-  const went = !!(row.rate_written_at || row.payment_confirmed_at || fileWon(row));
+  const went = !!(row.payment_confirmed_at || fileWon(row));
   return {
     ...(row as RequestRow),
     kam_id: row.kam_id ?? '',
@@ -153,10 +157,15 @@ export function decorateActiveRow(row: ActiveSource, freshnessDay: string): Requ
  */
 export function applyMatchedSuccess(row: RequestRow, matchedIds: ReadonlySet<number>): RequestRow {
   if (!matchedIds.has(row.id)) return row;
+  if (row.rate_written_at && !row.payment_confirmed_at) return { ...row, loss_open: false };
   return { ...row, went_through: true, outcome: 'went_through', loss_open: false };
 }
 
-/** Still on the KAM open list. Payment-matched ids arrive in doneIds from request_outcomes. */
+/**
+ * Still on the KAM open list.
+ * A written rate with no payment confirmation stays here.
+ * Payment confirmation, or a match that is not only a written rate, leaves.
+ */
 export function isActiveOpen(row: {
   id: number;
   source?: string | null;
@@ -166,16 +175,16 @@ export function isActiveOpen(row: {
   payment_confirmed_at?: string | null;
 }, doneIds: ReadonlySet<number>): boolean {
   if (row.source === 'import') return false;
+  if (row.payment_confirmed_at) return false;
+  if (row.rate_written_at) return true;
   if (doneIds.has(row.id)) return false;
   if (row.went_through || row.outcome === 'went_through') return false;
-  if (row.rate_written_at || row.payment_confirmed_at) return false;
   return true;
 }
 
 /**
- * Open cards versus "went through today".
- * A written rate, a confirmed payment, or an id that request_outcomes already
- * marked went_through is "went through today" on the active row itself.
+ * Open cards versus payment confirmation today.
+ * A written rate stays open until payment_confirmed_at.
  * doneRows is only the fallback while request_active is not in the database.
  */
 export function splitKamRequests(rows: RequestRow[], doneRows: RequestRow[], today: string): {
@@ -183,15 +192,16 @@ export function splitKamRequests(rows: RequestRow[], doneRows: RequestRow[], tod
   done: RequestRow[];
   todayCount: number;
 } {
-  const doneIds = new Set(doneRows.map((row) => row.id));
+  const doneIds = new Set(doneRows.filter((row) => !row.rate_written_at || row.payment_confirmed_at).map((row) => row.id));
   const open = rows.filter((row) => isActiveOpen(row, doneIds));
   const done = new Map<number, RequestRow>();
+  const confirmedToday = (row: RequestRow) => !!row.payment_confirmed_at && row.request_date === today;
   for (const row of doneRows) {
-    if (row.went_through && row.request_date === today) done.set(row.id, row);
+    if (confirmedToday(row) || (row.went_through && !row.rate_written_at && row.request_date === today)) done.set(row.id, row);
   }
   for (const row of rows) {
     if (done.has(row.id)) continue;
-    if (row.request_date === today && (row.went_through || row.rate_written_at || row.payment_confirmed_at)) {
+    if (confirmedToday(row) || (row.went_through && !row.rate_written_at && row.request_date === today)) {
       done.set(row.id, { ...row, went_through: true, outcome: 'went_through' });
     }
   }

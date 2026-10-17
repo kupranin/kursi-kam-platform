@@ -131,9 +131,9 @@ export default function KamHome({ seed }: { seed?: KamGroups }) {
             <Block
               id="kam-paid"
               heading="h3"
-              title={t('დღეს დადასტურებული გადახდა', 'Payment confirmed today')}
+              title={t('დღეს გავიდა', 'Went through today')}
               rows={data.paidToday}
-              empty={t('დღეს დადასტურებული გადახდა არ არის.', 'No payment was confirmed today.')}
+              empty={t('დღეს გასული არ არის.', 'Nothing went through today.')}
               onOpen={open}
               compact
             />

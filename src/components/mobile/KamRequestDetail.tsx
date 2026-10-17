@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import CopyLine from '../CopyLine';
-import DeleteRequestButton, { canDeleteRequest } from '../DeleteRequestButton';
+import DeleteRequestButton, { canDeleteRequest, mayDeleteRequestRow } from '../DeleteRequestButton';
 import LossApproval from '../LossApproval';
 import RequestOutcomeButtons, { canMarkRequestOutcome } from '../RequestOutcomeButtons';
 import CorrectStatusButton from '../CorrectStatusButton';
@@ -9,7 +9,7 @@ import { useAuth } from '../../lib/auth';
 import { chatHandoff, clientOffer, rateBooked } from '../../lib/copyText';
 import { ago, fmtDateTime, fmtRate, sideAmount } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
-import { isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../../lib/requestStatus';
+import { isPendingLoss, lossReasonLabel, treasuryReason } from '../../lib/requestStatus';
 import { rpc } from '../../lib/supabase';
 import { useToast } from '../../lib/toast';
 import { useViewAs } from '../../lib/viewAs';
@@ -25,7 +25,14 @@ import DeferWriteBar from '../DeferWriteBar';
 import RequestKamLine from '../RequestKamLine';
 import WrittenRateNote from '../WrittenRateNote';
 
-type ReplyMode = 'approved' | 'better' | 'declined';
+type ReplyMode = 'approved' | 'better';
+
+/** Treasury quote already stored on the request. The KAM does not type this. */
+function treasuryQuote(rate: number | null | undefined): number | null {
+  if (rate == null) return null;
+  const n = Number(rate);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function bookedLine(row: RequestRow): string | null {
   if (row.client_reply !== 'approved' || row.approved_rate == null || !row.rate_written_at) return null;
@@ -45,7 +52,6 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
   const [missing, setMissing] = useState(false);
   const [mode, setMode] = useState<ReplyMode | null>(null);
   const [rateText, setRateText] = useState('');
-  const [reason, setReason] = useState('');
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -53,7 +59,6 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
   const lock = useRef(false);
   const deferGate = useDeferWriteReady();
   const rateRef = useRef<HTMLInputElement>(null);
-  const reasonRef = useRef<HTMLInputElement>(null);
 
   const title = row
     ? (row.client_name || row.client_id) + (pairLabel(row) ? ' · ' + pairLabel(row) : '')
@@ -91,29 +96,30 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
 
   useEffect(() => {
     if (mode === 'better') rateRef.current?.focus();
-    if (mode === 'declined') reasonRef.current?.focus();
   }, [mode]);
 
   function choose(next: ReplyMode) {
     if (!row) return;
     setTried(false);
-    setReason('');
     if (mode === next) {
       setMode(null);
       setRateText('');
       return;
     }
     setMode(next);
-    setRateText(next === 'approved' && row.rate != null ? fmtRate(row.rate) : '');
+    setRateText('');
   }
 
   async function sendReply(defer = false) {
     if (!row || !mode || lock.current) return;
     setTried(true);
+    const quoted = treasuryQuote(row.rate);
     const parsed = readRate(rateText);
-    const why = reason.trim();
-    if (mode === 'declined') {
-      if (why.length < 2) return;
+    if (mode === 'approved') {
+      if (quoted == null) {
+        toast(t('ხაზინის კურსი არ ჩანს.', 'The treasury rate is not on this request.'), 'error');
+        return;
+      }
     } else if (!parsed.ok || parsed.value == null) {
       return;
     }
@@ -121,25 +127,22 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     setBusy(true);
     try {
       if (defer && mode === 'approved') {
-        await rpc('kam_defer_rate_write', { p_request_id: row.id, p_rate: parsed.value });
+        await rpc('kam_defer_rate_write', { p_request_id: row.id, p_rate: quoted });
       } else {
         await rpc('kam_client_reply', {
           p_request_id: row.id,
           p_reply: mode,
-          p_rate: mode === 'declined' ? null : parsed.value,
-          p_reason: mode === 'declined' ? why : null,
+          p_rate: mode === 'approved' ? quoted : parsed.value,
+          p_reason: null,
         });
       }
       toast(defer
         ? t('კლიენტის დადასტურება შეინახა. ხაზინის რიგში ჯერ არ არის.', 'The client approval is saved. It is not on the treasury queue yet.')
         : mode === 'approved'
         ? t('გაეგზავნა ხაზინას და მენეჯერებს.', 'Sent to treasury and managers.')
-        : mode === 'better'
-          ? t('გაეგზავნა ხაზინას.', 'Sent to treasury.')
-          : t('მიზეზი შენახულია.', 'Reason saved.'));
+        : t('გაეგზავნა ხაზინას.', 'Sent to treasury.'));
       setMode(null);
       setRateText('');
-      setReason('');
       setTried(false);
       await reload();
     } catch (err) {
@@ -180,10 +183,9 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
   const again = canAskAgain(row);
   const own = canDeleteRequest(realRole, profile?.id, row.kam_id);
   const showOutcomes = canMarkRequestOutcome(realRole, profile?.id, row.kam_id);
-  const showDelete = own && !isWrittenHistory(row);
+  const showDelete = mayDeleteRequestRow(realRole, profile?.id, row.kam_id, row);
   const parsed = readRate(rateText);
   const rateOk = parsed.ok && parsed.value != null;
-  const reasonOk = reason.trim().length >= 2;
   const banks = formatBanks(row.bank);
   const chatText = row.client_reply === 'approved' && row.approved_rate != null ? chatHandoff(row.client_id, row.approved_rate) : null;
   const transferText = bookedLine(row);
@@ -201,18 +203,13 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
     <div className="m-actions">
       {mode == null && (
         <>
-          <button type="button" className="btn btn-primary" onClick={() => choose('approved')}>{t('დამტკიცება', 'Approve')}</button>
-          <button type="button" className="btn" onClick={() => choose('better')}>{t('უკეთესი კურსი', 'Better rate')}</button>
-          <button type="button" className="m-text-btn m-danger" onClick={() => choose('declined')}>{t('უარი', 'Decline')}</button>
+          <button type="button" className="btn btn-primary" onClick={() => choose('approved')}>{t('კლიენტი დაეთანხმა', 'Client approved')}</button>
+          <button type="button" className="btn" onClick={() => choose('better')}>{t('კლიენტმა უარი თქვა — უკეთესი კურსი შეგიძლიათ?', 'Client declined — can you give a better rate?')}</button>
+          <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} showSuccess={false} clientLost />
         </>
       )}
       {mode === 'approved' && (
         <>
-          <label className="field" htmlFor="reply-rate">
-            <span>{t('დამტკიცებული კურსი', 'Approved rate')}</span>
-            <input id="reply-rate" ref={rateRef} className={'input m-amount' + (tried && !rateOk ? ' invalid' : '')} inputMode="decimal" autoComplete="off" value={rateText} onChange={(e) => setRateText(e.target.value)} />
-          </label>
-          {tried && !rateOk && <span className="hint error">{t('ჩაწერეთ კურსი', 'Enter the rate')}</span>}
           {deferGate === 'unknown' && <LoadingLine compact />}
           {deferGate === 'on' && (
             <>
@@ -226,9 +223,12 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             </>
           )}
           {deferGate === 'off' && (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { void sendReply(false); }}>
-              {busy ? t('იტვირთება', 'Loading') : t('გაგზავნა', 'Send')}
-            </button>
+            <>
+              <p className="tiny muted">{t('მოთხოვნა მიდის ხაზინასთან და მენეჯერებთან. კურსი ხაზინის კურსია.', 'This goes to treasury and to managers. The rate is the treasury rate.')}</p>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => { void sendReply(false); }}>
+                {busy ? t('იტვირთება', 'Loading') : t('გაგზავნა', 'Send')}
+              </button>
+            </>
           )}
           <button type="button" className="m-text-btn" onClick={() => choose('approved')}>{t('უკან', 'Back')}</button>
         </>
@@ -244,19 +244,6 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             {busy ? t('იგზავნება', 'Sending') : t('გაგზავნა', 'Send')}
           </button>
           <button type="button" className="m-text-btn" onClick={() => choose('better')}>{t('უკან', 'Back')}</button>
-        </>
-      )}
-      {mode === 'declined' && (
-        <>
-          <label className="field" htmlFor="decline-reason">
-            <span>{t('მიზეზი', 'Reason')}</span>
-            <input id="decline-reason" ref={reasonRef} className={'input' + (tried && !reasonOk ? ' invalid' : '')} autoComplete="off" value={reason} onChange={(e) => setReason(e.target.value)} />
-          </label>
-          {tried && !reasonOk && <span className="hint error">{t('ჩაწერეთ მიზეზი', 'Enter a reason')}</span>}
-          <button type="button" className="btn btn-danger" disabled={busy} onClick={() => { void sendReply(); }}>
-            {busy ? t('იგზავნება', 'Sending') : t('შენახვა', 'Save')}
-          </button>
-          <button type="button" className="m-text-btn" onClick={() => choose('declined')}>{t('უკან', 'Back')}</button>
         </>
       )}
     </div>
@@ -321,20 +308,25 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
         {row.rate_written_at && <li><span>{t('გაწერილია', 'Written')}</span><time dateTime={row.rate_written_at}>{fmtDateTime(row.rate_written_at)}</time></li>}
       </ol>
       {row.rate_written_at && <WrittenRateNote writtenAt={row.rate_written_at} />}
+      {row.rate_written_at && !row.payment_confirmed_at && !action && (
+        <div className="m-actions">
+          <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} />
+        </div>
+      )}
 
       {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={row.client_id} />}
       {chatText && <CopyLine label={t('ტექსტი ჩატისთვის', 'Text for chat')} text={chatText} />}
       {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
       {offerText && <CopyLine label={t('ტექსტი კლიენტისთვის', 'Text for the client')} text={offerText} />}
 
-      {(own || showOutcomes || showDelete) && (
+      {!action && (own || showOutcomes || showDelete) && (
         <section className="m-secondary">
           <button type="button" className="m-disclosure" aria-expanded={secondary} onClick={() => setSecondary((open) => !open)}>
             {t('სხვა ქმედებები', 'Other actions')}
           </button>
           {secondary && !editing && (
             <div className="m-secondary-body">
-              <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} />
+              <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} showSuccess={!row.rate_written_at} />
               <CorrectStatusButton row={row} onDone={() => { setSecondary(true); void reload(true); }} />
               <LossApproval row={row} onDone={() => { void reload(); }} />
               {own && <button type="button" className="btn" onClick={() => setEditing(true)}>{t('რედაქტირება', 'Edit')}</button>}

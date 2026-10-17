@@ -299,7 +299,8 @@ button.fx-line:hover, button.fx-line[aria-expanded="true"] { background: #F6F1F8
 .list-row .when { flex: 0 0 120px; }
 .list-row .who { flex: 1 1 200px; min-width: 0; }
 .list-row .what { flex: 1 1 240px; min-width: 0; }
-.list-row .actions { flex: none; display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.list-row .actions { flex: none; display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; align-items: flex-start; }
+.list-row .actions .btn { height: auto; white-space: normal; text-align: center; line-height: 1.25; }
 .rate-people { margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 400; text-align: left; }
 .strong { font-weight: 600; }
 .name { font-weight: 600; font-size: 17px; }
@@ -583,7 +584,8 @@ html.kb-open .page { padding-bottom: calc(var(--keyboard-inset, 0px) + env(safe-
 .m-focal-amount { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .m-focal .m-rate { font-size: 40px; line-height: 1.05; }
 .m-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 8px; }
-.m-actions .btn { width: 100%; min-height: 44px; }
+.m-actions .btn { width: 100%; min-height: 44px; height: auto; white-space: normal; text-align: center; line-height: 1.25; padding-top: 10px; padding-bottom: 10px; }
+.m-actions .stack-sm, .m-actions .row { width: 100%; }
 .m-actions .btn-primary { min-height: 48px; }
 .m-actions .m-text-btn { width: auto; align-self: center; min-height: 44px; padding: 4px 12px; }
 .m-actions .field { width: 100%; }

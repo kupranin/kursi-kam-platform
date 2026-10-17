@@ -1,7 +1,12 @@
 /**
- * Same branches as private.value_abs_gel in setup 47.
+ * Same branches as private.value_abs_gel in setup 47, plus the
+ * received-GEL derivation in setup 53.
  * A missing figure stays null. It is never stored or summed as zero.
+ * Analytics Amount GEL is private.request_gel: a filled GEL amount is
+ * the lari figure. An empty GEL amount is the foreign amount times an
+ * in-band request rate.
  */
+import { requestGel } from './requestGel';
 
 export const CROSS_PAIRS = ['EUR/USD', 'EUR/RUB', 'USD/RUB', 'USD/CNY', 'EUR/CNY'] as const;
 
@@ -135,6 +140,32 @@ export function valueAbsGel(input: ValueInput): AbsResult {
         boardAt: input.keptBoard?.at ?? null,
         boardPath: input.keptBoard?.path ?? null,
       };
+    }
+    // Same shape as private.request_gel when the lari receive is empty:
+    // foreign sell amount × the request rate. The rate must already be
+    // lari per 1 unit of the sold currency. The board is not read.
+    if (
+      (sells === 'USD' || sells === 'EUR' || sells === 'RUB' || sells === 'CNY')
+      && input.sellAmt != null
+      && input.sellAmt > 0
+      && gelScaleOk(sells, input.quoteRate)
+      && input.quoteRate != null
+    ) {
+      const abs = round2(Math.abs(input.sellAmt) * input.quoteRate);
+      if (abs > 0) {
+        return {
+          absGel: abs,
+          source: 'treasury_quote',
+          status: 'calculated',
+          rate: round8(input.quoteRate),
+          rateAt: input.quotedAt ?? input.quoteRecordedAt,
+          path: 'sold_times_rate',
+          reason: null,
+          boardRate: input.keptBoard?.rate ?? null,
+          boardAt: input.keptBoard?.at ?? null,
+          boardPath: input.keptBoard?.path ?? null,
+        };
+      }
     }
     return {
       absGel: null,
@@ -449,6 +480,58 @@ assert(
     && nullQuotedAt.source === 'treasury_quote'
     && nullQuotedAt.rateAt === recorded,
   'a usable quote with no quoted_at stores the quote-recording time',
+);
+
+function sheet(row: {
+  sells: string;
+  gets: string;
+  sellAmt: number | null;
+  getsAmt: number | null;
+  quoteRate: number;
+}): AbsResult {
+  return valueAbsGel({
+    sells: row.sells,
+    gets: row.gets,
+    sellAmt: row.sellAmt,
+    getsAmt: row.getsAmt,
+    quoteRate: row.quoteRate,
+    quoteStatus: 'quoted',
+    quotedAt: later,
+    quoteRecordedAt: null,
+    at,
+    board: { 'USD/GEL': { sell: 2.7, at } },
+    keptBoard: null,
+    lookupBoard: true,
+  });
+}
+
+const analyticsSheet: { label: string; sells: string; gets: string; sellAmt: number | null; getsAmt: number | null; quoteRate: number; expect: number; path: string }[] = [
+  { label: 'USD 2000 sold for GEL at 2.2', sells: 'USD', gets: 'GEL', sellAmt: 2000, getsAmt: null, quoteRate: 2.2, expect: 4400, path: 'sold_times_rate' },
+  { label: 'USD 70000 sold for GEL at 2.59550', sells: 'USD', gets: 'GEL', sellAmt: 70000, getsAmt: null, quoteRate: 2.5955, expect: 181685, path: 'sold_times_rate' },
+  { label: 'USD 30000 sold for GEL at 2.59550', sells: 'USD', gets: 'GEL', sellAmt: 30000, getsAmt: null, quoteRate: 2.5955, expect: 77865, path: 'sold_times_rate' },
+  { label: 'USD 112000 received at 2.59750', sells: 'GEL', gets: 'USD', sellAmt: null, getsAmt: 112000, quoteRate: 2.5975, expect: 290920, path: 'treasury_quote' },
+  { label: 'USD 40100 received at 2.59800', sells: 'GEL', gets: 'USD', sellAmt: null, getsAmt: 40100, quoteRate: 2.598, expect: 104179.8, path: 'treasury_quote' },
+  // Live analytics row: Amount asked is 205,000 GEL, EUR receive is empty.
+  // request_gel returns that filled lari amount and does not apply 2.923.
+  { label: 'GEL 205000 sold for EUR at 2.92300', sells: 'GEL', gets: 'EUR', sellAmt: 205000, getsAmt: null, quoteRate: 2.923, expect: 205000, path: 'treasury_quote' },
+];
+for (const row of analyticsSheet) {
+  const analytics = requestGel(row.sells, row.gets, row.sellAmt, row.getsAmt, row.quoteRate);
+  assert(analytics === row.expect, `${row.label} matches analytics Amount GEL`);
+  const stored = sheet(row);
+  assert(
+    stored.absGel === row.expect && stored.status === 'calculated' && stored.path === row.path && stored.source === 'treasury_quote',
+    `${row.label} is stored the same way`,
+  );
+}
+
+const getsWins = sheet({ sells: 'USD', gets: 'GEL', sellAmt: 2000, getsAmt: 2700, quoteRate: 2.2 });
+assert(getsWins.absGel === 2700 && getsWins.source === 'received_gel' && getsWins.status === 'calculated', 'a present received GEL amount wins over sell times rate');
+
+const rubTimes = sheet({ sells: 'RUB', gets: 'GEL', sellAmt: 1000, getsAmt: null, quoteRate: 84.7 });
+assert(
+  rubTimes.absGel === null && rubTimes.status === 'pending_admin' && rubTimes.reason === 'missing_gets_gel' && rubTimes.source === null,
+  'RUB at 1 or above is not multiplied into received GEL',
 );
 
 console.log('abs gel branches ok');

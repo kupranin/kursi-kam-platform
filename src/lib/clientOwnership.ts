@@ -148,10 +148,14 @@ export function kamMayReadSpecialRates(input: { role: string; canViewClient: boo
   return input.role === 'admin' || input.role === 'manager' || input.role === 'treasury' || input.role === 'kam';
 }
 
-/** Write stays admin, treasury, or a KAM for a client already in their book. */
-export function kamMayWriteSpecialRates(input: { role: string; isMyClient: boolean }): boolean {
-  if (input.role === 'admin' || input.role === 'treasury') return true;
-  return input.role === 'kam' && input.isMyClient;
+/**
+ * Write is admin, treasury, or a KAM for a client they can already open.
+ * A manager can read and cannot write. An analyst cannot write.
+ * Ownership (is_my_client) is not the gate.
+ */
+export function kamMayWriteSpecialRates(input: { role: string; canViewClient: boolean }): boolean {
+  if (!input.canViewClient) return false;
+  return input.role === 'admin' || input.role === 'treasury' || input.role === 'kam';
 }
 
 /** UI gate. The database gate is private.is_admin() on clients_admin_update. */

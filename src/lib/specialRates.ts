@@ -32,6 +32,8 @@ export interface SpecialTermsDraft {
   rate: string;
   /** True when this submit should write the selected bank. Unchanged loaded terms stay as they are. */
   dirty: boolean;
+  /** True when active terms were loaded and the box is now off. Saving marks those rows inactive. */
+  clear: boolean;
 }
 
 export const EMPTY_SPECIAL_DRAFT: SpecialTermsDraft = {
@@ -43,6 +45,7 @@ export const EMPTY_SPECIAL_DRAFT: SpecialTermsDraft = {
   gets: '',
   rate: '',
   dirty: false,
+  clear: false,
 };
 
 export type SpecialSaveResult = 'saved' | 'skipped' | 'missing' | 'invalid' | 'failed';
@@ -85,6 +88,7 @@ function asRow(raw: Record<string, unknown>): SpecialRateRow | null {
   };
 }
 
+/** Active rows only. The database omits a bank after the special-rate box is cleared. */
 export async function loadSpecialRates(clientIds: string[]): Promise<{ missing: boolean; rows: SpecialRateRow[] }> {
   const ids = cappedClientIds(clientIds);
   const { data, error } = await supabase.rpc('client_special_rates', { p_client_ids: ids });
@@ -99,12 +103,21 @@ export async function loadSpecialRates(clientIds: string[]): Promise<{ missing: 
 }
 
 /**
- * Writes one bank after log_request has created the client.
+ * Writes one bank, or clears the special-rate status, after log_request has created the client.
  * Does not throw, so a failed save cannot turn a sent request into an error.
  * Blank fields are not sent, and the database keeps the stored value.
+ * Unchecking is the explicit clear: rows stay, and active becomes false.
+ * This does not write a request rate or a negotiated adjustment.
  */
 export async function saveClientSpecialRate(clientId: string, draft: SpecialTermsDraft): Promise<SpecialSaveResult> {
-  if (!draft.on || !draft.bank || !draft.dirty) return 'skipped';
+  if (!draft.on) {
+    if (!draft.clear) return 'skipped';
+    const { error } = await supabase.rpc('clear_client_special_rates', { p_client_id: clientId });
+    if (!error) return 'saved';
+    if (isMissingSpecial(error)) return 'missing';
+    return 'failed';
+  }
+  if (!draft.bank || !draft.dirty) return 'skipped';
   const parsed = parseRate(draft.rate);
   if (!parsed.ok) return 'invalid';
   const pairOk = Boolean(draft.sells && draft.gets && draft.sells !== draft.gets);

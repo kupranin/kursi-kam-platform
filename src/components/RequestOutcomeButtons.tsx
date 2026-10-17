@@ -5,6 +5,7 @@ import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
 import { kamMayEditRequest } from '../lib/clientOwnership';
+import { isRateWriteDeferred } from '../lib/deferWrite';
 import { isHistoricalRequest } from '../lib/displayClass';
 import { isOpenRequest } from '../lib/requestStatus';
 import type { LossReason, RequestRow, Role } from '../lib/types';
@@ -27,8 +28,22 @@ function isOther(reason: LossReason | undefined): boolean {
   return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
 }
 
-/** Lost or success on a still-open row. Lost needs a reason before treasury sees it. */
-export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow; onDone: () => void }) {
+/**
+ * Lost or success on a still-open row. Lost needs a reason before treasury sees it.
+ * A held approval, and the tell-the-client step, cannot be marked as paid yet.
+ * clientLost is only that tell-the-client label. The held card keeps Lost.
+ */
+export default function RequestOutcomeButtons({
+  row,
+  onDone,
+  showSuccess = true,
+  clientLost = false,
+}: {
+  row: RequestRow;
+  onDone: () => void;
+  showSuccess?: boolean;
+  clientLost?: boolean;
+}) {
   const { profile } = useAuth();
   const { realRole } = useViewAs();
   const { t, lang } = useI18n();
@@ -50,20 +65,24 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
     return () => { gone = true; };
   }, [picking]);
 
-  if (isHistoricalRequest(row) || !canMarkRequestOutcome(realRole, profile?.id, row.kam_id) || !isOpenRequest(row)) return null;
+  const mayMark = !isHistoricalRequest(row) && canMarkRequestOutcome(realRole, profile?.id, row.kam_id);
+  const canLose = mayMark && isOpenRequest(row);
+  const canNotify = mayMark && showSuccess && !isRateWriteDeferred(row) && !!row.rate_written_at && !row.payment_confirmed_at;
+  if (!canLose && !canNotify) return null;
 
+  const allowSuccess = canNotify;
   const chosen = reasons.find((r) => r.code === reason);
   const reasonText = (r: LossReason) => (lang === 'en' ? r.label_en : r.label_ka).trim() || r.label_en || r.label_ka;
 
   async function markSuccess() {
     if (!window.confirm(t(
-      'ტრანზაქცია გავიდა? მოთხოვნა წარმატებულად ჩაითვლება. საბანკო ჩანაწერი არ სჭირდება.',
-      'Did this transaction go through? The request counts as successful. A bank record is not required.',
+      'კლიენტს ეცნობა? მოთხოვნა წარმატებულად ჩაითვლება.',
+      'Mark that the client was notified? The request counts as successful.',
     ))) return;
     setBusy('success');
     try {
       await rpc('confirm_request_payment', { p_request_id: row.id });
-      toast(t('ტრანზაქცია გავიდა.', 'The transaction went through.'));
+      toast(t('კლიენტს ეცნობა.', 'Client was notified.'));
       onDone();
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -103,14 +122,18 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
   return (
     <div className="stack-sm" style={{ alignItems: 'flex-start' }}>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" className="btn btn-primary" disabled={busy != null} onClick={markSuccess}>
-          {busy === 'success' ? t('ინახება…', 'Saving…') : t('ტრანზაქცია გავიდა', 'The transaction went through')}
-        </button>
-        <button type="button" className="btn btn-quiet" disabled={busy != null} onClick={() => setPicking((v) => !v)}>
-          {t('დაიკარგა', 'Lost')}
-        </button>
+        {allowSuccess && (
+          <button type="button" className="btn btn-primary" disabled={busy != null} onClick={markSuccess}>
+            {busy === 'success' ? t('ინახება…', 'Saving…') : t('კლიენტს შეატყობინეს', 'Client was notified')}
+          </button>
+        )}
+        {canLose && (
+          <button type="button" className={clientLost ? 'btn' : 'btn btn-quiet'} disabled={busy != null} onClick={() => setPicking((v) => !v)}>
+            {clientLost ? t('კლიენტი დაკარგულია', 'Client lost') : t('დაიკარგა', 'Lost')}
+          </button>
+        )}
       </div>
-      {picking && (
+        {canLose && picking && (
         <div className="stack-sm" style={{ width: '100%' }}>
           <div className="tiny muted">{t('მიზეზი სავალდებულოა, სანამ ხაზინას გაეგზავნება.', 'A reason is required before this goes to treasury.')}</div>
           <div className="chips">
