@@ -1,3 +1,4 @@
+import { displayClass, isHistoricalRequest } from './displayClass';
 import { CURRENCIES } from './types';
 
 /**
@@ -54,6 +55,8 @@ export interface SearchInput {
   pair: string;
   offset: number;
   today: string;
+  /** False only before request_search_rows exists. Historical filters need the display class. */
+  displayClass?: boolean;
 }
 
 const NOT_COMPLETED: SearchStep[] = [
@@ -142,7 +145,12 @@ export function searchStatusOf(row: {
   quote_state?: string | null;
   loss_open?: boolean | null;
   better_decision?: string | null;
+  source?: string | null;
+  import_key?: string | null;
+  legacy_status?: string | null;
+  marked_lost_at?: string | null;
 }): Exclude<SearchStatus, 'all'> {
+  if (isHistoricalRequest(row)) return displayClass(row) === 'won' ? 'completed' : 'lost';
   if (row.went_through || row.outcome === 'went_through' || row.rate_written_at || row.payment_confirmed_at) return 'completed';
   if (
     row.loss_approved_at
@@ -164,19 +172,42 @@ export function searchPair(row: { sells_currency?: string | null; gets_currency?
   return `${row.sells_currency} / ${row.gets_currency}`;
 }
 
-function statusSteps(status: SearchStatus): SearchStep[] {
+/** Import, or an agreement key. Asterisk is the like wildcard inside or(). */
+const HISTORICAL = 'or(source.eq.import,import_key.like.agreement:*)';
+/** A typed platform row. A null import key is not an agreement row. */
+const APP_ROW = 'and(source.eq.app,or(import_key.is.null,import_key.not.like.agreement:*))';
+const APP_COMPLETED = 'or(went_through.eq.true,outcome.eq.went_through,rate_written_at.not.is.null,payment_confirmed_at.not.is.null)';
+const APP_LOST = 'or(loss_reason.not.is.null,loss_approved_at.not.is.null,loss_open.eq.true,outcome.eq.did_not_go_through,client_reply.eq.declined,quote_status.eq.declined,quote_state.eq.declined)';
+
+function statusSteps(status: SearchStatus, displayClass = true): SearchStep[] {
   if (status === 'all') return [];
+  if (!displayClass) {
+    if (status === 'completed') {
+      return [{ op: 'or', filters: APP_COMPLETED }];
+    }
+    if (status === 'lost') {
+      return [
+        ...NOT_COMPLETED,
+        { op: 'or', filters: APP_LOST },
+      ];
+    }
+  }
   if (status === 'completed') {
-    return [{ op: 'or', filters: 'went_through.eq.true,outcome.eq.went_through,rate_written_at.not.is.null,payment_confirmed_at.not.is.null' }];
+    return [{
+      op: 'or',
+      filters: `and(${HISTORICAL},display_class.eq.won),and(${APP_ROW},${APP_COMPLETED})`,
+    }];
   }
   if (status === 'lost') {
-    return [
-      ...NOT_COMPLETED,
-      { op: 'or', filters: 'loss_reason.not.is.null,loss_approved_at.not.is.null,loss_open.eq.true,outcome.eq.did_not_go_through,client_reply.eq.declined,quote_status.eq.declined,quote_state.eq.declined' },
-    ];
+    return [{
+      op: 'or',
+      filters: `and(${HISTORICAL},display_class.eq.lost),and(${APP_ROW},went_through.eq.false,rate_written_at.is.null,payment_confirmed_at.is.null,outcome.neq.went_through,${APP_LOST})`,
+    }];
   }
+  const appOnly: SearchStep = { op: 'or', filters: APP_ROW };
   if (status === 'accepted') {
     return [
+      appOnly,
       ...NOT_COMPLETED,
       ...NOT_LOSS_MARK,
       ...NOT_QUOTE_DECLINE,
@@ -185,6 +216,7 @@ function statusSteps(status: SearchStatus): SearchStep[] {
   }
   if (status === 'better') {
     return [
+      appOnly,
       ...NOT_COMPLETED,
       ...NOT_LOSS_MARK,
       ...NOT_QUOTE_DECLINE,
@@ -194,6 +226,7 @@ function statusSteps(status: SearchStatus): SearchStep[] {
   }
   if (status === 'quoted') {
     return [
+      appOnly,
       ...NOT_COMPLETED,
       ...NOT_LOSS_MARK,
       ...NOT_QUOTE_DECLINE,
@@ -202,6 +235,7 @@ function statusSteps(status: SearchStatus): SearchStep[] {
     ];
   }
   return [
+    appOnly,
     ...NOT_COMPLETED,
     ...NOT_LOSS_MARK,
     ...NOT_QUOTE_DECLINE,
@@ -219,7 +253,7 @@ export function searchPlan(input: SearchInput): SearchPlan {
   }
   const textOr = textOrFilter(searchNeedle(input.text));
   if (textOr) steps.push({ op: 'or', filters: textOr });
-  steps.push(...statusSteps(input.status));
+  steps.push(...statusSteps(input.status, input.displayClass !== false));
   const pair = pairParts(input.pair);
   if (pair) {
     steps.push({ op: 'eq', column: 'sells_currency', value: pair.sells });

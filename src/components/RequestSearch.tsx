@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { describeDeal, fmtDateTime, fmtWhole } from '../lib/format';
 import { useI18n } from '../lib/i18n';
+import { isHistoricalRequest } from '../lib/displayClass';
 import {
   currencyPairOptions,
   searchPair,
@@ -20,11 +21,20 @@ import LoadingLine from './LoadingLine';
 import LossApproval from './LossApproval';
 import RequestOutcomeButtons from './RequestOutcomeButtons';
 import KamEditForm from './mobile/KamEditForm';
+import RequestKamLine from './RequestKamLine';
 import { loadKamRequest } from './mobile/kamLoad';
 
 type T = (ka: string, en: string, vars?: Record<string, string | number>) => string;
 
 const STATUS_ORDER: Exclude<SearchStatus, 'all'>[] = ['waiting', 'quoted', 'better', 'accepted', 'completed', 'lost'];
+
+function resultLabel(row: RequestRow, t: T): string {
+  const code = searchStatusOf(row);
+  if (isHistoricalRequest(row)) {
+    return code === 'completed' ? t('მოგებული', 'Won') : t('დაკარგული', 'Lost');
+  }
+  return statusLabel(code, t);
+}
 
 function statusLabel(code: Exclude<SearchStatus, 'all'>, t: T): string {
   if (code === 'waiting') return t('ელოდება', 'Waiting');
@@ -195,13 +205,15 @@ function ResultBody({ row, t }: { row: RequestRow; t: T }) {
       <div className="who">
         <div className="name">{row.client_name || row.client_id}</div>
         <div className="tiny muted">ID {row.client_id}</div>
+        <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
         <div className="tiny muted">{t('მოთხოვნა', 'Request')} #{row.id}</div>
       </div>
       <div className="what">
         {pair && <div>{pair}</div>}
         <div>{describeDeal(row.sells_currency, row.amount, row.gets_currency, row.gets_amount)}</div>
+        {row.legacy_status?.trim() && <div className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</div>}
       </div>
-      <span className={'pill ' + statusClass(code)}>{statusLabel(code, t)}</span>
+      <span className={'pill ' + statusClass(code)}>{resultLabel(row, t)}</span>
     </>
   );
 }
@@ -299,9 +311,10 @@ function PhoneRequestSearch() {
             >
               <div className="m-card-top">
                 <div className="m-card-client">{row.client_name || row.client_id}</div>
-                <span className={'pill ' + statusClass(code)}>{statusLabel(code, t)}</span>
+                <span className={'pill ' + statusClass(code)}>{resultLabel(row, t)}</span>
               </div>
               <div className="tiny muted">ID {row.client_id}</div>
+              <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
               <div className="tiny muted">{t('მოთხოვნა', 'Request')} #{row.id}</div>
               <div className="m-card-time">{fmtDateTime(row.requested_at)}</div>
               {pair && <div className="m-card-pair">{pair}</div>}

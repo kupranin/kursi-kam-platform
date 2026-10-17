@@ -83,7 +83,8 @@ const lost = callsFor(searchPlan({
 }));
 assert(lost.some((call) => call.includes('loss_open.eq.true')), 'lost includes an open loss');
 assert(lost.some((call) => call.includes('outcome.eq.did_not_go_through')), 'lost includes did not go through');
-assert(lost.some((call) => call.startsWith('eq went_through false')), 'a completed row is not lost');
+assert(lost.some((call) => call.includes('went_through.eq.false')), 'an app completion is not lost');
+assert(lost.some((call) => call.includes('display_class.eq.lost')), 'historical lost uses the display class');
 
 assert(searchStatusOf({ went_through: true, loss_reason: 'other' }) === 'completed', 'completed wins over a loss mark');
 assert(searchStatusOf({ loss_reason: 'postponed' }) === 'lost', 'loss reason is lost');
@@ -98,5 +99,10 @@ assert(searchStatusOf({ quote_status: 'asking', outcome: 'waiting' }) === 'waiti
 assert(searchStatusOf({ client_reply: 'declined' }) === 'lost', 'a client decline is lost');
 assert(searchStatusOf({ quote_status: 'declined' }) === 'lost', 'a treasury decline is lost');
 assert(searchStatusOf({ loss_open: true, outcome: 'waiting' }) === 'lost', 'an open loss is lost');
+assert(searchStatusOf({ source: 'import', legacy_status: 'შესრულდა' }) === 'completed', 'a completed file status is a completed search row');
+assert(searchStatusOf({ source: 'import', legacy_status: 'შესრულდა ნაწილობრივ' }) === 'completed', 'a partial file status is won in search');
+assert(searchStatusOf({ source: 'import', legacy_status: 'შეთანხმებულია და გაწერეთ კურსი' }) === 'lost', 'a waiting file status is lost in search');
+assert(searchStatusOf({ import_key: 'agreement:4', legacy_status: 'უცნობი' }) === 'lost', 'an unknown file status is lost in search');
+assert(searchStatusOf({ source: 'app', outcome: 'did_not_go_through' }) === 'lost', 'an app outcomes label stays on the app search rule');
 
 console.log('request search plan ok');

@@ -1,3 +1,4 @@
+import { withClientContext } from './requestContext';
 import type { RequestRow } from './types';
 import { supabase } from './supabase';
 import { applySearchFilters, searchPlan, type SearchChain, type SearchInput } from './requestSearch';
@@ -44,18 +45,35 @@ const SEARCH_COLUMNS = [
   'payment_confirmed_at',
 ].join(', ');
 
-/** One page of this KAM's requests. Does not download the rest of the history. */
-export async function searchKamRequests(input: SearchInput): Promise<{ rows: RequestRow[]; total: number }> {
-  if (!input.kamId) throw new Error('Missing KAM');
+function missingSearchView(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const message = (error.message ?? '').toLowerCase();
+  return message.includes('request_search_rows')
+    || error.code === 'PGRST205'
+    || error.code === '42P01';
+}
+
+async function searchTable(table: 'request_search_rows' | 'request_outcomes', columns: string, input: SearchInput) {
   const plan = searchPlan(input);
-  const head = supabase.from('request_outcomes') as unknown as {
-    select(columns: string, options: { count: 'exact' }): SearchChain;
+  const head = supabase.from(table) as unknown as {
+    select(cols: string, options: { count: 'exact' }): SearchChain;
   };
-  const filtered = applySearchFilters(head.select(SEARCH_COLUMNS, { count: 'exact' }), plan)
+  const filtered = applySearchFilters(head.select(columns, { count: 'exact' }), plan)
     .order('request_date', { ascending: false })
     .order('requested_at', { ascending: false })
     .order('id', { ascending: false });
-  const result = await filtered.range(plan.offset, plan.offset + plan.limit - 1);
+  return filtered.range(plan.offset, plan.offset + plan.limit - 1);
+}
+
+/** One page of this KAM's requests. Does not download the rest of the history. */
+export async function searchKamRequests(input: SearchInput): Promise<{ rows: RequestRow[]; total: number }> {
+  if (!input.kamId) throw new Error('Missing KAM');
+  const rich = `${SEARCH_COLUMNS}, import_key, legacy_status, marked_lost_at, display_class`;
+  let result = await searchTable('request_search_rows', rich, { ...input, displayClass: true });
+  if (result.error && missingSearchView(result.error)) {
+    result = await searchTable('request_outcomes', SEARCH_COLUMNS, { ...input, displayClass: false });
+  }
   if (result.error) throw new Error(result.error.message);
-  return { rows: (result.data ?? []) as RequestRow[], total: result.count ?? 0 };
+  const rows = await withClientContext((result.data ?? []) as RequestRow[]);
+  return { rows, total: result.count ?? 0 };
 }

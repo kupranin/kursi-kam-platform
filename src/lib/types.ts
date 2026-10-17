@@ -62,6 +62,15 @@ export interface RequestRow {
   loss_open?: boolean | null;
   /** Client approved, and the KAM has not sent it to the treasury write queue. The agreed rate stays. */
   rate_write_deferred?: boolean | null;
+  /** Agreement workbook key. Historical when it starts with agreement:. */
+  import_key?: string | null;
+  /** Original file status. Kept as stored. */
+  legacy_status?: string | null;
+  /** Client owner from clients.assigned_kam_id. Not the KAM who logged the request. */
+  owner_name?: string | null;
+  owner_state?: 'named' | 'none' | 'deleted';
+  /** Won, lost, or open for the client summary. Absent until the row is classified. */
+  display_class?: 'won' | 'lost' | 'open';
 }
 
 export interface Rules {

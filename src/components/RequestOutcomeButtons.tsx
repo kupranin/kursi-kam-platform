@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
+import { isHistoricalRequest } from '../lib/displayClass';
 import { isOpenRequest } from '../lib/requestStatus';
 import type { LossReason, RequestRow, Role } from '../lib/types';
 
@@ -49,7 +50,7 @@ export default function RequestOutcomeButtons({ row, onDone }: { row: RequestRow
     return () => { gone = true; };
   }, [picking]);
 
-  if (!canMarkRequestOutcome(realRole, profile?.id, row.kam_id) || !isOpenRequest(row)) return null;
+  if (isHistoricalRequest(row) || !canMarkRequestOutcome(realRole, profile?.id, row.kam_id) || !isOpenRequest(row)) return null;
 
   const chosen = reasons.find((r) => r.code === reason);
   const reasonText = (r: LossReason) => (lang === 'en' ? r.label_en : r.label_ka).trim() || r.label_en || r.label_ka;

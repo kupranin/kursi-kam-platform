@@ -38,7 +38,7 @@ export default function Clients() {
       <div className="page-head">
         <div>
           <h1>{mine ? t('ჩემი კლიენტები', 'My clients') : t('კლიენტები', 'Clients')}</h1>
-          <p>{mine ? t('კლიენტები, რომლებსაც კურსი სთხოვეთ, ახლიდან ძველისკენ', 'Clients you asked a rate for, newest first') : t('ყველა კლიენტი, ბოლო მოთხოვნიდან', 'Every client, from the latest request')}</p>
+          <p>{mine ? t('ცარიელი სია თქვენი კლიენტებია. აკრეფილი ID ან სახელი ნებისმიერ კლიენტს პოულობს. შეჯამების წაკითხვა შეიძლება. სხვისი მოთხოვნის შეცვლა არა.', 'An empty list is your clients. A typed ID or name finds any client. You can read the summary. You cannot change another KAM\'s request.') : t('ყველა კლიენტი, ბოლო მოთხოვნიდან', 'Every client, from the latest request')}</p>
         </div>
       </div>
       <div className="field" style={{ maxWidth: 420 }}>

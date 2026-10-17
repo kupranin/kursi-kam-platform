@@ -22,6 +22,7 @@ import KamEditForm from './KamEditForm';
 import { loadKamRequest } from './kamLoad';
 import { isRateWriteDeferred, useDeferWriteReady } from '../../lib/deferWrite';
 import DeferWriteBar from '../DeferWriteBar';
+import RequestKamLine from '../RequestKamLine';
 import WrittenRateNote from '../WrittenRateNote';
 
 type ReplyMode = 'approved' | 'better' | 'declined';
@@ -274,6 +275,8 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <span className={'pill ' + status.cls}>{status.label}</span>
           </div>
           <p className="tiny muted">ID {row.client_id}</p>
+          <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
+          {row.legacy_status?.trim() && <p className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</p>}
           {reply}
         </section>
       ) : (
@@ -283,6 +286,8 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <span className={'pill ' + status.cls}>{status.label}</span>
           </div>
           <p className="tiny muted">ID {row.client_id}</p>
+          <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
+          {row.legacy_status?.trim() && <p className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</p>}
           {pair && <p className="m-card-pair">{pair}</p>}
           {amountText && <p className="m-card-amount">{amountText}</p>}
           {waiting && <p className="m-card-time is-wait">{ago(row.client_reply === 'better' ? (row.client_replied_at || row.asked_at) : row.asked_at)}</p>}

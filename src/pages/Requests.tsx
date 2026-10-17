@@ -14,6 +14,7 @@ import { useLive, useTick } from '../lib/useLive';
 import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, tbilisiDay, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
+import { withClientContext } from '../lib/requestContext';
 import { hideEarlierDeals, isOpenRequest, isPendingLoss, isWrittenHistory, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
 import ClientField, { type ClientInfo } from '../components/ClientField';
@@ -27,6 +28,7 @@ import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
 import RequestOutcomeButtons, { canMarkRequestOutcome } from '../components/RequestOutcomeButtons';
 import CorrectStatusButton from '../components/CorrectStatusButton';
+import RequestKamLine from '../components/RequestKamLine';
 import RequestSearch from '../components/RequestSearch';
 import { IconCheck, IconClock, IconPlus } from '../components/Icons';
 
@@ -84,11 +86,13 @@ function nextMonth(isoDate: string): string {
   return `${y}-${String(m + 1).padStart(2, '0')}-01`;
 }
 
-function historyStatus(r: RequestRow, went: string, missed: string, pending: string, open: string, approved: string): { label: string; cls: string } {
-  if (r.went_through || r.outcome === 'went_through' || r.rate_written_at || r.payment_confirmed_at) return { label: went, cls: 'pill-ok' };
-  if (r.loss_approved_at && r.source !== 'import') return { label: approved, cls: 'pill-wait' };
-  if (isPendingLoss(r)) return { label: pending, cls: 'pill-alert' };
-  if (r.outcome === 'did_not_go_through') return { label: missed, cls: 'pill-alert' };
+function historyStatus(r: RequestRow, won: string, lost: string, open: string): { label: string; cls: string } {
+  if (r.display_class === 'won') return { label: won, cls: 'pill-ok' };
+  if (r.display_class === 'lost') return { label: lost, cls: 'pill-alert' };
+  if (r.display_class === 'open') return { label: open, cls: 'pill-wait' };
+  if (r.went_through || r.outcome === 'went_through' || r.rate_written_at || r.payment_confirmed_at) return { label: won, cls: 'pill-ok' };
+  if (r.outcome === 'did_not_go_through' && r.source === 'import') return { label: lost, cls: 'pill-alert' };
+  if (isPendingLoss(r) || r.client_reply === 'declined' || r.quote_status === 'declined' || r.loss_reason) return { label: lost, cls: 'pill-alert' };
   return { label: open, cls: 'pill-wait' };
 }
 
@@ -191,11 +195,11 @@ export default function Requests() {
         .or(`request_date.eq.${today},quote_status.eq.asking`)
         .order('asked_at', { ascending: false });
       if (!error) {
-        const next = await appendDeferredOpen(profile.id, await withPeople((data ?? []) as RequestRow[]), async (ids) => {
+        const next = await withClientContext(await appendDeferredOpen(profile.id, await withPeople((data ?? []) as RequestRow[]), async (ids) => {
           const more = await supabase.from('request_outcomes').select('*').in('id', ids);
           if (more.error || !more.data) return [];
           return withPeople(more.data as RequestRow[]);
-        });
+        }));
         setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
         const went = next.filter((row) => row.went_through && row.request_date === today);
         setDoneRows((prev) => (JSON.stringify(prev) === JSON.stringify(went) ? prev : went));
@@ -216,7 +220,7 @@ export default function Requests() {
         } catch {
           freshnessDay = '';
         }
-        const next = await appendDeferredOpen(
+        const next = await withClientContext(await appendDeferredOpen(
           profile.id,
           await withPeople(fetched.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), matched))),
           async (ids) => {
@@ -227,7 +231,7 @@ export default function Requests() {
             if (!extraMatched) return [];
             return withPeople(extra.map((row) => applyMatchedSuccess(decorateActiveRow(row, freshnessDay), extraMatched)));
           },
-        );
+        ));
         setRows((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
         setDoneRows((prev) => (prev.length === 0 ? prev : []));
       }
@@ -264,6 +268,7 @@ export default function Requests() {
           written = written.filter((row) => !skip.has(row.id));
         }
       }
+      written = await withClientContext(written);
       if (ticket !== histReq.current) return;
       setHistory((prev) => (JSON.stringify(prev) === JSON.stringify(written) ? prev : written));
       setHistCount(count ?? 0);
@@ -726,6 +731,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
+                <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
               </div>
               <div className="what">
@@ -832,7 +838,10 @@ export default function Requests() {
           return (
           <div key={r.id} className="list-row" style={{ paddingTop: 12, paddingBottom: 12 }}>
             <span className="when muted">{fmtTime(r.requested_at)}</span>
-            <span className="who strong">{r.client_name ?? r.client_id}</span>
+            <div className="who">
+              <div className="strong">{r.client_name ?? r.client_id}</div>
+              <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
+            </div>
             <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
               {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
             </span>
@@ -936,11 +945,9 @@ export default function Requests() {
         {histLoaded && history.map((r) => {
           const st = historyStatus(
             r,
-            t('გავიდა', 'Went through'),
-            t('არ გავიდა', 'Did not go through'),
-            t('არ გავიდა, ხაზინას ელოდება', 'Did not go through, waiting on treasury'),
-            t('ჯერ ღიაა', 'Still open'),
-            t('დანაკარგი დადასტურებულია', 'Loss approved'),
+            t('მოგებული', 'Won'),
+            t('დაკარგული', 'Lost'),
+            t('ღია', 'Open'),
           );
           const chatText = isKam && r.client_reply === 'approved' && r.approved_rate != null ? chatHandoff(r.client_id, r.approved_rate) : null;
           const transferText = isKam ? bookedLine(r) : null;
@@ -953,14 +960,15 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
+                <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
-                {seeAll && <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>}
               </div>
               <div className="what">
                 <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}</div>
                 <RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
                 {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
+                {r.legacy_status?.trim() && <div className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {r.legacy_status}</div>}
                 {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>}
                 {clientReplyNote(r, t) && <div className="tiny muted">{clientReplyNote(r, t)}</div>}
                 {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}

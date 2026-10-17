@@ -1,3 +1,4 @@
+import { displayClass, isHistoricalRequest } from '../../lib/displayClass';
 import { fmtRate } from '../../lib/format';
 import { isPendingLoss } from '../../lib/requestStatus';
 import type { RequestRow } from '../../lib/types';
@@ -52,6 +53,14 @@ export interface MobileStatus {
 type T = (ka: string, en: string, vars?: Record<string, string | number>) => string;
 
 export function mobileStatus(row: RequestRow, t: T, now = Date.now()): MobileStatus {
+  if (row.display_class && isHistoricalRequest(row)) {
+    if (row.display_class === 'won') return { label: t('მოგებული', 'Won'), cls: 'pill-ok' };
+    return { label: t('დაკარგული', 'Lost'), cls: 'pill-alert' };
+  }
+  if (!row.display_class && isHistoricalRequest(row) && row.legacy_status !== undefined) {
+    if (displayClass(row) === 'won') return { label: t('მოგებული', 'Won'), cls: 'pill-ok' };
+    return { label: t('დაკარგული', 'Lost'), cls: 'pill-alert' };
+  }
   if (row.went_through || row.outcome === 'went_through' || row.rate_written_at || row.payment_confirmed_at) {
     return { label: t('დასრულებული', 'Finished'), cls: 'pill-ok' };
   }

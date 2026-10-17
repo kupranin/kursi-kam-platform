@@ -16,9 +16,13 @@ interface HistRow {
   gets_currency: string | null;
   amount: number | null;
   gets_amount: number | null;
+  received_amount?: number | null;
   rate: number | null;
   outcome: string | null;
+  kpi_class?: string | null;
+  legacy_status?: string | null;
   kam_name: string | null;
+  owner_name?: string | null;
   bank: string | null;
   total_count: number | null;
 }
@@ -103,10 +107,26 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
     setFailed(false);
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('client_request_history', {
+        const fresh = await supabase.rpc('client_request_history', {
           p_client_id: clientId,
-          p_exclude_id: excludeId ?? null,
+          p_offset: 0,
+          p_limit: 21,
         });
+        const freshMissing = !!fresh.error && (
+          fresh.error.code === 'PGRST202'
+          || (fresh.error.message ?? '').toLowerCase().includes('could not find')
+          || (fresh.error.message ?? '').toLowerCase().includes('p_offset')
+        );
+        const loaded = freshMissing
+          ? await supabase.rpc('client_request_history', {
+            p_client_id: clientId,
+            p_exclude_id: excludeId ?? null,
+          })
+          : fresh;
+        const data = freshMissing
+          ? loaded.data
+          : ((loaded.data ?? []) as HistRow[]).filter((row) => excludeId == null || Number(row.id) !== excludeId);
+        const error = loaded.error;
         if (my !== seq.current) return;
         if (error) {
           setRows([]);
@@ -120,7 +140,7 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
           ...row,
           id: Number(row.id),
           amount: num(row.amount),
-          gets_amount: num(row.gets_amount),
+          gets_amount: num(row.gets_amount ?? row.received_amount),
           rate: num(row.rate),
           total_count: num(row.total_count),
         }));
@@ -169,7 +189,8 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
               <thead>
                 <tr>
                   <th>{t('თარიღი', 'Date')}</th>
-                  <th>KAM</th>
+                  <th>{t('კლიენტის მფლობელი', 'Client owner')}</th>
+                  <th>{t('მოთხოვნის KAM', 'Request KAM')}</th>
                   <th>{t('ყიდის', 'Sells')}</th>
                   <th>{t('იღებს', 'Gets')}</th>
                   <th className="num">{t('კურსი', 'Rate')}</th>
@@ -184,12 +205,17 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                   const sells = row.sells_currency ?? '';
                   const gets = row.gets_currency ?? '';
                   const standard = rate != null && sells && gets ? standardSide(sells, gets, snaps) : null;
-                  const went = row.outcome === 'went_through';
-                  const missed = row.outcome === 'did_not_go_through';
-                  const pill = went
-                    ? { label: t('გავიდა', 'Went through'), cls: 'pill-ok' }
-                    : missed
-                      ? { label: t('არ გავიდა', 'Did not go through'), cls: 'pill-alert' }
+                  const klass = row.kpi_class === 'won' || row.kpi_class === 'lost' || row.kpi_class === 'open'
+                    ? row.kpi_class
+                    : row.outcome === 'went_through'
+                      ? 'won'
+                      : row.outcome === 'did_not_go_through'
+                        ? 'lost'
+                        : 'open';
+                  const pill = klass === 'won'
+                    ? { label: t('მოგებული', 'Won'), cls: 'pill-ok' }
+                    : klass === 'lost'
+                      ? { label: t('დაკარგული', 'Lost'), cls: 'pill-alert' }
                       : { label: t('ღია', 'Open'), cls: 'pill-wait' };
                   const sideLabel = standard?.side === 'sell' ? t('გაყიდვა', 'Sell') : t('ყიდვა', 'Buy');
                   return (
@@ -198,6 +224,7 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                         <div className="strong">{fmtDay(row.request_date)}</div>
                         <div className="tiny muted">{fmtTime(row.requested_at)}</div>
                       </td>
+                      <td>{row.owner_name !== undefined ? (row.owner_name ?? t('არ არის მინიჭებული', 'Not assigned')) : ''}</td>
                       <td>{row.kam_name ?? t('KAM არ არის', 'No KAM')}</td>
                       <td>{sideAmount(row.sells_currency, num(row.amount))}</td>
                       <td>{sideAmount(row.gets_currency, num(row.gets_amount))}</td>
@@ -214,7 +241,10 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                         )}
                       </td>
                       <td>{row.bank ?? ''}</td>
-                      <td><span className={'pill ' + pill.cls}>{pill.cls === 'pill-ok' && <IconCheck />}{pill.label}</span></td>
+                      <td>
+                        <span className={'pill ' + pill.cls}>{pill.cls === 'pill-ok' && <IconCheck />}{pill.label}</span>
+                        {row.legacy_status?.trim() && <div className="tiny muted">{row.legacy_status}</div>}
+                      </td>
                     </tr>
                   );
                 })}

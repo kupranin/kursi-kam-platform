@@ -3,6 +3,7 @@ import { ago, fmtDateTime, sideAmount } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
 import type { RequestRow } from '../../lib/types';
 import { cardTime, mobileStatus, needsKamAction, pairLabel, treasuryRate, waitingOnTreasury } from './kamBuckets';
+import RequestKamLine from '../RequestKamLine';
 import WrittenRateNote from '../WrittenRateNote';
 
 export default function KamRequestCard({
@@ -32,6 +33,7 @@ export default function KamRequestCard({
     <article className={'m-card' + (action ? ' is-action' : '') + (waiting ? ' is-waiting' : '') + (compact ? ' is-compact' : '')}>
       <button type="button" className="m-card-hit" onClick={onOpen}>
         <div className="m-card-client">{row.client_name || row.client_id}</div>
+        <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
         {pair && <div className="m-card-pair">{pair}</div>}
         {amounts && <div className="m-card-amount">{amounts}</div>}
         {action && rate && <div className="m-card-quote">{rate}</div>}

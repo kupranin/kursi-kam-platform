@@ -1,4 +1,5 @@
 import { ACTIVE_COLUMNS, applyMatchedSuccess, decorateActiveRow, splitKamRequests, type ActiveSource } from '../../lib/activeRequest';
+import { withClientContext } from '../../lib/requestContext';
 import { appendDeferredOpen, deferFlags, deferredOpenIds } from '../../lib/deferWrite';
 import { isMissingRead } from '../../lib/missingRead';
 import { applyRatePeople, loadRatePeople } from '../../lib/ratePeople';
@@ -117,7 +118,11 @@ export async function loadKamDesk(profileId: string, previous: KamDeskData | nul
     older = ((recent.data ?? []) as RequestRow[]).filter((row) => !held.has(row.id));
   }
 
-  const groups = groupKamRows(split.open, split.done, older);
+  const groups = groupKamRows(
+    await withClientContext(split.open),
+    await withClientContext(split.done),
+    await withClientContext(older),
+  );
   return { ...groups, loaded: true };
 }
 
@@ -137,14 +142,16 @@ export async function loadKamRequest(id: number): Promise<RequestRow | null> {
     const [withName] = await withPeople([matched ? applyMatchedSuccess(row, matched) : row]);
     if (!withName) return null;
     const flag = (await deferFlags([id])).get(id);
-    return { ...withName, rate_write_deferred: flag === true };
+    const [ready] = await withClientContext([{ ...withName, rate_write_deferred: flag === true }]);
+    return ready ?? null;
   }
   const outcome = await supabase.from('request_outcomes').select('*').eq('id', id).maybeSingle();
   if (outcome.error || !outcome.data) return null;
   const [withName] = await withPeople([outcome.data as RequestRow]);
   if (!withName) return null;
   const flag = (await deferFlags([id])).get(id);
-  return { ...withName, rate_write_deferred: flag === true };
+  const [ready] = await withClientContext([{ ...withName, rate_write_deferred: flag === true }]);
+  return ready ?? null;
 }
 
 export async function loadKamEarlier(profileId: string, limit: number): Promise<{ rows: RequestRow[]; done: boolean }> {
@@ -159,6 +166,6 @@ export async function loadKamEarlier(profileId: string, limit: number): Promise<
     .range(0, limit - 1);
   if (error) throw new Error(error.message);
   const held = new Set(await deferredOpenIds(profileId));
-  const raw = await withPeople((data ?? []) as RequestRow[]);
+  const raw = await withClientContext(await withPeople((data ?? []) as RequestRow[]));
   return { rows: raw.filter((row) => !held.has(row.id)), done: raw.length < limit };
 }

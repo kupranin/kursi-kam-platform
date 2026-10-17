@@ -2,6 +2,7 @@
  * Older client-side request counts. The analytics page no longer calls this.
  * KPIs come from public.analytics_request_kpis.
  */
+import { displayClass } from './displayClass';
 import { lossReasonLabel } from './requestStatus';
 import { asAmount, requestGel } from './requestGel';
 import { supabase } from './supabase';
@@ -146,6 +147,13 @@ interface OwnRow {
   loss_open: boolean | null;
   loss_reason: string | null;
   loss_reason_note: string | null;
+  source?: string | null;
+  import_key?: string | null;
+  legacy_status?: string | null;
+  rate_written_at?: string | null;
+  marked_lost_at?: string | null;
+  client_reply?: string | null;
+  quote_status?: string | null;
   client_decline_reason: string | null;
   decline_reason: string | null;
   sells_currency: string | null;
@@ -159,9 +167,9 @@ interface OwnRow {
 const OWN_COLUMNS = 'id, request_date, kam_name, went_through, outcome, loss_open, loss_reason, loss_reason_note, client_decline_reason, decline_reason, sells_currency, gets_currency, amount, gets_amount, rate, approved_rate';
 
 function ownStatus(row: OwnRow): 'success' | 'lost' | 'open' {
-  const success = row.went_through === true || row.outcome === 'went_through';
-  if (success) return 'success';
-  if (row.outcome === 'did_not_go_through' || row.loss_open === true || !!(row.loss_reason ?? '').trim()) return 'lost';
+  const klass = displayClass(row);
+  if (klass === 'won') return 'success';
+  if (klass === 'lost') return 'lost';
   return 'open';
 }
 
@@ -198,19 +206,21 @@ export async function loadOwnKamDeals(month: string, kamId: string): Promise<Dea
     if (page.length < 1000) break;
   }
 
-  const successIds = raw.filter((row) => ownStatus(row) === 'success').map((row) => row.id);
   const typed = new Map<number, number>();
-  for (let i = 0; i < successIds.length; i += 200) {
-    const slice = successIds.slice(i, i + 200);
-    const { data, error } = await supabase.from('requests').select('id, gel_amount').in('id', slice);
+  const facts = new Map<number, OwnRow>();
+  for (let i = 0; i < raw.length; i += 200) {
+    const slice = raw.slice(i, i + 200).map((row) => row.id);
+    const { data, error } = await supabase.from('requests').select('id, gel_amount, source, import_key, legacy_status, rate_written_at, marked_lost_at, loss_reason, client_reply, quote_status').in('id', slice);
     if (error || !data) continue;
-    for (const row of data as { id: number; gel_amount?: number | string | null }[]) {
+    for (const row of data as { id: number; gel_amount?: number | string | null; source?: string | null; import_key?: string | null; legacy_status?: string | null; rate_written_at?: string | null; marked_lost_at?: string | null; loss_reason?: string | null; client_reply?: string | null; quote_status?: string | null }[]) {
       const n = asAmount(row.gel_amount);
       if (n != null) typed.set(Number(row.id), n);
+      facts.set(Number(row.id), row as OwnRow);
     }
   }
+  const classified = raw.map((row) => ({ ...row, ...facts.get(row.id) }));
 
-  return raw.map((row) => {
+  return classified.map((row) => {
     const status = ownStatus(row);
     const typedGel = typed.get(row.id);
     const gel = status === 'success'

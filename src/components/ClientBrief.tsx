@@ -95,7 +95,7 @@ export default function ClientBrief({ clientId }: { clientId: string }) {
             {' · ID '}
             {brief.clientId}
             {' · '}
-            {t('მიმაგრებული KAM', 'Assigned KAM')}
+            {t('კლიენტის მფლობელი', 'Client owner')}
             {': '}
             {brief.assignedKamState === 'named'
               ? (brief.assignedKamName || t('სახელი არ არის', 'No name'))
@@ -150,7 +150,8 @@ export default function ClientBrief({ clientId }: { clientId: string }) {
                     <th className="num">ABS GEL</th>
                     <th>{t('სტატუსი', 'Status')}</th>
                     <th>{t('მიზეზი', 'Reason')}</th>
-                    <th>KAM</th>
+                    <th>{t('კლიენტის მფლობელი', 'Client owner')}</th>
+                    <th>{t('მოთხოვნის KAM', 'Request KAM')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -164,7 +165,10 @@ export default function ClientBrief({ clientId }: { clientId: string }) {
                       <td className="num">{absText(row.requestAbsGel, row.valuationStatus, t)}</td>
                       <td>{classLabel(row.kpiClass)}</td>
                       <td>{row.kpiClass === 'lost' ? (row.lossReason || t('მიზეზი არ არის', 'No reason')) : ''}</td>
-                      <td>{row.kamName || t('წაშლილი პროფილი', 'Deleted profile')}</td>
+                      <td>{brief.assignedKamState === 'none'
+                        ? t('არ არის მინიჭებული', 'Not assigned')
+                        : (brief.assignedKamName || t('წაშლილი პროფილი', 'Deleted profile'))}</td>
+                      <td>{row.kamName || t('KAM არ არის', 'No KAM')}</td>
                     </tr>
                   ))}
                 </tbody>
