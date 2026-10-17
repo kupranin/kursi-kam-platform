@@ -53,6 +53,7 @@ const SOURCE_RANK: Record<string, number> = {
   crystal: 5,
   girocredit: 6,
   fxhub: 7,
+  inexpay: 8,
 };
 
 export interface RateSnapshot {
@@ -268,6 +269,7 @@ function rowIdentity(row: { source: string; venue: string; venue_kind: string })
   if (row.source === 'crystal' && row.venue_kind === 'board') return { key: 'crystal', label: 'Crystal', order: 6 };
   if (row.source === 'girocredit' && row.venue_kind === 'board') return { key: 'giro', label: 'Giro Credit', order: 7 };
   if (row.source === 'fxhub' && row.venue_kind === 'board') return { key: 'fxhub', label: 'FX Hub', order: 8 };
+  if (row.source === 'inexpay' && row.venue_kind === 'board') return { key: 'inexpay', label: 'InexPay', order: 9 };
   if (row.venue_kind === 'bank') {
     const name = compactName(row.venue);
     if (!name) return null;

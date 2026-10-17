@@ -127,6 +127,7 @@ export function boardIdentity(row: { source: string; venue: string; venueKind: s
   if (row.source === 'crystal' && row.venueKind === 'board') return { key: 'crystal', label: 'Crystal' };
   if (row.source === 'girocredit' && row.venueKind === 'board') return { key: 'giro', label: 'Giro Credit' };
   if (row.source === 'fxhub' && row.venueKind === 'board') return { key: 'fxhub', label: 'FX Hub' };
+  if (row.source === 'inexpay' && row.venueKind === 'board') return { key: 'inexpay', label: 'InexPay' };
   if (row.venueKind === 'bank' && name) return { key: 'bank:' + name, label: row.venue };
   return null;
 }

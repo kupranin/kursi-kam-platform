@@ -1,6 +1,6 @@
 // Same current-rate board the Rates page shows.
 // Reads market_rate_grid, then the latest market_rates rows (Crystal, Giro
-// Credit, FX Hub, and the other board sources). Ruble figures are already
+// Credit, FX Hub, InexPay, and the other board sources). Ruble figures are already
 // stored per 1 ruble.
 
 import { supabase } from './supabase';

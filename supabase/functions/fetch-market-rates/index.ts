@@ -25,11 +25,13 @@
 //   girocredit      Giro Credit board (RUB is published per 100 and stored per 1)
 //   fxhub           FX Hub cashless board and its crosses. The cash tab is a kiosk
 //                   and is not stored.
+//   inexpay         InexPay money-transfer board on ge.inteliexpress.net.
+//                   One public table. GBP and TRY are published and dropped.
 //
 // The table only accepts known source names. Paste
 // setup/10_market_rate_sources.sql once so crystal, girocredit and fxhub
-// can be saved. Until then those three report a problem and the others
-// still save.
+// can be saved. Paste setup/48_inexpay_source.sql so inexpay can be saved.
+// Until then those sources report a problem and the others still save.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -425,6 +427,63 @@ async function fxhub(): Promise<Row[]> {
   return rows;
 }
 
+const INEXPAY_PAGES = ["http://ge.inteliexpress.net/en", "http://ge.inteliexpress.net/"];
+
+function looksLikeLogin(html: string): boolean {
+  return /type=["']password["']/i.test(html) && !/id=["']currency["']/i.test(html);
+}
+
+function inexpayFragmentUrl(pageUrl: string, html: string): string | null {
+  const match = html.match(/<hx:include\s+src="([^"]*getCurrency[^"]*)"/i);
+  if (!match) return null;
+  const src = match[1].replace(/&amp;/g, "&");
+  return new URL(src, pageUrl).toString();
+}
+
+// The public table has no buy/sell headings. Column 1 is the quote, column 2
+// is the base, then the two rates left to right. The figures are already
+// quote per 1 base (GEL per 1 USD, USD per 1 EUR). They are not inverted.
+function parseInexpay(html: string): Row[] {
+  const table = html.match(/<table[^>]*\bid=["']currency["'][^>]*>[\s\S]*?<\/table>/i)?.[0];
+  if (!table) return [];
+  const rows: Row[] = [];
+  for (const tr of table.match(/<tr[\s\S]*?<\/tr>/g) ?? []) {
+    const cells = [...tr.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((cell) => textify(cell[1]));
+    if (cells.length < 4) continue;
+    const quote = code(cells[0]);
+    const currency = code(cells[1]);
+    if (!/^[A-Z]{3}$/.test(quote) || !/^[A-Z]{3}$/.test(currency)) continue;
+    const row = boardRow("inexpay", "InexPay", currency, quote, num(cells[2]), num(cells[3]), null);
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
+async function inexpay(): Promise<Row[]> {
+  let pageHtml = "";
+  let pageUrl = "";
+  for (const url of INEXPAY_PAGES) {
+    const res = await fetch(url, { headers: { ...HEADERS, Accept: "text/html" } });
+    if (!res.ok) continue;
+    if (/inexpay\.ge\/login/i.test(res.url)) throw new Error("InexPay page redirected to a login");
+    const html = await res.text();
+    if (looksLikeLogin(html)) throw new Error("InexPay page is a login wall");
+    if (!inexpayFragmentUrl(res.url || url, html)) continue;
+    pageHtml = html;
+    pageUrl = res.url || url;
+    break;
+  }
+  if (!pageHtml) throw new Error("InexPay page has no public rate table");
+  const fragment = inexpayFragmentUrl(pageUrl, pageHtml);
+  if (!fragment || /inexpay\.ge\/login/i.test(fragment)) throw new Error("InexPay page has no public rate table");
+  const res = await fetch(fragment, { headers: { ...HEADERS, Accept: "text/html" } });
+  if (!res.ok) throw new Error("InexPay rates returned " + res.status);
+  if (/inexpay\.ge\/login/i.test(res.url)) throw new Error("InexPay rates redirected to a login");
+  const html = await res.text();
+  if (looksLikeLogin(html)) throw new Error("InexPay rates page is a login wall");
+  return parseInexpay(html);
+}
+
 async function lombard(): Promise<Row[]> {
   const res = await fetch("https://expresslombard.ge/api/currencies/get-currencies", {
     headers: { ...HEADERS, "x-lang": "GE" },
@@ -501,6 +560,7 @@ Deno.serve(async (req: Request) => {
       ["Crystal", crystal],
       ["Giro Credit", giro],
       ["FX Hub", fxhub],
+      ["InexPay", inexpay],
       ["Myvaluta banks", () => myvaluta("bank")],
       ["Myvaluta kiosks", () => myvaluta("kiosk")],
     ];
