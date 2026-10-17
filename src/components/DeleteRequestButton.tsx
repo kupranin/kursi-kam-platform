@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { kamMayEditRequest } from '../lib/clientOwnership';
 import { rpc } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useToast } from '../lib/toast';
@@ -6,8 +7,7 @@ import type { Role } from '../lib/types';
 
 /** Real database role. View-as does not count. */
 export function canDeleteRequest(realRole: Role, profileId: string | undefined, kamId: string | null | undefined): boolean {
-  if (realRole === 'admin') return true;
-  return realRole === 'kam' && !!profileId && !!kamId && kamId === profileId;
+  return kamMayEditRequest(realRole, profileId, kamId);
 }
 
 export default function DeleteRequestButton({ requestId, onDeleted }: { requestId: number; onDeleted: () => void }) {

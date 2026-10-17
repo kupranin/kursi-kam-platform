@@ -645,7 +645,7 @@ export default function Requests() {
         <span className="when muted">{fmtTime(r.requested_at)}</span>
         <div className="who">
           <div className="strong">{r.client_name ?? r.client_id}</div>
-          <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
+          <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} ownerSource={r.owner_source} requestKam={r.kam_name} />
         </div>
         <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
           {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
@@ -795,7 +795,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
-                <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
+                <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} ownerSource={r.owner_source} requestKam={r.kam_name} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
               </div>
               <div className="what">
@@ -1022,7 +1022,7 @@ export default function Requests() {
               <div className="who">
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
-                <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} requestKam={r.kam_name} />
+                <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} ownerSource={r.owner_source} requestKam={r.kam_name} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
               </div>
               <div className="what">

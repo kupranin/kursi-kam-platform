@@ -66,9 +66,11 @@ export interface RequestRow {
   import_key?: string | null;
   /** Original file status. Kept as stored. */
   legacy_status?: string | null;
-  /** Client owner from clients.assigned_kam_id. Not the KAM who logged the request. */
+  /** All-time client owner. Not the KAM who logged the request, and not the month-window owner. */
   owner_name?: string | null;
-  owner_state?: 'named' | 'none' | 'deleted';
+  owner_state?: 'named' | 'none' | 'deleted' | 'unresolved';
+  /** override, computed, or unresolved. Absent when only the older assigned-name call was available. */
+  owner_source?: 'override' | 'computed' | 'unresolved' | null;
   /** Won, lost, or open for the client summary. Absent until the row is classified. */
   display_class?: 'won' | 'lost' | 'open';
 }

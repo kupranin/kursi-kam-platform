@@ -275,7 +275,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <span className={'pill ' + status.cls}>{status.label}</span>
           </div>
           <p className="tiny muted">ID {row.client_id}</p>
-          <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
+          <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} ownerSource={row.owner_source} requestKam={row.kam_name} />
           {row.legacy_status?.trim() && <p className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</p>}
           {reply}
         </section>
@@ -286,7 +286,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <span className={'pill ' + status.cls}>{status.label}</span>
           </div>
           <p className="tiny muted">ID {row.client_id}</p>
-          <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
+          <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} ownerSource={row.owner_source} requestKam={row.kam_name} />
           {row.legacy_status?.trim() && <p className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</p>}
           {pair && <p className="m-card-pair">{pair}</p>}
           {amountText && <p className="m-card-amount">{amountText}</p>}

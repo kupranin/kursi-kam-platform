@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { loadRatePeople, type RatePeopleNames } from '../lib/ratePeople';
+import { ownerDisplayText, ownerSourceCaption, type EffectiveOwner } from '../lib/clientOwnership';
+import { loadEffectiveOwners, type OwnerLoad } from '../lib/clientOwners';
 import { useI18n } from '../lib/i18n';
 import { fmtDay, fmtRate, fmtTime, fmtWhole, sideAmount } from '../lib/format';
 import { dealPair, latestQuotesForPair, type RateSnapshot } from '../lib/rateGrid';
@@ -92,14 +94,24 @@ function standardSide(sells: string, gets: string, snaps: RateSnapshot[]): { sid
 }
 
 export default function ClientHistory({ clientId, excludeId }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [rows, setRows] = useState<HistRow[]>([]);
+  const [ownerLoad, setOwnerLoad] = useState<OwnerLoad | null>(null);
   const [snaps, setSnaps] = useState<RateSnapshot[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [people, setPeople] = useState<Map<number, RatePeopleNames>>(new Map());
   const [failed, setFailed] = useState(false);
   const seq = useRef(0);
   const titleId = 'client-history-' + clientId + '-' + (excludeId ?? 'new');
+
+  useEffect(() => {
+    let live = true;
+    setOwnerLoad(null);
+    loadEffectiveOwners([clientId])
+      .then((result) => { if (live) setOwnerLoad(result); })
+      .catch(() => { if (live) setOwnerLoad({ status: 'failed' }); });
+    return () => { live = false; };
+  }, [clientId]);
 
   useEffect(() => {
     const my = ++seq.current;
@@ -165,6 +177,24 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
     })();
   }, [clientId, excludeId]);
 
+  const readyOwner: EffectiveOwner | null = ownerLoad?.status === 'ok'
+    ? (ownerLoad.owners.get(clientId) ?? [...ownerLoad.owners.values()][0] ?? null)
+    : null;
+
+  function historyOwner(row: HistRow): { text: string; caption: string } {
+    if (!ownerLoad) return { text: '', caption: '' };
+    if (ownerLoad.status === 'failed') return { text: ownerDisplayText('missing', null, lang), caption: '' };
+    if (ownerLoad.status === 'missing') {
+      if (row.owner_name === undefined) return { text: '', caption: '' };
+      return { text: row.owner_name ?? ownerDisplayText('none', null, lang), caption: '' };
+    }
+    if (!readyOwner) return { text: ownerDisplayText('unresolved', null, lang), caption: ownerSourceCaption('unresolved', lang) };
+    return {
+      text: ownerDisplayText(readyOwner.state, readyOwner.ownerName, lang),
+      caption: ownerSourceCaption(readyOwner.source, lang),
+    };
+  }
+
   const total = rows.length ? (rows[0].total_count ?? rows.length) : 0;
   const countLine = rows.length < total
     ? t('ბოლო 6 თვე · ყველა KAM · ნაჩვენებია {shown} {total}-დან', 'Last 6 months · every KAM · showing {shown} of {total}', { shown: fmtWhole(rows.length), total: fmtWhole(total) })
@@ -218,13 +248,17 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                       ? { label: t('დაკარგული', 'Lost'), cls: 'pill-alert' }
                       : { label: t('ღია', 'Open'), cls: 'pill-wait' };
                   const sideLabel = standard?.side === 'sell' ? t('გაყიდვა', 'Sell') : t('ყიდვა', 'Buy');
+                  const owner = historyOwner(row);
                   return (
                     <tr key={row.id}>
                       <td>
                         <div className="strong">{fmtDay(row.request_date)}</div>
                         <div className="tiny muted">{fmtTime(row.requested_at)}</div>
                       </td>
-                      <td>{row.owner_name !== undefined ? (row.owner_name ?? t('არ არის მინიჭებული', 'Not assigned')) : ''}</td>
+                      <td>
+                        {owner.text}
+                        {owner.caption ? <div className="tiny muted">{owner.caption}</div> : null}
+                      </td>
                       <td>{row.kam_name ?? t('KAM არ არის', 'No KAM')}</td>
                       <td>{sideAmount(row.sells_currency, num(row.amount))}</td>
                       <td>{sideAmount(row.gets_currency, num(row.gets_amount))}</td>

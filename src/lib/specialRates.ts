@@ -2,6 +2,7 @@
 // Missing SQL (setup 42) must not block a request: the form hides, and a save no-ops.
 
 import { useEffect, useState } from 'react';
+import { cappedClientIds } from './clientOwnership';
 import { parseRate } from './format';
 import { supabase } from './supabase';
 
@@ -85,7 +86,7 @@ function asRow(raw: Record<string, unknown>): SpecialRateRow | null {
 }
 
 export async function loadSpecialRates(clientIds: string[]): Promise<{ missing: boolean; rows: SpecialRateRow[] }> {
-  const ids = [...new Set(clientIds.map((id) => id.trim()).filter(Boolean))].slice(0, 100);
+  const ids = cappedClientIds(clientIds);
   const { data, error } = await supabase.rpc('client_special_rates', { p_client_ids: ids });
   if (error) {
     if (isMissingSpecial(error)) return { missing: true, rows: [] };

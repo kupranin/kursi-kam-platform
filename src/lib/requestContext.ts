@@ -1,5 +1,6 @@
+import { loadEffectiveOwners } from './clientOwners';
 import { displayClass, type DisplayClass } from './displayClass';
-import { rpc, supabase } from './supabase';
+import { supabase } from './supabase';
 import type { RequestRow } from './types';
 
 const FACTS = 'id, source, import_key, legacy_status, rate_written_at, payment_confirmed_at, marked_lost_at, loss_reason, client_reply, quote_status';
@@ -17,13 +18,13 @@ interface Fact {
   quote_status?: string | null;
 }
 
-interface OwnerRow {
+interface LegacyOwner {
   client_id?: string | null;
   owner_name?: string | null;
   owner_state?: string | null;
 }
 
-function ownerState(value: string | null | undefined): RequestRow['owner_state'] {
+function legacyState(value: string | null | undefined): RequestRow['owner_state'] {
   if (value === 'named' || value === 'none' || value === 'deleted') return value;
   return undefined;
 }
@@ -39,17 +40,37 @@ async function loadFacts(ids: number[]): Promise<Map<number, Fact>> {
   return map;
 }
 
-async function loadOwners(ids: string[]): Promise<Map<string, { name: string | null; state: RequestRow['owner_state'] }>> {
+async function loadLegacyOwners(ids: string[]): Promise<Map<string, { name: string | null; state: RequestRow['owner_state'] }>> {
   const map = new Map<string, { name: string | null; state: RequestRow['owner_state'] }>();
+  const { data, error } = await supabase.rpc('client_owner_names', { p_client_ids: ids });
+  if (error || !data) return map;
+  for (const row of data as LegacyOwner[]) {
+    if (!row.client_id) continue;
+    map.set(row.client_id, { name: row.owner_name ?? null, state: legacyState(row.owner_state) });
+  }
+  return map;
+}
+
+async function loadOwners(ids: string[]): Promise<Map<string, { name: string | null; state: RequestRow['owner_state']; source?: RequestRow['owner_source'] }>> {
+  const map = new Map<string, { name: string | null; state: RequestRow['owner_state']; source?: RequestRow['owner_source'] }>();
   if (!ids.length) return map;
-  try {
-    const rows = await rpc<OwnerRow[]>('client_owner_names', { p_client_ids: ids.slice(0, 200) });
-    for (const row of rows ?? []) {
-      if (!row.client_id) continue;
-      map.set(row.client_id, { name: row.owner_name ?? null, state: ownerState(row.owner_state) });
+  const unique = [...new Set(ids)];
+  for (let i = 0; i < unique.length; i += 200) {
+    const slice = unique.slice(i, i + 200);
+    try {
+      const loaded = await loadEffectiveOwners(slice);
+      if (loaded.status === 'missing') {
+        const legacy = await loadLegacyOwners(slice);
+        for (const [id, owner] of legacy) map.set(id, owner);
+        continue;
+      }
+      if (loaded.status !== 'ok') continue;
+      for (const [id, owner] of loaded.owners) {
+        map.set(id, { name: owner.ownerName, state: owner.state, source: owner.source });
+      }
+    } catch {
+      /* owner names appear after setup 49 is pasted; 45 remains the fallback above */
     }
-  } catch {
-    /* owner names appear after setup 45 is pasted */
   }
   return map;
 }
@@ -80,6 +101,7 @@ export async function withClientContext(rows: RequestRow[]): Promise<RequestRow[
         : {}),
       owner_name: owner?.name ?? row.owner_name ?? null,
       owner_state: owner?.state ?? row.owner_state,
+      owner_source: owner?.source ?? row.owner_source,
     };
     const display_class: DisplayClass | undefined = fact ? displayClass(merged) : row.display_class;
     return { ...merged, display_class };

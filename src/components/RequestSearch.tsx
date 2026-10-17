@@ -205,7 +205,7 @@ function ResultBody({ row, t }: { row: RequestRow; t: T }) {
       <div className="who">
         <div className="name">{row.client_name || row.client_id}</div>
         <div className="tiny muted">ID {row.client_id}</div>
-        <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
+        <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} ownerSource={row.owner_source} requestKam={row.kam_name} />
         <div className="tiny muted">{t('მოთხოვნა', 'Request')} #{row.id}</div>
       </div>
       <div className="what">
@@ -314,7 +314,7 @@ function PhoneRequestSearch() {
                 <span className={'pill ' + statusClass(code)}>{resultLabel(row, t)}</span>
               </div>
               <div className="tiny muted">ID {row.client_id}</div>
-              <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} requestKam={row.kam_name} />
+              <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} ownerSource={row.owner_source} requestKam={row.kam_name} />
               <div className="tiny muted">{t('მოთხოვნა', 'Request')} #{row.id}</div>
               <div className="m-card-time">{fmtDateTime(row.requested_at)}</div>
               {pair && <div className="m-card-pair">{pair}</div>}

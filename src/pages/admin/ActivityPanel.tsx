@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { describeClientAudit } from '../../lib/clientOwnership';
 import { supabase } from '../../lib/supabase';
 import { describeDeal, downloadCsv, fmtDateTime, fmtRate } from '../../lib/format';
 import { ROLE_NAMES, type Role } from '../../lib/types';
@@ -94,8 +95,7 @@ function describe(a: AuditRow, names: Names): string {
     case 'quotes':
       return n.action === 'quoted' ? `კურსი ${fmtRate(n.rate)} გასცა მოთხოვნაზე #${n.request_id}` : `დააბრუნა მოთხოვნა #${n.request_id}: ${DECLINE_KA[n.reason] ?? n.reason}`;
     case 'clients':
-      if (a.action === 'insert') return `დაემატა კლიენტი ${n.client_id}${n.name ? ' (' + n.name + ')' : ''}`;
-      return `შეიცვალა კლიენტი ${a.row_key}`;
+      return describeClientAudit(a.action, a.row_key, a.old_data, a.new_data, names);
     case 'winback_actions':
       return `დაბრუნების ნაბიჯი კლიენტზე ${n.client_id}: ${STEP_KA[n.step] ?? String(n.step).replace(/_/g, ' ')}`;
     case 'rules': {

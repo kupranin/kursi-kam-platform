@@ -4,14 +4,14 @@ import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
+import { kamMayEditRequest } from '../lib/clientOwnership';
 import { isHistoricalRequest } from '../lib/displayClass';
 import { isOpenRequest } from '../lib/requestStatus';
 import type { LossReason, RequestRow, Role } from '../lib/types';
 
 /** Real database role. View-as does not count. A KAM only for their own request. */
 export function canMarkRequestOutcome(realRole: Role, profileId: string | undefined, kamId: string | null | undefined): boolean {
-  if (realRole === 'admin') return true;
-  return realRole === 'kam' && !!profileId && !!kamId && kamId === profileId;
+  return kamMayEditRequest(realRole, profileId, kamId);
 }
 
 const FALLBACK_REASONS: LossReason[] = [
