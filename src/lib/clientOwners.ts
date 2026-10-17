@@ -43,6 +43,38 @@ function asOwner(row: RawOwner): EffectiveOwner | null {
   };
 }
 
+export interface AssignedOwnerName {
+  name: string | null;
+  state: 'named' | 'deleted' | 'none';
+}
+
+interface RawAssigned {
+  client_id?: string | null;
+  owner_name?: string | null;
+  owner_state?: string | null;
+}
+
+/**
+ * assigned_kam_id display name from client_owner_names.
+ * Used only when client_effective_owners is not installed. Does not write.
+ */
+export async function loadAssignedOwnerNames(ids: string[]): Promise<Map<string, AssignedOwnerName>> {
+  const names = new Map<string, AssignedOwnerName>();
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (!unique.length) return names;
+  for (let i = 0; i < unique.length; i += 100) {
+    const { data, error } = await supabase.rpc('client_owner_names', { p_client_ids: unique.slice(i, i + 100) });
+    if (error) return names;
+    for (const row of (data ?? []) as RawAssigned[]) {
+      const clientId = String(row.client_id ?? '');
+      if (!clientId) continue;
+      const state = row.owner_state === 'named' || row.owner_state === 'deleted' ? row.owner_state : 'none';
+      names.set(clientId, { name: row.owner_name ?? null, state });
+    }
+  }
+  return names;
+}
+
 /** All-time owner for clients this account can already open. Does not write. */
 export async function loadEffectiveOwners(ids: string[]): Promise<OwnerLoad> {
   const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];

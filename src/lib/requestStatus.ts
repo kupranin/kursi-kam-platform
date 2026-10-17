@@ -1,3 +1,5 @@
+import { LOSS_PICKER, RETIRED_LOSS_LABELS } from './lossReasons';
+
 export type LogCode =
   | 'agreed'
   | 'client_declined'
@@ -26,7 +28,8 @@ export interface StatusInput {
 
 /**
  * A KAM mark (loss_reason) or an open loss the view already computed.
- * A written rate, a confirmed payment, or a matched success is not a loss.
+ * A written rate stays pending only when it also has an explicit loss mark
+ * and the client has not been notified. A confirmed payment is not a loss.
  * An approved loss is final, so it is not still waiting.
  */
 export function isPendingLoss(row: {
@@ -38,12 +41,22 @@ export function isPendingLoss(row: {
   loss_open?: boolean | null;
   loss_reason?: string | null;
   loss_approved_at?: string | null;
+  marked_lost_at?: string | null;
 }): boolean {
   if (row.source === 'import') return false;
   if (row.went_through || row.outcome === 'went_through') return false;
-  if (row.rate_written_at || row.payment_confirmed_at) return false;
+  if (row.payment_confirmed_at) return false;
   if (row.loss_approved_at) return false;
+  if (row.rate_written_at) return !!(row.marked_lost_at || (row.loss_reason && row.loss_reason.trim()));
   return row.loss_open === true || !!row.loss_reason;
+}
+
+/** The rate is written and the client has not been marked notified yet. */
+export function writtenAwaitingNotice(row: {
+  rate_written_at?: string | null;
+  payment_confirmed_at?: string | null;
+}): boolean {
+  return !!row.rate_written_at && !row.payment_confirmed_at;
 }
 
 /**
@@ -138,11 +151,8 @@ export function hideEarlierDeals(row: {
 }
 
 const LOSS_LABELS: Record<string, [string, string]> = {
-  better_rate: ['სხვაგან უკეთესი კურსი', 'Better rate elsewhere'],
-  postponed: ['გადადო', 'Postponed'],
-  funds_not_received: ['თანხა არ ჩაურიცხავს', 'Funds not received'],
-  liquidity: ['ლიკვიდობის პრობლემა', 'Liquidity problem'],
-  other: ['სხვა', 'Other'],
+  ...Object.fromEntries(LOSS_PICKER.map((reason) => [reason.code, [reason.label_ka, reason.label_en] as [string, string]])),
+  ...RETIRED_LOSS_LABELS,
 };
 
 export function lossReasonLabel(code: string | null | undefined, lang: 'ka' | 'en'): string {

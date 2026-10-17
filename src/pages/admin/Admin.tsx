@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useI18n } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
 import LangSwitch from '../../components/LangSwitch';
@@ -46,6 +46,7 @@ export default function Admin() {
       </div>
       <div>
         <nav className="page-links" aria-label={t('ამ გვერდზე', 'On this page')}>
+          <Link to="/analytics#kam-portfolios">{t('KAM-ების პორტფელი', 'KAM portfolios')}</Link>
           <a href="#abs-gel">{t('ABS GEL', 'ABS GEL')}</a>
           <a href="#people">{t('ხალხი', 'People')}</a>
           <a href="#rules">{t('დათვლის წესები', 'Counting rules')}</a>

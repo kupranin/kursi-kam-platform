@@ -109,9 +109,11 @@ export function fileWon(row: { import_key?: string | null; legacy_status?: strin
  */
 export function lossOpenWithoutPaymentMatch(row: ActiveSource, freshnessDay: string): boolean {
   if (row.source !== 'app') return false;
-  if (row.rate_written_at || row.payment_confirmed_at) return false;
-  if (fileWon(row)) return false;
-  if (row.loss_approved_at) return false;
+  if (row.payment_confirmed_at || fileWon(row) || row.loss_approved_at) return false;
+  if (row.rate_written_at) {
+    if (row.marked_lost_at) return true;
+    return (row.loss_reason ?? '').trim() !== '';
+  }
   if (row.marked_lost_at) return true;
   if ((row.loss_reason ?? '').trim() !== '') return true;
   const betterWaiting = row.client_reply === 'better' && !row.better_decision;

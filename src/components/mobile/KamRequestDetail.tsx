@@ -9,7 +9,8 @@ import { useAuth } from '../../lib/auth';
 import { chatHandoff, clientOffer, rateBooked } from '../../lib/copyText';
 import { ago, fmtDateTime, fmtRate, sideAmount } from '../../lib/format';
 import { useI18n } from '../../lib/i18n';
-import { isPendingLoss, lossReasonLabel, treasuryReason } from '../../lib/requestStatus';
+import { isPendingLoss, lossReasonLabel, treasuryReason, writtenAwaitingNotice } from '../../lib/requestStatus';
+import { lossNoteLabel } from '../../lib/lossReasons';
 import { rpc } from '../../lib/supabase';
 import { useToast } from '../../lib/toast';
 import { useViewAs } from '../../lib/viewAs';
@@ -22,6 +23,7 @@ import KamEditForm from './KamEditForm';
 import { loadKamRequest } from './kamLoad';
 import { isRateWriteDeferred, useDeferWriteReady } from '../../lib/deferWrite';
 import DeferWriteBar from '../DeferWriteBar';
+import ClientAgreedThenLost from '../AgreedThenLostMark';
 import RequestKamLine from '../RequestKamLine';
 import WrittenRateNote from '../WrittenRateNote';
 
@@ -262,6 +264,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <span className={'pill ' + status.cls}>{status.label}</span>
           </div>
           <p className="tiny muted">ID {row.client_id}</p>
+          <ClientAgreedThenLost clientId={row.client_id} excludeId={row.id} />
           <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} ownerSource={row.owner_source} requestKam={row.kam_name} />
           {row.legacy_status?.trim() && <p className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</p>}
           {reply}
@@ -273,6 +276,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
             <span className={'pill ' + status.cls}>{status.label}</span>
           </div>
           <p className="tiny muted">ID {row.client_id}</p>
+          <ClientAgreedThenLost clientId={row.client_id} excludeId={row.id} />
           <RequestKamLine ownerName={row.owner_name} ownerState={row.owner_state} ownerSource={row.owner_source} requestKam={row.kam_name} />
           {row.legacy_status?.trim() && <p className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {row.legacy_status}</p>}
           {pair && <p className="m-card-pair">{pair}</p>}
@@ -288,7 +292,7 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
       {lostPending && (
         <p className="small">
           {t('მიზეზი', 'Reason')}: {lossReasonLabel(row.loss_reason, lang)}
-          {row.loss_reason_note ? ' — ' + row.loss_reason_note : ''}
+          {row.loss_reason_note ? ' — ' + lossNoteLabel(row.loss_reason_note, lang) : ''}
         </p>
       )}
       {row.client_reply === 'better' && row.wanted_rate != null && !row.better_decision && (
@@ -326,14 +330,14 @@ export default function KamRequestDetail({ id, seed }: { id: number; seed?: Requ
           </button>
           {secondary && !editing && (
             <div className="m-secondary-body">
-              <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} showSuccess={!row.rate_written_at} />
+              <RequestOutcomeButtons row={row} onDone={() => { void reload(); }} showSuccess={!row.rate_written_at} showLost={!writtenAwaitingNotice(row)} />
               <CorrectStatusButton row={row} onDone={() => { setSecondary(true); void reload(true); }} />
               <LossApproval row={row} onDone={() => { void reload(); }} />
-              {own && <button type="button" className="btn" onClick={() => setEditing(true)}>{t('რედაქტირება', 'Edit')}</button>}
+              {own && !writtenAwaitingNotice(row) && <button type="button" className="btn" onClick={() => setEditing(true)}>{t('რედაქტირება', 'Edit')}</button>}
               {showDelete && <DeleteRequestButton requestId={row.id} onDeleted={() => navigate(home)} />}
             </div>
           )}
-          {secondary && editing && (
+          {secondary && editing && !writtenAwaitingNotice(row) && (
             <KamEditForm
               row={row}
               onClose={() => setEditing(false)}

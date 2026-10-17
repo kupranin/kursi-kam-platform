@@ -5,6 +5,7 @@ import { useI18n } from '../../lib/i18n';
 import type { QueueRow } from '../../lib/types';
 import { formatBanks } from '../../lib/types';
 import LoadingLine from '../LoadingLine';
+import ClientAgreedThenLost from '../AgreedThenLostMark';
 import SpecialRateMark from '../SpecialRateMark';
 import { useSpecialRates, type SpecialRateRow } from '../../lib/specialRates';
 import { clientName, pairText, WaitClock } from './TreasuryBits';
@@ -30,6 +31,7 @@ function WaitingCard({ row, bank, terms }: { row: QueueRow; bank?: string[]; ter
     <article className="m-card is-waiting">
       <button type="button" className="m-card-hit" onClick={open}>
         <div className="m-card-client">{clientName(row.client_name, row.client_id)}</div>
+        <ClientAgreedThenLost clientId={row.client_id} excludeId={row.request_id} />
         <div className="m-card-pair">{pairText(row.sells_currency, row.gets_currency)}</div>
         <div className="m-card-dir">{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(row.sells_currency, row.amount)}</div>
         <div className="m-card-dir">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
@@ -53,6 +55,7 @@ function BetterCard({ row }: { row: TreasuryReply }) {
     <article className="m-card is-action">
       <button type="button" className="m-card-hit" onClick={open}>
         <div className="m-card-client">{clientName(row.client_name, row.client_id)}</div>
+        <ClientAgreedThenLost clientId={row.client_id} excludeId={row.request_id} />
         <div className="m-card-pair">{pairText(row.sells_currency, row.gets_currency)}</div>
         <div className="m-card-dir">{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(row.sells_currency, row.amount)}</div>
         <div className="m-card-rate">{t('ხაზინის კურსი', 'Treasury rate')} {fmtRate(row.rate)}</div>
@@ -75,6 +78,7 @@ function WriteCard({ row }: { row: TreasuryReply }) {
     <article className="m-card">
       <button type="button" className="m-card-hit" onClick={open}>
         <div className="m-card-client">{clientName(row.client_name, row.client_id)}</div>
+        <ClientAgreedThenLost clientId={row.client_id} excludeId={row.request_id} />
         <div className="m-card-pair">{pairText(row.sells_currency, row.gets_currency)}</div>
         <div className="m-card-dir">{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(row.sells_currency, row.amount)}</div>
         <div className="m-card-quote">{fmtRate(row.approved_rate)}</div>

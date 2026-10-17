@@ -6,6 +6,7 @@ import { loadEffectiveOwners, type OwnerLoad } from '../lib/clientOwners';
 import { useI18n } from '../lib/i18n';
 import { fmtDay, fmtRate, fmtTime, fmtWhole, sideAmount } from '../lib/format';
 import { dealPair, latestQuotesForPair, type RateSnapshot } from '../lib/rateGrid';
+import { AgreedThenLostLine, useAgreedThenLost } from './AgreedThenLostMark';
 import { IconCheck } from './Icons';
 import LoadingLine from './LoadingLine';
 import RatePeople from './RatePeople';
@@ -27,6 +28,13 @@ interface HistRow {
   owner_name?: string | null;
   bank: string | null;
   total_count: number | null;
+  client_reply?: string | null;
+  marked_lost_at?: string | null;
+  rate_written_at?: string | null;
+  quote_status?: string | null;
+  loss_code?: string | null;
+  better_decision?: string | null;
+  rate_write_deferred?: boolean | null;
 }
 
 interface Props {
@@ -95,6 +103,7 @@ function standardSide(sells: string, gets: string, snaps: RateSnapshot[]): { sid
 
 export default function ClientHistory({ clientId, excludeId }: Props) {
   const { t, lang } = useI18n();
+  const agreedLost = useAgreedThenLost(clientId);
   const [rows, setRows] = useState<HistRow[]>([]);
   const [ownerLoad, setOwnerLoad] = useState<OwnerLoad | null>(null);
   const [snaps, setSnaps] = useState<RateSnapshot[]>([]);
@@ -249,8 +258,9 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                       : { label: t('ღია', 'Open'), cls: 'pill-wait' };
                   const sideLabel = standard?.side === 'sell' ? t('გაყიდვა', 'Sell') : t('ყიდვა', 'Buy');
                   const owner = historyOwner(row);
+                  const agreedMark = agreedLost.requestIds.includes(row.id);
                   return (
-                    <tr key={row.id}>
+                    <tr key={row.id} className={agreedMark ? 'is-agreed-then-lost' : undefined}>
                       <td>
                         <div className="strong">{fmtDay(row.request_date)}</div>
                         <div className="tiny muted">{fmtTime(row.requested_at)}</div>
@@ -277,6 +287,7 @@ export default function ClientHistory({ clientId, excludeId }: Props) {
                       <td>{row.bank ?? ''}</td>
                       <td>
                         <span className={'pill ' + pill.cls}>{pill.cls === 'pill-ok' && <IconCheck />}{pill.label}</span>
+                        {agreedMark && <AgreedThenLostLine />}
                         {row.legacy_status?.trim() && <div className="tiny muted">{row.legacy_status}</div>}
                       </td>
                     </tr>

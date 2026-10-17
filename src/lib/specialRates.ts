@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { cappedClientIds } from './clientOwnership';
 import { parseRate } from './format';
+import { specialBanksToWrite, type OpenSpecialBank } from './specialRateStatus';
 import { supabase } from './supabase';
 
 export const SPECIAL_BANKS = ['TBC', 'BOG', 'Liberty', 'Other'] as const;
@@ -22,29 +23,29 @@ export interface SpecialRateRow {
   updated_by_name: string | null;
 }
 
-export interface SpecialTermsDraft {
-  on: boolean;
-  bank: SpecialBank | '';
+/** One bank the form is holding. A submit can hold several, each with its own fields. */
+export interface SpecialBankDraft {
+  bank: SpecialBank;
   providerLabel: string;
   comment: string;
   sells: string;
   gets: string;
   rate: string;
-  /** True when this submit should write the selected bank. Unchanged loaded terms stay as they are. */
+  /** True when this submit should write this bank. An unchanged loaded bank stays as it is. */
   dirty: boolean;
+}
+
+export interface SpecialTermsDraft {
+  on: boolean;
+  /** Every bank open on the form, not only the chip the KAM touched last. */
+  banks: SpecialBankDraft[];
   /** True when active terms were loaded and the box is now off. Saving marks those rows inactive. */
   clear: boolean;
 }
 
 export const EMPTY_SPECIAL_DRAFT: SpecialTermsDraft = {
   on: false,
-  bank: '',
-  providerLabel: '',
-  comment: '',
-  sells: '',
-  gets: '',
-  rate: '',
-  dirty: false,
+  banks: [],
   clear: false,
 };
 
@@ -103,10 +104,11 @@ export async function loadSpecialRates(clientIds: string[]): Promise<{ missing: 
 }
 
 /**
- * Writes one bank, or clears the special-rate status, after log_request has created the client.
+ * Writes every dirty bank, or clears the special-rate status, after log_request has created the client.
  * Does not throw, so a failed save cannot turn a sent request into an error.
+ * Each bank is its own call. Saving BOG does not clear TBC.
  * Blank fields are not sent, and the database keeps the stored value.
- * Unchecking is the explicit clear: rows stay, and active becomes false.
+ * Unchecking is the explicit clear: rows stay, and active becomes false on every bank.
  * This does not write a request rate or a negotiated adjustment.
  */
 export async function saveClientSpecialRate(clientId: string, draft: SpecialTermsDraft): Promise<SpecialSaveResult> {
@@ -117,22 +119,50 @@ export async function saveClientSpecialRate(clientId: string, draft: SpecialTerm
     if (isMissingSpecial(error)) return 'missing';
     return 'failed';
   }
-  if (!draft.bank || !draft.dirty) return 'skipped';
-  const parsed = parseRate(draft.rate);
-  if (!parsed.ok) return 'invalid';
-  const pairOk = Boolean(draft.sells && draft.gets && draft.sells !== draft.gets);
-  const { error } = await supabase.rpc('save_client_special_rate', {
-    p_client_id: clientId,
-    p_bank: draft.bank,
-    p_provider_label: draft.bank === 'Other' ? draft.providerLabel.trim() || null : null,
-    p_comment: draft.comment.trim() || null,
-    p_sells_currency: pairOk ? draft.sells : null,
-    p_gets_currency: pairOk ? draft.gets : null,
-    p_rate: parsed.value,
-  });
-  if (!error) return 'saved';
-  if (isMissingSpecial(error)) return 'missing';
-  return 'failed';
+  const pending: OpenSpecialBank[] = [];
+  let invalid = false;
+  for (const bank of draft.banks) {
+    if (!bank.dirty) continue;
+    const parsed = parseRate(bank.rate);
+    if (!parsed.ok) {
+      invalid = true;
+      continue;
+    }
+    const pairOk = Boolean(bank.sells && bank.gets && bank.sells !== bank.gets);
+    pending.push({
+      bank: bank.bank,
+      providerLabel: bank.bank === 'Other' ? bank.providerLabel : '',
+      comment: bank.comment,
+      sells: pairOk ? bank.sells : '',
+      gets: pairOk ? bank.gets : '',
+      rate: parsed.value,
+      dirty: true,
+    });
+  }
+  const writes = specialBanksToWrite(clientId, pending);
+  if (!writes.length && !invalid) return 'skipped';
+  let saved = false;
+  let failed = false;
+  for (const write of writes) {
+    const { error } = await supabase.rpc('save_client_special_rate', {
+      p_client_id: write.clientId,
+      p_bank: write.bank,
+      p_provider_label: write.bank === 'Other' ? (write.providerLabel?.trim() || null) : null,
+      p_comment: write.comment?.trim() || null,
+      p_sells_currency: write.sells || null,
+      p_gets_currency: write.gets || null,
+      p_rate: write.rate,
+    });
+    if (!error) {
+      saved = true;
+      continue;
+    }
+    if (isMissingSpecial(error)) return saved ? 'failed' : 'missing';
+    failed = true;
+  }
+  if (failed) return 'failed';
+  if (invalid) return 'invalid';
+  return saved ? 'saved' : 'skipped';
 }
 
 export function specialRatesByClient(rows: SpecialRateRow[]): Map<string, SpecialRateRow[]> {

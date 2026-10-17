@@ -5,6 +5,7 @@ import { useViewAs } from '../lib/viewAs';
 import { useI18n } from '../lib/i18n';
 import { fmtMinutes, fmtShort, fmtWhole, monthOptions } from '../lib/format';
 import { loadRequestKpis, type KamKpi, type RequestKpis } from '../lib/requestKpis';
+import KamMonthPortfolio from '../components/KamMonthPortfolio';
 import LoadingLine from '../components/LoadingLine';
 
 interface DeskTimes {
@@ -121,7 +122,9 @@ function OwnKamAnalytics() {
 }
 
 function CompanyAnalytics({ canFilter }: { canFilter: boolean }) {
+  const { role } = useViewAs();
   const { t } = useI18n();
+  const seePortfolios = role === 'admin' || role === 'manager';
   const [month, setMonth] = useState('all');
   const [kamId, setKamId] = useState('');
   const [times, setTimes] = useState<DeskTimes>(EMPTY_TIMES);
@@ -172,10 +175,15 @@ function CompanyAnalytics({ canFilter }: { canFilter: boolean }) {
       <div className="page-head">
         <div>
           <h1>{t('ანალიტიკა', 'Analytics')}</h1>
-          <p>{t(
-            'მოთხოვნები KAM-ების მიხედვით. მოგებული მხოლოდ გაწერილი კურსია. გადახდის ნიშანი და ტრანზაქცია მოგებაში არ შედის. მოთხოვნების ABS GEL მიღებული თანხის ლარის ექვივალენტია. ქვემოთ ხაზინის დროცაა.',
-            'Requests by KAM. Won is only a written rate. A payment mark and a transaction are not wins. Request ABS GEL is the lari equivalent of the received amount. Treasury time is below.',
-          )}</p>
+          <p>{seePortfolios
+            ? t(
+              'ჯერ KAM-ების თვის პორტფელია: თვის კლიენტები და მოთხოვნის შედეგი ცალკეა. შემდეგ მოთხოვნები KAM-ების მიხედვით. მოგებული მხოლოდ გაწერილი კურსია. გადახდის ნიშანი და ტრანზაქცია მოგებაში არ შედის. მოთხოვნების ABS GEL მიღებული თანხის ლარის ექვივალენტია. ბოლოს ხაზინის დროა.',
+              'KAM month portfolios come first: month clients and request results are separate. Then requests by KAM. Won is only a written rate. A payment mark and a transaction are not wins. Request ABS GEL is the lari equivalent of the received amount. Treasury time is last.',
+            )
+            : t(
+              'მოთხოვნები KAM-ების მიხედვით. მოგებული მხოლოდ გაწერილი კურსია. გადახდის ნიშანი და ტრანზაქცია მოგებაში არ შედის. მოთხოვნების ABS GEL მიღებული თანხის ლარის ექვივალენტია. ქვემოთ ხაზინის დროცაა.',
+              'Requests by KAM. Won is only a written rate. A payment mark and a transaction are not wins. Request ABS GEL is the lari equivalent of the received amount. Treasury time is below.',
+            )}</p>
         </div>
         <div className="row">
           <PeriodSelect month={month} months={months} onChange={(value) => { setMonth(value); setKamId(''); }} />
@@ -194,6 +202,8 @@ function CompanyAnalytics({ canFilter }: { canFilter: boolean }) {
           )}
         </div>
       </div>
+
+      {seePortfolios && <KamMonthPortfolio />}
 
       <RequestKpiCards stats={stats} loading={loading} error={error} showKams />
 

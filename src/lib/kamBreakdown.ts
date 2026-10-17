@@ -4,6 +4,7 @@
  */
 import { displayClass } from './displayClass';
 import { lossReasonLabel } from './requestStatus';
+import { lossNoteLabel } from './lossReasons';
 import { asAmount, requestGel } from './requestGel';
 import { supabase } from './supabase';
 
@@ -176,7 +177,7 @@ function ownStatus(row: OwnRow): 'success' | 'lost' | 'open' {
 function ownReason(row: OwnRow): string {
   const parts = [
     lossReasonLabel(row.loss_reason, 'ka'),
-    (row.loss_reason_note ?? '').trim(),
+    lossNoteLabel(row.loss_reason_note, 'ka'),
     (row.client_decline_reason ?? '').trim(),
     (row.decline_reason ?? '').trim(),
   ].filter(Boolean);

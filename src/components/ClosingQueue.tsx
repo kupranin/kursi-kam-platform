@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import ClientAgreedThenLost from './AgreedThenLostMark';
 import { holdWindow, type ClosingDeal } from '../lib/deferWrite';
 import { fmtDateTime, fmtRate, sideAmount } from '../lib/format';
 import { useI18n } from '../lib/i18n';
@@ -69,6 +70,7 @@ function ClosingCard({ row, onDone }: { row: ClosingDeal; onDone: () => void }) 
     <article className="req-card">
       <div className="name">{row.client_name ?? row.client_id}</div>
       <div className="tiny muted">ID {row.client_id} · {row.kam_name}</div>
+      <ClientAgreedThenLost clientId={row.client_id} excludeId={row.request_id} />
       <div className="small" style={{ marginTop: 6 }}>{t('კლიენტი ყიდის', 'Client sells')} {sideAmount(row.sells_currency, row.amount)}</div>
       <div className="small">{t('კლიენტი იღებს', 'Client gets')} {sideAmount(row.gets_currency, row.gets_amount)}</div>
       <div className="small strong" style={{ marginTop: 6 }}>{t('შეთანხმებული კურსი', 'Agreed rate')} {fmtRate(row.approved_rate)}</div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { describeClientAudit } from '../../lib/clientOwnership';
+import { LOSS_PICKER, RETIRED_LOSS_LABELS, lossNoteLabel } from '../../lib/lossReasons';
 import { supabase } from '../../lib/supabase';
 import { describeDeal, downloadCsv, fmtDateTime, fmtRate } from '../../lib/format';
 import { ROLE_NAMES, type Role } from '../../lib/types';
@@ -20,11 +21,8 @@ const RULE_LABELS: Record<string, string> = {
 };
 
 const LOSS_KA: Record<string, string> = {
-  better_rate: 'სხვაგან უკეთესი კურსი',
-  postponed: 'გადადო',
-  funds_not_received: 'თანხა არ ჩაურიცხავს',
-  liquidity: 'ლიკვიდობის პრობლემა',
-  other: 'სხვა',
+  ...Object.fromEntries(LOSS_PICKER.map((reason) => [reason.code, reason.label_ka])),
+  ...Object.fromEntries(Object.entries(RETIRED_LOSS_LABELS).map(([code, pair]) => [code, pair[0]])),
 };
 
 const DECLINE_KA: Record<string, string> = {
@@ -87,7 +85,7 @@ function describe(a: AuditRow, names: Names): string {
       if (o.client_reply === 'better' && !n.client_reply && n.quote_status === 'quoted') return `ხაზინამ დააბრუნა კურსი ${fmtRate(n.rate)}, მოთხოვნა #${a.row_key}`;
       if (o.loss_reason !== n.loss_reason || o.loss_reason_note !== n.loss_reason_note) {
         if (!n.loss_reason) return `მიზეზი გასუფთავდა მოთხოვნაზე #${a.row_key}`;
-        return `მიზეზი მიეთითა მოთხოვნაზე #${a.row_key}: ${LOSS_KA[n.loss_reason] ?? n.loss_reason}${n.loss_reason_note ? ` (${n.loss_reason_note})` : ''}`;
+        return `მიზეზი მიეთითა მოთხოვნაზე #${a.row_key}: ${LOSS_KA[n.loss_reason] ?? n.loss_reason}${n.loss_reason_note ? ` (${lossNoteLabel(String(n.loss_reason_note), 'ka')})` : ''}`;
       }
       if (o.quote_status !== n.quote_status && n.quote_status === 'asking') return `ხელახლა იკითხა მოთხოვნაზე #${a.row_key}`;
       if (!o.payment_confirmed_at && n.payment_confirmed_at) return `ტრანზაქცია გავიდა, მოთხოვნა #${a.row_key}`;

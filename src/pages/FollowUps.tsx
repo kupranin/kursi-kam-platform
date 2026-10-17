@@ -7,16 +7,23 @@ import { useToast } from '../lib/toast';
 import { kamMayEditRequest } from '../lib/clientOwnership';
 import { describeDeal, fmtDay, fmtRate, fmtWhole, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
-import type { LossReason, RequestRow, Role, WinbackRow } from '../lib/types';
+import type { RequestRow, Role, WinbackRow } from '../lib/types';
+import { lossReasonLabel } from '../lib/requestStatus';
+import {
+  BETTER_RATE_PLACES,
+  LOSS_PICKER,
+  isBetterRate,
+  lossMarkDetail,
+  lossNoteLabel,
+  reasonNeedsComment,
+  type BetterRatePlaceId,
+} from '../lib/lossReasons';
 import { IconCheck } from '../components/Icons';
 import DeleteRequestButton, { mayDeleteRequestRow } from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
+import LossReasonPicker from '../components/LossReasonPicker';
 import RatePeople from '../components/RatePeople';
 import LossApproval from '../components/LossApproval';
-
-function isOther(reason: LossReason): boolean {
-  return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
-}
 
 /** Real database role. View-as does not count. A KAM only for their own request. */
 function canConfirmPayment(realRole: Role, profileId: string | undefined, kamId: string | null | undefined): boolean {
@@ -40,9 +47,8 @@ export default function FollowUps() {
   const showOwner = role !== 'kam';
 
   const [asks, setAsks] = useState<RequestRow[]>([]);
-  const [answered, setAnswered] = useState<Record<number, string>>({});
-  const [otherText, setOtherText] = useState<Record<number, string>>({});
-  const [reasons, setReasons] = useState<LossReason[]>([]);
+  const [answered, setAnswered] = useState<Record<number, { code: string; detail: string | null }>>({});
+  const [drafts, setDrafts] = useState<Record<number, { reason: string | null; place: BetterRatePlaceId | null; comment: string }>>({});
   const [winback, setWinback] = useState<WinbackRow[]>([]);
   const [filter, setFilter] = useState<'All' | 'A' | 'B' | 'C'>('All');
   const [loaded, setLoaded] = useState(false);
@@ -54,23 +60,23 @@ export default function FollowUps() {
       .gte('request_date', todayTbilisi(-7))
       .order('request_date', { ascending: false });
     if (role === 'kam') q = q.eq('kam_id', profile!.id);
-    const [a, r, w] = await Promise.all([
+    const [a, w] = await Promise.all([
       q,
-      supabase.from('loss_reasons').select('*').eq('active', true).order('sort_order'),
       rpc<WinbackRow[]>('winback_list').catch(() => [] as WinbackRow[]),
     ]);
     const asks = (a.data ?? []) as RequestRow[];
     setAsks(applyRatePeople(asks, await loadRatePeople(asks.map((row) => row.id))));
-    setReasons((r.data ?? []) as LossReason[]);
     setWinback(w ?? []);
     setLoaded(true);
   }, [profile, role]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function answer(row: RequestRow, code: string | null) {
-    const reason = reasons.find((r) => r.code === code);
-    const detail = reason && isOther(reason) ? (otherText[row.id] ?? '').trim() : '';
+  function draftOf(id: number) {
+    return drafts[id] ?? { reason: null, place: null, comment: '' };
+  }
+
+  async function answer(row: RequestRow, code: string | null, detail: string | null) {
     try {
       await rpc('set_loss_reason', {
         p_request_id: row.id,
@@ -79,10 +85,41 @@ export default function FollowUps() {
       });
       setAnswered((m) => {
         const next = { ...m };
-        if (code) next[row.id] = code; else delete next[row.id];
+        if (code) next[row.id] = { code, detail }; else delete next[row.id];
+        return next;
+      });
+      setDrafts((m) => {
+        const next = { ...m };
+        delete next[row.id];
         return next;
       });
     } catch (err) { toast((err as Error).message, 'error'); }
+  }
+
+  function chooseReason(row: RequestRow, code: string) {
+    const item = LOSS_PICKER.find((reason) => reason.code === code);
+    if (!item || isBetterRate(item) || reasonNeedsComment(item)) {
+      setDrafts((m) => ({ ...m, [row.id]: { reason: code, place: null, comment: '' } }));
+      return;
+    }
+    void answer(row, code, null);
+  }
+
+  function choosePlace(row: RequestRow, placeId: BetterRatePlaceId) {
+    const comment = draftOf(row.id).comment;
+    setDrafts((m) => ({ ...m, [row.id]: { reason: 'better_rate', place: placeId, comment } }));
+    if (placeId === 'other') return;
+    const place = BETTER_RATE_PLACES.find((item) => item.id === placeId);
+    if (!place?.note) return;
+    void answer(row, 'better_rate', place.note);
+  }
+
+  function saveDraft(row: RequestRow) {
+    const draft = draftOf(row.id);
+    const item = LOSS_PICKER.find((reason) => reason.code === draft.reason);
+    const mark = lossMarkDetail(item, draft.place, draft.comment);
+    if (mark.error || !draft.reason) return;
+    void answer(row, draft.reason, mark.detail);
   }
 
   async function confirmWent(row: RequestRow) {
@@ -110,17 +147,13 @@ export default function FollowUps() {
     } catch (err) { toast((err as Error).message, 'error'); }
   }
 
-  const reasonText = (r: LossReason) => (lang === 'en' ? r.label_en : r.label_ka).trim() || r.label_en || r.label_ka;
-  const label = (code: string) => {
-    const reason = reasons.find((r) => r.code === code);
-    return reason ? reasonText(reason) : code;
-  };
+  const label = (code: string) => lossReasonLabel(code, lang) || code;
   const savedLabel = (id: number) => {
-    const code = answered[id];
-    const reason = reasons.find((r) => r.code === code);
-    const text = (otherText[id] ?? '').trim();
-    if (reason && isOther(reason) && text) return `${reasonText(reason)}: ${text}`;
-    return label(code);
+    const saved = answered[id];
+    if (!saved) return '';
+    const name = lossReasonLabel(saved.code, lang) || saved.code;
+    const note = lossNoteLabel(saved.detail, lang);
+    return note ? `${name} — ${note}` : name;
   };
   const left = asks.filter((a) => !answered[a.id]).length;
   const book = role === 'kam' ? winback.filter((w) => w.owner_id === profile!.id) : winback;
@@ -143,7 +176,7 @@ export default function FollowUps() {
             <h2 id="ask-title" style={{ fontSize: 22 }}>{t('რატომ არ გავიდა ეს მოთხოვნები?', 'Why did these requests not go through?')}</h2>
             <p className="small" style={{ color: 'var(--ink-2)' }}>
               ბოლო 7 დღის მოთხოვნები, რომლებიც არ გავიდა. გაწერილი კურსი ამ სიაში არ რჩება.
-              {canAct ? ' აირჩიეთ მიზეზი. „სხვა“-ს გვერდით ჩაწერეთ თქვენი, თუ გჭირდებათ.' : ''}
+              {canAct ? ' ' + t('აირჩიეთ მიზეზი. სხვაგან უკეთეს კურსს ადგილი სჭირდება. „სხვა“-ს კომენტარი სჭირდება.', 'Choose a reason. A better rate elsewhere needs the place. Other needs a comment.') : ''}
               {(realRole === 'kam' || realRole === 'admin') ? ' ' + t('თუ ტრანზაქცია მაინც გავიდა, დააჭირეთ „ტრანზაქცია გავიდა“.', 'If the transaction did go through, press “The transaction went through”.') : ''}
             </p>
           </div>
@@ -166,10 +199,10 @@ export default function FollowUps() {
               {answered[a.id] ? (
                 <div className="row">
                   <span className="ok-text strong row" style={{ gap: 8 }}><IconCheck />შენახულია: {savedLabel(a.id)}</span>
-                  <button type="button" className="link" onClick={() => answer(a, null)}>გაუქმება</button>
+                  <button type="button" className="link" onClick={() => answer(a, null, null)}>{t('გაუქმება', 'Cancel')}</button>
                 </div>
               ) : (
-                <div className="chips">
+                <div className="stack-sm" style={{ flex: '1 1 100%', minWidth: 0 }}>
                   {canConfirmPayment(realRole, profile?.id, a.kam_id) && (
                     <button
                       type="button"
@@ -180,21 +213,34 @@ export default function FollowUps() {
                       {confirming === a.id ? t('ინახება…', 'Saving…') : t('ტრანზაქცია გავიდა', 'The transaction went through')}
                     </button>
                   )}
-                  {canAct ? reasons.map((r) => isOther(r) ? (
-                    <span key={r.code} className="other-reason">
-                      <button type="button" className="chip" onClick={() => answer(a, r.code)}>{reasonText(r)}</button>
-                      <input
-                        className="input"
-                        aria-label="სხვა მიზეზი"
-                        placeholder="ჩაწერეთ მიზეზი"
-                        value={otherText[a.id] ?? ''}
-                        onChange={(e) => setOtherText((m) => ({ ...m, [a.id]: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); answer(a, r.code); } }}
+                  {canAct ? (
+                    <>
+                      <LossReasonPicker
+                        reason={draftOf(a.id).reason}
+                        place={draftOf(a.id).place}
+                        comment={draftOf(a.id).comment}
+                        onReason={(code) => chooseReason(a, code)}
+                        onPlace={(id) => choosePlace(a, id)}
+                        onComment={(value) => setDrafts((m) => {
+                          const current = m[a.id] ?? { reason: null, place: null, comment: '' };
+                          return { ...m, [a.id]: { ...current, comment: value } };
+                        })}
+                        hint={t('აირჩიეთ მიზეზი.', 'Choose a reason.')}
                       />
-                    </span>
-                  ) : (
-                    <button key={r.code} type="button" className="chip" onClick={() => answer(a, r.code)}>{reasonText(r)}</button>
-                  )) : <span className="pill pill-wait">KAM-ს ელოდება</span>}
+                      {(() => {
+                        const draft = draftOf(a.id);
+                        const item = LOSS_PICKER.find((reason) => reason.code === draft.reason);
+                        const needsSave = !!item && (reasonNeedsComment(item) || (isBetterRate(item) && draft.place === 'other'));
+                        if (!needsSave) return null;
+                        const ready = lossMarkDetail(item, draft.place, draft.comment).error == null;
+                        return (
+                          <button type="button" className="btn btn-primary" disabled={!ready} onClick={() => saveDraft(a)}>
+                            {t('შენახვა', 'Save')}
+                          </button>
+                        );
+                      })()}
+                    </>
+                  ) : <span className="pill pill-wait">{t('KAM-ს ელოდება', 'Waiting on the KAM')}</span>}
                 </div>
               )}
               {mayDeleteRequestRow(realRole, profile?.id, a.kam_id, a) && (

@@ -1,24 +1,13 @@
-import { useEffect, useState } from 'react';
-import { rpc, supabase } from '../lib/supabase';
+import { useState } from 'react';
+import { rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { useToast } from '../lib/toast';
-import type { LossReason, RequestRow } from '../lib/types';
+import { LOSS_PICKER, lossDetailMessage, lossMarkDetail, type BetterRatePlaceId } from '../lib/lossReasons';
+import type { RequestRow } from '../lib/types';
 import { canMarkRequestOutcome } from './RequestOutcomeButtons';
-
-const FALLBACK_REASONS: LossReason[] = [
-  { code: 'better_rate', label_en: 'Better rate elsewhere', label_ka: 'სხვაგან უკეთესი კურსი', sort_order: 10, active: true },
-  { code: 'postponed', label_en: 'Postponed', label_ka: 'გადადო', sort_order: 20, active: true },
-  { code: 'funds_not_received', label_en: 'Funds not received', label_ka: 'თანხა არ ჩაურიცხავს', sort_order: 30, active: true },
-  { code: 'liquidity', label_en: 'Liquidity problem', label_ka: 'ლიკვიდობის პრობლემა', sort_order: 40, active: true },
-  { code: 'other', label_en: 'Other', label_ka: 'სხვა', sort_order: 90, active: true },
-];
-
-function isOther(reason: LossReason | undefined): boolean {
-  if (!reason) return false;
-  return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
-}
+import LossReasonPicker from './LossReasonPicker';
 
 /**
  * A mark a KAM or an admin already saved.
@@ -38,46 +27,36 @@ export function correctableMark(row: RequestRow): 'went_through' | 'lost' | null
 export default function CorrectStatusButton({ row, onDone }: { row: RequestRow; onDone: () => void }) {
   const { profile } = useAuth();
   const { realRole } = useViewAs();
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const mark = correctableMark(row);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'lost' | null>(null);
   const [busy, setBusy] = useState(false);
-  const [reasons, setReasons] = useState<LossReason[]>(FALLBACK_REASONS);
   const [reason, setReason] = useState<string | null>(null);
+  const [place, setPlace] = useState<BetterRatePlaceId | null>(null);
   const [otherText, setOtherText] = useState('');
-
-  useEffect(() => {
-    if (mode !== 'lost') return;
-    let gone = false;
-    supabase.from('loss_reasons').select('*').eq('active', true).order('sort_order')
-      .then(({ data }) => {
-        if (gone || !data?.length) return;
-        setReasons(data as LossReason[]);
-      });
-    return () => { gone = true; };
-  }, [mode]);
 
   if (!mark || !canMarkRequestOutcome(realRole, profile?.id, row.kam_id)) return null;
 
-  const chosen = reasons.find((item) => item.code === reason);
-  const reasonText = (item: LossReason) => (lang === 'en' ? item.label_en : item.label_ka).trim() || item.label_en || item.label_ka;
+  const chosen = LOSS_PICKER.find((item) => item.code === reason);
+  const detail = lossMarkDetail(chosen, place, otherText);
 
   function close() {
     setOpen(false);
     setMode(null);
     setReason(null);
+    setPlace(null);
     setOtherText('');
   }
 
-  async function send(outcome: 'went_through' | 'lost' | 'clear', detail?: string) {
+  async function send(outcome: 'went_through' | 'lost' | 'clear', note?: string | null) {
     setBusy(true);
     try {
       await rpc('correct_request_outcome', {
         p_request_id: row.id,
         p_outcome: outcome,
-        ...(outcome === 'lost' ? { p_reason: reason, ...(detail ? { p_detail: detail } : {}) } : {}),
+        ...(outcome === 'lost' ? { p_reason: reason, ...(note ? { p_detail: note } : {}) } : {}),
       });
       toast(outcome === 'clear'
         ? t('ნიშანი მოიხსნა.', 'The mark was cleared.')
@@ -101,20 +80,16 @@ export default function CorrectStatusButton({ row, onDone }: { row: RequestRow; 
   }
 
   async function markLost() {
-    if (!reason) {
-      toast(t('აირჩიეთ მიზეზი.', 'Choose a reason.'), 'error');
-      return;
-    }
-    const detail = isOther(chosen) ? otherText.trim() : '';
-    if (isOther(chosen) && !detail) {
-      toast(t('სხვა მიზეზს კომენტარი სჭირდება.', 'Other needs a comment.'), 'error');
+    if (detail.error) {
+      const [ka, en] = lossDetailMessage(detail.error);
+      toast(t(ka, en), 'error');
       return;
     }
     if (!window.confirm(t(
       'მოვნიშნოთ დაკარგულად? მიზეზით ხაზინას გაეგზავნება დასადასტურებლად.',
       'Mark this as lost? It goes to treasury for approval with this reason.',
     ))) return;
-    await send('lost', detail);
+    await send('lost', detail.detail);
   }
 
   async function clearMark() {
@@ -153,28 +128,22 @@ export default function CorrectStatusButton({ row, onDone }: { row: RequestRow; 
         </div>
       )}
       {mode === 'lost' && (
-        <div className="stack-sm" style={{ width: '100%' }}>
-          <div className="tiny muted">{t('მიზეზი სავალდებულოა, სანამ ხაზინას გაეგზავნება.', 'A reason is required before this goes to treasury.')}</div>
-          <div className="chips">
-            {reasons.map((item) => (
-              <button key={item.code} type="button" className="chip" aria-pressed={reason === item.code} onClick={() => setReason(item.code)}>
-                {reasonText(item)}
-              </button>
-            ))}
-          </div>
-          {isOther(chosen) && (
-            <label className="field" style={{ margin: 0 }}>
-              <span className="tiny">{t('კომენტარი', 'Comment')}</span>
-              <input className="input" value={otherText} maxLength={500} placeholder={t('ჩაწერეთ მიზეზი', 'Write the reason')} onChange={(e) => setOtherText(e.target.value)} />
-            </label>
-          )}
+        <>
+          <LossReasonPicker
+            reason={reason}
+            place={place}
+            comment={otherText}
+            onReason={(code) => { setReason(code); setPlace(null); setOtherText(''); }}
+            onPlace={setPlace}
+            onComment={setOtherText}
+          />
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn btn-primary" disabled={busy || !reason} onClick={() => { void markLost(); }}>
+            <button type="button" className="btn btn-primary" disabled={busy || detail.error != null} onClick={() => { void markLost(); }}>
               {busy ? t('ინახება', 'Saving') : t('ხაზინისთვის გაგზავნა', 'Send to treasury')}
             </button>
-            <button type="button" className="link" onClick={() => setMode(null)}>{t('უკან', 'Back')}</button>
+            <button type="button" className="link" onClick={() => { setMode(null); setReason(null); setPlace(null); setOtherText(''); }}>{t('უკან', 'Back')}</button>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

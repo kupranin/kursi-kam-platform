@@ -7,6 +7,7 @@ import { fmtDay, sideAmount } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { loadPendingLossPage } from '../lib/pendingLoss';
 import { isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
+import { lossNoteLabel } from '../lib/lossReasons';
 import type { LossReason, RequestRow } from '../lib/types';
 import DeleteRequestButton from '../components/DeleteRequestButton';
 import LoadingLine from '../components/LoadingLine';
@@ -116,7 +117,7 @@ export default function LostRequests() {
                 {r.loss_reason && (
                   <p className="note-box">
                     {t('KAM-ის მიზეზი', 'KAM reason')}: {reasonLabel(reasons, r.loss_reason, lang)}
-                    {r.loss_reason_note ? ` — ${r.loss_reason_note}` : ''}
+                    {r.loss_reason_note ? ` — ${lossNoteLabel(r.loss_reason_note, lang)}` : ''}
                   </p>
                 )}
                 {r.client_reply === 'declined' && r.client_decline_reason && (

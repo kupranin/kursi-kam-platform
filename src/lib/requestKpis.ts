@@ -86,6 +86,13 @@ export interface ClientHistoryRow {
   kamName: string | null;
   ownerName: string | null;
   legacyStatus: string | null;
+  clientReply: string | null;
+  markedLostAt: string | null;
+  rateWrittenAt: string | null;
+  quoteStatus: string | null;
+  lossCode: string | null;
+  betterDecision: string | null;
+  rateWriteDeferred: boolean;
 }
 
 function num(value: unknown): number | null {
@@ -244,5 +251,12 @@ export async function loadClientHistory(clientId: string, offset: number): Promi
     kamName: (row.kam_name as string | null) ?? null,
     ownerName: (row.owner_name as string | null) ?? null,
     legacyStatus: (row.legacy_status as string | null) ?? null,
+    clientReply: (row.client_reply as string | null) ?? null,
+    markedLostAt: (row.marked_lost_at as string | null) ?? null,
+    rateWrittenAt: (row.rate_written_at as string | null) ?? null,
+    quoteStatus: (row.quote_status as string | null) ?? null,
+    lossCode: (row.loss_code as string | null) ?? null,
+    betterDecision: (row.better_decision as string | null) ?? null,
+    rateWriteDeferred: row.rate_write_deferred === true,
   }));
 }

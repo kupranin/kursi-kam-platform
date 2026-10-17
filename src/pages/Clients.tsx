@@ -5,9 +5,13 @@ import { rpc } from '../lib/supabase';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
 import { fmtDay } from '../lib/format';
+import { normalizeClientId, ownerDisplayText } from '../lib/clientOwnership';
+import { loadAssignedOwnerNames, loadEffectiveOwners, type AssignedOwnerName, type OwnerLoad } from '../lib/clientOwners';
 import type { ClientMatch } from '../lib/types';
 import LoadingLine from '../components/LoadingLine';
 import ClientBrief from '../components/ClientBrief';
+
+const COLUMNS = 6;
 
 export default function Clients() {
   const { role } = useViewAs();
@@ -16,6 +20,8 @@ export default function Clients() {
   const [loading, setLoading] = useState(true);
   const [openClient, setOpenClient] = useState<string | null>(null);
   const [summaryId, setSummaryId] = useState<string | null>(null);
+  const [ownerLoad, setOwnerLoad] = useState<OwnerLoad | null>(null);
+  const [assignedNames, setAssignedNames] = useState<Map<string, AssignedOwnerName>>(new Map());
   const specialRates = useSpecialRates(rows.map((row) => row.client_id));
 
   useEffect(() => {
@@ -31,8 +37,46 @@ export default function Clients() {
     return () => { alive = false; window.clearTimeout(t); };
   }, [q]);
 
-  const { t } = useI18n();
+  const ownerIds = rows.map((row) => row.client_id).join('\n');
+  useEffect(() => {
+    const ids = ownerIds ? ownerIds.split('\n') : [];
+    if (!ids.length) {
+      setOwnerLoad({ status: 'ok', owners: new Map() });
+      setAssignedNames(new Map());
+      return;
+    }
+    let alive = true;
+    setOwnerLoad(null);
+    setAssignedNames(new Map());
+    loadEffectiveOwners(ids)
+      .then(async (result) => {
+        if (!alive) return;
+        setOwnerLoad(result);
+        if (result.status !== 'missing') return;
+        const names = await loadAssignedOwnerNames(ids);
+        if (alive) setAssignedNames(names);
+      })
+      .catch(() => {
+        if (alive) setOwnerLoad({ status: 'failed' });
+      });
+    return () => { alive = false; };
+  }, [ownerIds]);
+
+  const { t, lang } = useI18n();
   const mine = role === 'kam';
+
+  function ownerText(clientId: string): string {
+    if (!ownerLoad) return '';
+    if (ownerLoad.status === 'failed') return ownerDisplayText('missing', null, lang);
+    if (ownerLoad.status === 'missing') {
+      const assigned = assignedNames.get(clientId);
+      if (!assigned) return '';
+      return ownerDisplayText(assigned.state, assigned.name, lang);
+    }
+    const owner = ownerLoad.owners.get(clientId) ?? ownerLoad.owners.get(normalizeClientId(clientId));
+    if (!owner) return ownerDisplayText('unresolved', null, lang);
+    return ownerDisplayText(owner.state, owner.ownerName, lang);
+  }
   return (
     <>
       <div className="page-head">
@@ -50,8 +94,8 @@ export default function Clients() {
         {!loading && !rows.length && <p className="empty">{q ? t('ვერ მოიძებნა.', 'Nothing found.') : t('კლიენტები ჯერ არ არის.', 'No clients yet.')}</p>}
         {rows.length > 0 && (
           <div className="table-wrap">
-            <table className="table" style={{ minWidth: 640 }}>
-              <thead><tr><th>{t('კლიენტი', 'Client')}</th><th>ID</th><th>{t('ტიპი', 'Type')}</th><th>{t('ბოლო მოთხოვნა', 'Last request')}</th><th>{t('ბოლო მიმართულება', 'Last direction')}</th></tr></thead>
+            <table className="table" style={{ minWidth: 820 }}>
+              <thead><tr><th>{t('კლიენტი', 'Client')}</th><th>ID</th><th>{t('ტიპი', 'Type')}</th><th>{t('კლიენტის მფლობელი', 'Client owner')}</th><th>{t('ბოლო მოთხოვნა', 'Last request')}</th><th>{t('ბოლო მიმართულება', 'Last direction')}</th></tr></thead>
               <tbody>
                 {rows.map((r) => {
                   const terms = specialRates.get(r.client_id) ?? [];
@@ -72,19 +116,20 @@ export default function Clients() {
                     </td>
                     <td>{r.client_id}</td>
                     <td>{r.kind === 'company' ? t('კომპანია', 'Company') : t('ფიზიკური პირი', 'Person')}</td>
+                    <td>{ownerText(r.client_id)}</td>
                     <td>{r.last_request_date ? fmtDay(r.last_request_date) : ''}</td>
                     <td>{r.last_sells_currency ? `${r.last_sells_currency} → ${r.last_gets_currency}` : ''}</td>
                   </tr>
                   {open && terms.length > 0 && (
                     <tr>
-                      <td colSpan={5}>
+                      <td colSpan={COLUMNS}>
                         <SpecialRateMark clientId={r.client_id} rows={terms} variant="detail" />
                       </td>
                     </tr>
                   )}
                   {summaryId === r.client_id && (
                     <tr>
-                      <td colSpan={5}>
+                      <td colSpan={COLUMNS}>
                         <ClientBrief clientId={r.client_id} />
                       </td>
                     </tr>

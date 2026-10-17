@@ -12,6 +12,7 @@ import { useI18n } from '../lib/i18n';
 import { usePhone } from '../lib/usePhone';
 import { useViewAs } from '../lib/viewAs';
 import { dealLeftOpen, hideEarlierDeals, isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
+import { lossNoteLabel } from '../lib/lossReasons';
 import { bankList, type LossReason, type QueueRow, type QuoteToday, type ReferenceRate } from '../lib/types';
 import ClientBlocked, { useClientBlocked } from '../components/ClientBlocked';
 import DeleteRequestButton from '../components/DeleteRequestButton';
@@ -28,6 +29,7 @@ import { deferFlags, deferredIds, extrasOffWriteQueue, loadClosingQueue, type Cl
 import ClosingQueue from '../components/ClosingQueue';
 import WrittenRateNote, { writtenRateUntil } from '../components/WrittenRateNote';
 import { useSpecialRates } from '../lib/specialRates';
+import ClientAgreedThenLost from '../components/AgreedThenLostMark';
 import ClientHistory from '../components/ClientHistory';
 import CopyLine from '../components/CopyLine';
 import { IconClock } from '../components/Icons';
@@ -239,7 +241,7 @@ function lossDetail(row: DeskDayRow, reasons: LossReason[], lang: 'ka' | 'en'): 
   const label = fromTable
     ? ((lang === 'en' ? fromTable.label_en : fromTable.label_ka).trim() || fromTable.label_en || fromTable.label_ka)
     : lossReasonLabel(row.loss_reason, lang);
-  const note = row.loss_reason_note?.trim() ?? '';
+  const note = lossNoteLabel(row.loss_reason_note, lang);
   if (label && note) return `${label} — ${note}`;
   if (label || note) return label || note;
   if (row.client_reply === 'declined' && row.client_decline_reason) return row.client_decline_reason;
@@ -1033,6 +1035,7 @@ export default function RateDesk() {
                           </div>
                         </div>
                         <div className="small muted" style={{ marginTop: 6 }}>{r.client_name ?? 'სახელი არ არის'}, ID {r.client_id}</div>
+                        <ClientAgreedThenLost clientId={r.client_id} excludeId={r.request_id} />
                         <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                       </div>
                       {r.last_rate != null && <div className="small" style={{ color: 'var(--ink-2)' }}>ბოლო კურსი ამ კლიენტზე {fmtRate(r.last_rate)}{r.last_rate_at ? ', ' + fmtDay(r.last_rate_at.slice(0, 10)) : ''}</div>}
@@ -1041,7 +1044,7 @@ export default function RateDesk() {
                     <DynamicActiveNegotiatedRates clientId={r.client_id} idSuffix={'quote-' + r.request_id} />
                     {r.client_rate != null && <p className="note-box">კურსი, რომელსაც კლიენტი ითხოვს: {fmtRate(r.client_rate)}</p>}
                     {r.note && <p className="note-box">კომენტარი ხაზინისთვის: {r.note}</p>}
-                    {r.loss_reason_note && <p className="note-box">სხვა მიზეზი: {r.loss_reason_note}</p>}
+                    {r.loss_reason_note && <p className="note-box">{t('სხვა მიზეზი', 'Other reason')}: {lossNoteLabel(r.loss_reason_note, lang)}</p>}
 
                     {!c.declining && (
                       <>
@@ -1214,6 +1217,7 @@ export default function RateDesk() {
                     </div>
                     <div className="small" style={{ marginTop: 6 }}>{r.client_name ?? t('სახელი არ არის', 'No name')}</div>
                     <div className="tiny muted">ID {r.client_id}</div>
+                    <ClientAgreedThenLost clientId={r.client_id} excludeId={r.request_id} />
                     <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                     <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
                     <p className="note-box">{t('ხაზინის კურსი', 'Treasury rate')}: {fmtRate(r.rate)}. {t('კლიენტს სურს', 'The client wants')} {fmtRate(r.wanted_rate)}.</p>
@@ -1308,6 +1312,7 @@ export default function RateDesk() {
                   <div className="name">{r.client_name ?? r.client_id}</div>
                   <div className="tiny muted">ID {r.client_id}</div>
                   <div className="tiny muted">{r.kam_name}</div>
+                  <ClientAgreedThenLost clientId={r.client_id} excludeId={r.request_id} />
                   <DeskBanks codes={banks[r.request_id]} label={t('ბანკი', 'Bank')} />
                   <SpecialRateMark clientId={r.client_id} rows={specialRates.get(r.client_id) ?? []} variant="detail" />
                 </div>

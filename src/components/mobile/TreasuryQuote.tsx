@@ -5,12 +5,14 @@ import { useI18n } from '../../lib/i18n';
 import { loadMarketRateData } from '../../lib/marketBoard';
 import type { CurrentBoard } from '../../lib/rateGrid';
 import { treasuryReason } from '../../lib/requestStatus';
+import { lossNoteLabel } from '../../lib/lossReasons';
 import { rpc } from '../../lib/supabase';
 import { midpointWarningText, treasuryMidpointWarning } from '../../lib/treasuryMidpoint';
 import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import type { QueueRow } from '../../lib/types';
 import LoadingLine from '../LoadingLine';
+import ClientAgreedThenLost from '../AgreedThenLostMark';
 import SpecialRateMark from '../SpecialRateMark';
 import DynamicActiveNegotiatedRates from '../DynamicActiveNegotiatedRates';
 import VenuePairLine from '../VenuePairLine';
@@ -201,6 +203,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
         <button type="button" className="m-back" onClick={back}>{t('უკან', 'Back')}</button>
         <div className="m-focal">
           <h2>{clientName(row.client_name, row.client_id)}</h2>
+          <ClientAgreedThenLost clientId={row.client_id} excludeId={row.request_id} />
           <DealFacts
             sells={row.sells_currency}
             gets={row.gets_currency}
@@ -215,7 +218,7 @@ export default function TreasuryQuote({ id }: { id: number }) {
           <p className="note-box">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(row.client_rate)}</p>
         )}
         {row.note && <p className="note-box">{t('კომენტარი ხაზინისთვის', 'Comment for treasury')}: {row.note}</p>}
-        {row.loss_reason_note && <p className="note-box">{t('სხვა მიზეზი', 'Other reason')}: {row.loss_reason_note}</p>}
+        {row.loss_reason_note && <p className="note-box">{t('სხვა მიზეზი', 'Other reason')}: {lossNoteLabel(row.loss_reason_note, lang)}</p>}
         <SpecialRateMark clientId={row.client_id} variant="detail" />
         <DynamicActiveNegotiatedRates clientId={row.client_id} idSuffix={'phone-quote-' + row.request_id} />
         {refs.length > 0 && !declining && (

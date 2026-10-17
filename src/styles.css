@@ -40,6 +40,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tiny { font-size: 13px; }
 .ok-text { color: var(--ok); }
 .error-text { color: var(--error); }
+.agreed-then-lost { color: var(--error); font-weight: 600; }
+tr.is-agreed-then-lost,
+tr.is-agreed-then-lost .muted,
+tr.is-agreed-then-lost a { color: var(--error); }
 .warn-text { color: #7A4A0E; }
 .nowrap { white-space: nowrap; }
 .right { text-align: right; }
@@ -712,6 +716,17 @@ html.is-phone .page:has(.m-treasury) {
 .m-home .m-card-action, .m-home .m-more-row { text-align: center; justify-content: center; }
 html.is-phone .chips { max-width: 100%; }
 html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; }
+.loss-open { display: contents; }
+.loss-picker, .loss-picker-slot { width: 100%; min-width: 0; }
+.loss-picker .field, .loss-picker .input { width: 100%; max-width: 36rem; }
+.list-row .actions:has(.loss-picker) {
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+}
+.list-row .actions .loss-picker-slot { order: 2; flex: 1 1 100%; }
+html.is-phone .loss-picker .input { max-width: none; }
 .req-search, .req-search-phone { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .req-search-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; }
 .req-search-filters .field { flex: 1 1 9.5rem; min-width: 0; }
@@ -773,6 +788,7 @@ html.is-phone .chip { max-width: 100%; white-space: normal; text-align: center; 
 .special-terms-body { margin-top: 8px; min-width: 0; }
 .special-saved { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .special-saved .link { text-align: left; white-space: normal; }
+.special-bank + .special-bank { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .special-rate { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: var(--ground); min-width: 0; }
 .special-rate p { overflow-wrap: anywhere; }
 .negotiated-warn { margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--ink); min-width: 0; }

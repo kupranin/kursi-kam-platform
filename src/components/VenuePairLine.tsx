@@ -8,10 +8,12 @@ import { supabase } from '../lib/supabase';
 // (fetch-market-rates valuto(), stored in market_rates).
 // Online Express has no source in that function. A stored board or bank
 // row is shown only when its venue or source compacts to "onlineexpress".
-// Express Lombard (expresslombard / "Express Lombard") is a different provider
-// and is not substituted. Kiosks stay off this line, same as the rate board.
+// Express Lombard (source expresslombard, venue "Express Lombard") is BOG's
+// special rate in BankSpecialReference. It is not shown as Express Online,
+// and this file does not remove it from the public rate grid. Kiosks stay
+// off this line, same as the rate board.
 
-type VenueKey = 'valuto' | 'onlineexpress';
+type VenueKey = 'valuto' | 'onlineexpress' | 'lombard';
 
 interface QuoteLine {
   key: VenueKey;
@@ -36,8 +38,15 @@ function venueKey(row: RateSnapshot): VenueKey | null {
   if (row.source === 'valuto' && row.venue_kind === 'board') return 'valuto';
   const name = compact(row.venue);
   const source = compact(row.source);
+  if (source === 'expresslombard' || name === 'expresslombard') return 'lombard';
   if (name === 'onlineexpress' || source === 'onlineexpress') return 'onlineexpress';
   return null;
+}
+
+function venueLabel(key: VenueKey): string {
+  if (key === 'valuto') return 'Valuto';
+  if (key === 'lombard') return 'Express Lombard';
+  return 'Online Express';
 }
 
 function invertPair(buy: number | null, sell: number | null): { buy: number | null; sell: number | null } {
@@ -90,7 +99,7 @@ async function loadLines(base: string, quote: string, include: VenueKey[]): Prom
     if (prev && prev.fetched_at >= row.fetched_at) continue;
     best.set(key, {
       key,
-      label: key === 'valuto' ? 'Valuto' : 'Online Express',
+      label: venueLabel(key),
       buy: sided.buy,
       sell: sided.sell,
       fetched_at: row.fetched_at,
@@ -144,20 +153,28 @@ export default function VenuePairLine({
  * Valuto is the public board (source valuto, venue Valuto, venue_kind board).
  * It is a provider reference, not the client's negotiated TBC rate.
  * It is shown only when a quote from the last two days is already stored.
- * Express Online has no feed in fetch-market-rates. expresslombard is not used.
+ * Express Online has no feed in fetch-market-rates. That sentence stays,
+ * and no Express Online numbers are invented.
+ * Express Lombard (source expresslombard, venue Express Lombard) is shown
+ * here as BOG's special rate. The figures are not written onto the request
+ * or into client_special_rates. The public rate grid still labels that
+ * same row Express Lombard.
  */
 export function BankSpecialReference({ sells, gets }: { sells: string; gets: string }) {
   const { t } = useI18n();
   const pair = dealPair(sells, gets);
-  const [valuto, setValuto] = useState<QuoteLine | null>(null);
+  const [lines, setLines] = useState<QuoteLine[]>([]);
 
   useEffect(() => {
     let live = true;
-    loadLines(pair.base, pair.quote, ['valuto'])
-      .then((next) => { if (live) setValuto(next.find((line) => line.key === 'valuto') ?? null); })
-      .catch(() => { if (live) setValuto(null); });
+    loadLines(pair.base, pair.quote, ['valuto', 'lombard'])
+      .then((next) => { if (live) setLines(next); })
+      .catch(() => { if (live) setLines([]); });
     return () => { live = false; };
   }, [pair.base, pair.quote]);
+
+  const valuto = lines.find((line) => line.key === 'valuto') ?? null;
+  const lombard = lines.find((line) => line.key === 'lombard') ?? null;
 
   return (
     <div className="special-ref">
@@ -178,6 +195,14 @@ export function BankSpecialReference({ sells, gets }: { sells: string; gets: str
           {valuto.buy != null ? ` · ${t('ყიდვა', 'Buy')} ${fmtRate(valuto.buy)}` : ''}
           {valuto.sell != null ? ` · ${t('გაყიდვა', 'Sell')} ${fmtRate(valuto.sell)}` : ''}
           {valuto.fetched_at ? <span className="tiny muted"> · {fmtDateTime(valuto.fetched_at)}</span> : null}
+        </p>
+      ) : null}
+      {lombard ? (
+        <p className="small" style={{ margin: '0 0 6px' }}>
+          <span className="strong">{t('BOG-ის სპეციალური კურსი', 'BOG special rate')}</span>
+          {lombard.buy != null ? ` · ${t('ყიდვა', 'Buy')} ${fmtRate(lombard.buy)}` : ''}
+          {lombard.sell != null ? ` · ${t('გაყიდვა', 'Sell')} ${fmtRate(lombard.sell)}` : ''}
+          {lombard.fetched_at ? <span className="tiny muted"> · {fmtDateTime(lombard.fetched_at)}</span> : null}
         </p>
       ) : null}
       <p className="small" style={{ margin: 0 }}>

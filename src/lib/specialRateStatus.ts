@@ -106,3 +106,64 @@ export function specialRateBoxChecked(activeRowCount: number): boolean {
 export function specialTermsNeedClear(loadedActive: boolean, checked: boolean): boolean {
   return loadedActive && !checked;
 }
+
+/** One bank open on the form. Several can be open together. Only dirty banks are written. */
+export interface OpenSpecialBank {
+  bank: SpecialRateBank;
+  providerLabel: string;
+  comment: string;
+  sells: string;
+  gets: string;
+  rate: number | null;
+  dirty: boolean;
+}
+
+export interface SpecialFormFields {
+  providerLabel: string;
+  comment: string;
+  sells: string;
+  gets: string;
+  rateOk: boolean;
+  rateValue: number | null;
+}
+
+function sameStoredRate(value: number | null, stored: number | null): boolean {
+  if (value == null && stored == null) return true;
+  if (value == null || stored == null) return false;
+  return Math.abs(value - stored) < 1e-9;
+}
+
+/**
+ * A bank the KAM added is written even when its fields are still blank.
+ * A bank already stored is written only when a field changed.
+ * An invalid rate counts as a change so the save can reject it.
+ */
+export function specialFormDirty(bank: SpecialRateBank, form: SpecialFormFields, stored: StoredSpecialBank | null): boolean {
+  if (!stored) return true;
+  if (!form.rateOk) return true;
+  return form.comment.trim() !== (stored.comment ?? '')
+    || (bank === 'Other' && form.providerLabel.trim() !== (stored.providerLabel ?? ''))
+    || form.sells !== (stored.sells ?? '')
+    || form.gets !== (stored.gets ?? '')
+    || !sameStoredRate(form.rateValue, stored.rate);
+}
+
+/** The banks one submit writes, in TBC, BOG, Liberty, Other order. An unchanged bank is left out. */
+export function specialBanksToWrite(clientId: string, open: readonly OpenSpecialBank[]): SpecialBankWrite[] {
+  const byBank = new Map(open.map((item) => [item.bank, item]));
+  const writes: SpecialBankWrite[] = [];
+  for (const code of SPECIAL_RATE_BANKS) {
+    const item = byBank.get(code);
+    if (!item?.dirty) continue;
+    writes.push({
+      clientId,
+      bank: code,
+      providerLabel: item.providerLabel,
+      comment: item.comment,
+      sells: item.sells,
+      gets: item.gets,
+      rate: item.rate,
+    });
+  }
+  return writes;
+}

@@ -16,8 +16,10 @@ import { chatHandoff, clientOffer, rateBooked } from '../lib/copyText';
 import { ago, describeDeal, fmtDay, fmtRate, fmtTime, fmtWhole, longToday, monthOptions, parseAmount, tbilisiDay, todayTbilisi } from '../lib/format';
 import { applyRatePeople, loadRatePeople } from '../lib/ratePeople';
 import { withClientContext } from '../lib/requestContext';
-import { hideEarlierDeals, isOpenRequest, isPendingLoss, lossReasonLabel, treasuryReason } from '../lib/requestStatus';
+import { hideEarlierDeals, isOpenRequest, isPendingLoss, lossReasonLabel, treasuryReason, writtenAwaitingNotice } from '../lib/requestStatus';
+import { lossNoteLabel } from '../lib/lossReasons';
 import { BANKS, CURRENCIES, bankList, formatBanks, type RequestRow } from '../lib/types';
+import ClientAgreedThenLost from '../components/AgreedThenLostMark';
 import ClientField, { type ClientInfo } from '../components/ClientField';
 import ClientSpecialTerms from '../components/ClientSpecialTerms';
 import DynamicActiveNegotiatedRates from '../components/DynamicActiveNegotiatedRates';
@@ -651,6 +653,7 @@ export default function Requests() {
         <div className="who">
           <div className="strong">{r.client_name ?? r.client_id}</div>
           <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} ownerSource={r.owner_source} requestKam={r.kam_name} />
+          <ClientAgreedThenLost clientId={r.client_id} excludeId={r.id} />
         </div>
         <span className="what">{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}{r.rate ? ' ' + t('კურსით', 'at') + ' ' + fmtRate(r.rate) : ''}{formatBanks(r.bank) ? ' · ' + formatBanks(r.bank) : ''}<RatePeople quoted={r.quoted_by_name} written={r.written_by_name} />
           {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
@@ -662,12 +665,12 @@ export default function Requests() {
           {canChange(r) && (
             <>
             <CorrectStatusButton row={r} onDone={refresh} />
-            <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
+            {!writtenAwaitingNotice(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
             {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
             </>
           )}
         </div>
-        {editForm(r)}
+        {!writtenAwaitingNotice(r) && editForm(r)}
         <LossApproval row={r} onDone={refresh} />
         {transferText && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
         {transferText && <CopyLine label={t('ტექსტი ჩარიცხვისთვის', 'Text for the transfer')} text={transferText} />}
@@ -758,6 +761,7 @@ export default function Requests() {
               <button type="submit" className="btn btn-primary" style={{ minHeight: 48 }} disabled={busy}><IconPlus />{busy ? t('იგზავნება…', 'Sending…') : t('კურსის თხოვნა ხაზინას', 'Ask treasury for a rate')}</button>
             </div>
           </div>
+          {info?.valid && info.id && <ClientAgreedThenLost clientId={info.id} />}
           {info?.valid && info.id && <ClientHistory clientId={info.id} />}
         </form>
       </section>}
@@ -803,6 +807,7 @@ export default function Requests() {
                 <div className="name">{r.client_name ?? r.client_id}</div>
                 <div className="tiny muted">ID {r.client_id}</div>
                 <RequestKamLine ownerName={r.owner_name} ownerState={r.owner_state} ownerSource={r.owner_source} requestKam={r.kam_name} />
+                <ClientAgreedThenLost clientId={r.client_id} excludeId={r.id} />
                 {formatBanks(r.bank) && <div className="tiny">{t('ბანკი', 'Bank')}: {formatBanks(r.bank)}</div>}
               </div>
               <div className="what">
@@ -814,7 +819,7 @@ export default function Requests() {
                 {lostPending && (
                   <div className="tiny muted">
                     {t('მიზეზი', 'Reason')}: {lossReasonLabel(r.loss_reason, lang)}
-                    {r.loss_reason_note ? ` — ${r.loss_reason_note}` : ''}
+                    {r.loss_reason_note ? ` — ${lossNoteLabel(r.loss_reason_note, lang)}` : ''}
                   </div>
                 )}
                 {answer
@@ -848,10 +853,10 @@ export default function Requests() {
                 {!canAnswer && canAskAgain && <button type="button" className="btn" onClick={() => askAgain(r)}>{t('ხელახლა კითხვა', 'Ask again')}</button>}
                 {!canAnswer && <RequestOutcomeButtons row={r} onDone={refresh} />}
                 {!canAnswer && <CorrectStatusButton row={r} onDone={refresh} />}
-                {!canAnswer && own && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
+                {!canAnswer && own && !writtenAwaitingNotice(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
                 {!canAnswer && mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
-              {!canAnswer && editForm(r)}
+              {!canAnswer && !writtenAwaitingNotice(r) && editForm(r)}
               <DeferWriteBar row={r} onDone={refresh} />
               <LossApproval row={r} onDone={refresh} />
               {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
@@ -949,6 +954,7 @@ export default function Requests() {
               <div className="name">{r.client_name ?? r.client_id}</div>
               <div className="tiny muted">ID {r.client_id}</div>
               <div className="small">{r.kam_name ?? t('KAM არ არის', 'No KAM')}</div>
+              <ClientAgreedThenLost clientId={r.client_id} excludeId={r.id} />
             </div>
             <div className="what">
               <div>{describeDeal(r.sells_currency, r.amount, r.gets_currency, r.gets_amount)}</div>
@@ -960,11 +966,11 @@ export default function Requests() {
               <div className="actions">
                 <RequestOutcomeButtons row={r} onDone={refresh} />
                 <CorrectStatusButton row={r} onDone={refresh} />
-                <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>
+                {!writtenAwaitingNotice(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
                 {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
               </div>
             )}
-            {editForm(r)}
+            {!writtenAwaitingNotice(r) && editForm(r)}
             <LossApproval row={r} onDone={refresh} />
           </div>
         ))}
@@ -1036,7 +1042,7 @@ export default function Requests() {
                 {r.client_rate != null && <div className="tiny muted">{t('კურსი, რომელსაც კლიენტი ითხოვს', 'Rate the client is asking for')}: {fmtRate(r.client_rate)}</div>}
                 {r.note && <div className="tiny muted">{t('კომენტარი', 'Comment')}: {r.note}</div>}
                 {r.legacy_status?.trim() && <div className="tiny muted">{t('ფაილის სტატუსი', 'File status')}: {r.legacy_status}</div>}
-                {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {r.loss_reason_note}</div>}
+                {r.loss_reason_note && <div className="tiny muted">{t('სხვა მიზეზი', 'Other reason')}: {lossNoteLabel(r.loss_reason_note, lang)}</div>}
                 {clientReplyNote(r, t) && <div className="tiny muted">{clientReplyNote(r, t)}</div>}
                 {r.rate_written_at && <WrittenRateNote writtenAt={r.rate_written_at} />}
                 {(chatText || transferText) && <CopyLine label={t('კლიენტის ID', 'Client ID')} text={r.client_id} />}
@@ -1050,11 +1056,11 @@ export default function Requests() {
                 <div className="actions">
                   <RequestOutcomeButtons row={r} onDone={refresh} />
                   <CorrectStatusButton row={r} onDone={refresh} />
-                  {canChange(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
+                  {canChange(r) && !writtenAwaitingNotice(r) && <button type="button" className="btn" onClick={() => openEdit(r)}>{t('რედაქტირება', 'Edit')}</button>}
                   {mayDeleteRequestRow(realRole, profile?.id, r.kam_id, r) && <DeleteRequestButton requestId={r.id} onDeleted={() => { if (editId === r.id) setEditId(null); refresh(); }} />}
                 </div>
               )}
-              {editForm(r)}
+              {!writtenAwaitingNotice(r) && editForm(r)}
               <LossApproval row={r} onDone={refresh} />
             </div>
           );

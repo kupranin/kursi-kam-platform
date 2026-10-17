@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { rpc, supabase } from '../lib/supabase';
+import { useState } from 'react';
+import { rpc } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
 import { useViewAs } from '../lib/viewAs';
@@ -7,72 +7,63 @@ import { useToast } from '../lib/toast';
 import { kamMayEditRequest } from '../lib/clientOwnership';
 import { isRateWriteDeferred } from '../lib/deferWrite';
 import { isHistoricalRequest } from '../lib/displayClass';
-import { isOpenRequest } from '../lib/requestStatus';
-import type { LossReason, RequestRow, Role } from '../lib/types';
+import { isOpenRequest, writtenAwaitingNotice } from '../lib/requestStatus';
+import { LOSS_PICKER, lossDetailMessage, lossMarkDetail, type BetterRatePlaceId } from '../lib/lossReasons';
+import type { RequestRow, Role } from '../lib/types';
+import LossReasonPicker from './LossReasonPicker';
 
 /** Real database role. View-as does not count. A KAM only for their own request. */
 export function canMarkRequestOutcome(realRole: Role, profileId: string | undefined, kamId: string | null | undefined): boolean {
   return kamMayEditRequest(realRole, profileId, kamId);
 }
 
-const FALLBACK_REASONS: LossReason[] = [
-  { code: 'better_rate', label_en: 'Better rate elsewhere', label_ka: 'სხვაგან უკეთესი კურსი', sort_order: 10, active: true },
-  { code: 'postponed', label_en: 'Postponed', label_ka: 'გადადო', sort_order: 20, active: true },
-  { code: 'funds_not_received', label_en: 'Funds not received', label_ka: 'თანხა არ ჩაურიცხავს', sort_order: 30, active: true },
-  { code: 'liquidity', label_en: 'Liquidity problem', label_ka: 'ლიკვიდობის პრობლემა', sort_order: 40, active: true },
-  { code: 'other', label_en: 'Other', label_ka: 'სხვა', sort_order: 90, active: true },
-];
-
-function isOther(reason: LossReason | undefined): boolean {
-  if (!reason) return false;
-  return reason.code === 'other' || reason.label_en.trim().toLowerCase() === 'other';
-}
-
 /**
  * Lost or success on a still-open row. Lost needs a reason before treasury sees it.
- * A held approval, and the tell-the-client step, cannot be marked as paid yet.
+ * A better rate elsewhere also needs the place. A held approval, and the
+ * tell-the-client step, cannot be marked as paid yet.
  * clientLost is only that tell-the-client label. The held card keeps Lost.
  */
 export default function RequestOutcomeButtons({
   row,
   onDone,
   showSuccess = true,
+  showLost = true,
   clientLost = false,
 }: {
   row: RequestRow;
   onDone: () => void;
   showSuccess?: boolean;
+  /** False when this card already shows Lost next to Client was notified. */
+  showLost?: boolean;
   clientLost?: boolean;
 }) {
   const { profile } = useAuth();
   const { realRole } = useViewAs();
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const [busy, setBusy] = useState<'success' | 'lost' | null>(null);
   const [picking, setPicking] = useState(false);
-  const [reasons, setReasons] = useState<LossReason[]>(FALLBACK_REASONS);
   const [reason, setReason] = useState<string | null>(null);
+  const [place, setPlace] = useState<BetterRatePlaceId | null>(null);
   const [otherText, setOtherText] = useState('');
 
-  useEffect(() => {
-    if (!picking) return;
-    let gone = false;
-    supabase.from('loss_reasons').select('*').eq('active', true).order('sort_order')
-      .then(({ data }) => {
-        if (gone || !data?.length) return;
-        setReasons(data as LossReason[]);
-      });
-    return () => { gone = true; };
-  }, [picking]);
-
   const mayMark = !isHistoricalRequest(row) && canMarkRequestOutcome(realRole, profile?.id, row.kam_id);
-  const canLose = mayMark && isOpenRequest(row);
+  const explicitLoss = !!(row.marked_lost_at || (row.loss_reason && row.loss_reason.trim()) || row.loss_approved_at);
+  const canLoseWritten = writtenAwaitingNotice(row) && !explicitLoss && !row.went_through && row.outcome !== 'went_through';
+  const canLose = showLost && mayMark && (isOpenRequest(row) || canLoseWritten);
   const canNotify = mayMark && showSuccess && !isRateWriteDeferred(row) && !!row.rate_written_at && !row.payment_confirmed_at;
   if (!canLose && !canNotify) return null;
 
   const allowSuccess = canNotify;
-  const chosen = reasons.find((r) => r.code === reason);
-  const reasonText = (r: LossReason) => (lang === 'en' ? r.label_en : r.label_ka).trim() || r.label_en || r.label_ka;
+  const chosen = LOSS_PICKER.find((item) => item.code === reason);
+  const mark = lossMarkDetail(chosen, place, otherText);
+
+  function closePicker() {
+    setPicking(false);
+    setReason(null);
+    setPlace(null);
+    setOtherText('');
+  }
 
   async function markSuccess() {
     if (!window.confirm(t(
@@ -91,13 +82,9 @@ export default function RequestOutcomeButtons({
   }
 
   async function markLost() {
-    if (!reason) {
-      toast(t('აირჩიეთ მიზეზი.', 'Choose a reason.'), 'error');
-      return;
-    }
-    const detail = isOther(chosen) ? otherText.trim() : '';
-    if (isOther(chosen) && !detail) {
-      toast(t('სხვა მიზეზს კომენტარი სჭირდება.', 'Other needs a comment.'), 'error');
+    if (mark.error) {
+      const [ka, en] = lossDetailMessage(mark.error);
+      toast(t(ka, en), 'error');
       return;
     }
     if (!window.confirm(t(
@@ -109,7 +96,7 @@ export default function RequestOutcomeButtons({
       await rpc('mark_request_lost', {
         p_request_id: row.id,
         p_reason: reason,
-        ...(detail ? { p_detail: detail } : {}),
+        ...(mark.detail ? { p_detail: mark.detail } : {}),
       });
       toast(t('დაკარგულად მოინიშნა. ხაზინის დადასტურებას ელოდება.', 'Marked as lost. It is waiting for treasury to approve it.'));
       onDone();
@@ -120,7 +107,7 @@ export default function RequestOutcomeButtons({
   }
 
   return (
-    <div className="stack-sm" style={{ alignItems: 'flex-start' }}>
+    <div className={picking ? 'loss-open' : 'stack-sm'} style={picking ? undefined : { alignItems: 'flex-start' }}>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {allowSuccess && (
           <button type="button" className="btn btn-primary" disabled={busy != null} onClick={markSuccess}>
@@ -128,40 +115,22 @@ export default function RequestOutcomeButtons({
           </button>
         )}
         {canLose && (
-          <button type="button" className={clientLost ? 'btn' : 'btn btn-quiet'} disabled={busy != null} onClick={() => setPicking((v) => !v)}>
+          <button type="button" className={clientLost ? 'btn' : 'btn btn-quiet'} disabled={busy != null} onClick={() => { if (picking) closePicker(); else setPicking(true); }}>
             {clientLost ? t('კლიენტი დაკარგულია', 'Client lost') : t('დაიკარგა', 'Lost')}
           </button>
         )}
       </div>
-        {canLose && picking && (
-        <div className="stack-sm" style={{ width: '100%' }}>
-          <div className="tiny muted">{t('მიზეზი სავალდებულოა, სანამ ხაზინას გაეგზავნება.', 'A reason is required before this goes to treasury.')}</div>
-          <div className="chips">
-            {reasons.map((r) => (
-              <button
-                key={r.code}
-                type="button"
-                className="chip"
-                aria-pressed={reason === r.code}
-                onClick={() => setReason(r.code)}
-              >
-                {reasonText(r)}
-              </button>
-            ))}
-          </div>
-          {isOther(chosen) && (
-            <label className="field" style={{ margin: 0 }}>
-              <span className="tiny">{t('კომენტარი', 'Comment')}</span>
-              <input
-                className="input"
-                value={otherText}
-                maxLength={500}
-                placeholder={t('ჩაწერეთ მიზეზი', 'Write the reason')}
-                onChange={(e) => setOtherText(e.target.value)}
-              />
-            </label>
-          )}
-          <button type="button" className="btn btn-primary" disabled={busy != null || !reason} onClick={markLost}>
+      {canLose && picking && (
+        <div className="loss-picker-slot stack-sm">
+          <LossReasonPicker
+            reason={reason}
+            place={place}
+            comment={otherText}
+            onReason={(code) => { setReason(code); setPlace(null); setOtherText(''); }}
+            onPlace={setPlace}
+            onComment={setOtherText}
+          />
+          <button type="button" className="btn btn-primary" disabled={busy != null || mark.error != null} onClick={markLost}>
             {busy === 'lost' ? t('ინახება…', 'Saving…') : t('ხაზინისთვის გაგზავნა', 'Send to treasury')}
           </button>
         </div>

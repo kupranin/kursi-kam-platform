@@ -69,12 +69,12 @@ interface LossResult {
 }
 
 function pendingFilter(query: LossFilter, today: string): LossFilter {
+  const openLoss = `or(${PENDING_LOSS_MARK},client_reply.eq.declined,quote_status.eq.declined,request_date.lt.${today})`;
   return query
     .eq('source', 'app')
-    .is('rate_written_at', null)
     .is('payment_confirmed_at', null)
     .is('loss_approved_at', null)
-    .or(`${PENDING_LOSS_MARK},client_reply.eq.declined,quote_status.eq.declined,request_date.lt.${today}`);
+    .or(`and(rate_written_at.is.null,${openLoss}),and(rate_written_at.not.is.null,or(${PENDING_LOSS_MARK}))`);
 }
 
 function asPending(row: ActiveSource, today: string): RequestRow | null {

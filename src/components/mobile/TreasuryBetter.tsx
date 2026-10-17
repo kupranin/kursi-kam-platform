@@ -7,6 +7,7 @@ import { useScreenTitle } from '../../lib/screenTitle';
 import { useToast } from '../../lib/toast';
 import { useLive } from '../../lib/useLive';
 import LoadingLine from '../LoadingLine';
+import ClientAgreedThenLost from '../AgreedThenLostMark';
 import SpecialRateMark from '../SpecialRateMark';
 import StickyBar from './StickyBar';
 import { clientName, DealFacts, Fact, pairText, WaitClock } from './TreasuryBits';
@@ -174,6 +175,7 @@ export default function TreasuryBetter({ id }: { id: number }) {
   const facts = (
     <div className="m-focal">
       <h2>{clientName(row.client_name, row.client_id)}</h2>
+      <ClientAgreedThenLost clientId={row.client_id} excludeId={row.request_id} />
       <DealFacts sells={row.sells_currency} gets={row.gets_currency} amount={row.amount} getsAmount={row.gets_amount} />
       <Fact label="KAM" value={row.kam_name} />
       <p className="m-fact">

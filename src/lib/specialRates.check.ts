@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { kamMayWriteSpecialRates } from './clientOwnership';
 import {
   clearSpecialBanks,
+  specialBanksToWrite,
+  specialFormDirty,
   specialRateBoxChecked,
   specialTermsNeedClear,
   upsertSpecialBank,
   visibleSpecialBanks,
+  type OpenSpecialBank,
   type SpecialBankWrite,
   type StoredSpecialBank,
 } from './specialRateStatus';
@@ -97,5 +100,70 @@ assert(kamMayWriteSpecialRates({ role: 'admin', canViewClient: true }), 'an admi
 assert(kamMayWriteSpecialRates({ role: 'treasury', canViewClient: true }), 'treasury can write');
 assert(!kamMayWriteSpecialRates({ role: 'manager', canViewClient: true }), 'a manager cannot write');
 assert(!kamMayWriteSpecialRates({ role: 'analyst', canViewClient: true }), 'an analyst cannot write');
+
+const original = readFileSync(join(root, 'supabase/setup/42_client_special_rates.sql'), 'utf8');
+assert(/primary key \(client_id, bank\)/.test(original), 'the stored key is client and bank, not client alone');
+assert(!/unique\s*\(\s*client_id\s*\)/i.test(setup), 'setup 51 does not add a unique key on client_id alone');
+assert(!/delete\s+from\s+public\.client_special_rates/i.test(setup), 'saving a bank does not delete the other banks');
+
+function openBank(code: OpenSpecialBank['bank'], comment: string, sells: string, gets: string, rate: number, dirty: boolean): OpenSpecialBank {
+  return { bank: code, providerLabel: '', comment, sells, gets, rate, dirty };
+}
+
+const session: OpenSpecialBank[] = [
+  openBank('TBC', 'tbc desk', 'USD', 'GEL', 2.61, true),
+  openBank('BOG', 'bog branch', 'EUR', 'GEL', 3.05, true),
+];
+const writes = specialBanksToWrite(client, session);
+assert(writes.map((row) => row.bank).join(',') === 'TBC,BOG', 'one submit writes bank A then bank B, not only the open chip');
+let sessionRows: StoredSpecialBank[] = [];
+for (const write of writes) sessionRows = upsertSpecialBank(sessionRows, write);
+const afterBoth = visibleSpecialBanks(sessionRows, client);
+assert(afterBoth.map((row) => row.bank).join(',') === 'TBC,BOG', 'saving bank A then bank B keeps both');
+assert(afterBoth[0].comment === 'tbc desk' && afterBoth[0].sells === 'USD' && afterBoth[0].rate === 2.61, 'TBC keeps its own details, pair, and rate');
+assert(afterBoth[1].comment === 'bog branch' && afterBoth[1].sells === 'EUR' && afterBoth[1].rate === 3.05, 'BOG keeps its own details, pair, and rate');
+
+const tbcStored = sessionRows.find((row) => row.clientId === client && row.bank === 'TBC');
+const bogStored = sessionRows.find((row) => row.clientId === client && row.bank === 'BOG');
+assert(tbcStored != null && bogStored != null, 'the next open still has both banks');
+assert(!specialFormDirty('TBC', {
+  providerLabel: '',
+  comment: tbcStored.comment ?? '',
+  sells: tbcStored.sells ?? '',
+  gets: tbcStored.gets ?? '',
+  rateOk: true,
+  rateValue: tbcStored.rate,
+}, tbcStored), 'an untouched bank is not written again');
+assert(specialFormDirty('BOG', {
+  providerLabel: '',
+  comment: 'bog branch',
+  sells: 'EUR',
+  gets: 'GEL',
+  rateOk: true,
+  rateValue: 3.2,
+}, bogStored), 'the second bank is written when its rate changes');
+const secondVisit = specialBanksToWrite(client, [
+  openBank('TBC', 'tbc desk', 'USD', 'GEL', 2.61, false),
+  openBank('BOG', 'bog branch', 'EUR', 'GEL', 3.2, true),
+]);
+assert(secondVisit.length === 1 && secondVisit[0].bank === 'BOG', 'the later save posts only the bank that changed');
+sessionRows = upsertSpecialBank(sessionRows, { ...secondVisit[0], comment: null, sells: null, gets: null, rate: null });
+const afterSecond = visibleSpecialBanks(sessionRows, client);
+assert(afterSecond.map((row) => row.bank).join(',') === 'TBC,BOG', 'saving the second bank does not clear the first');
+assert(afterSecond.find((row) => row.bank === 'TBC')?.rate === 2.61, 'the first bank rate stays');
+assert(afterSecond.find((row) => row.bank === 'BOG')?.comment === 'bog branch' && afterSecond.find((row) => row.bank === 'BOG')?.rate === 3.05, 'a blank field on the second bank does not erase its saved term');
+
+const form = readFileSync(join(root, 'src/components/ClientSpecialTerms.tsx'), 'utf8');
+assert(form.includes('banks: draftsRef.current'), 'the form posts every open bank');
+assert(!form.includes('fill(latest'), 'the next open does not keep only the latest bank');
+assert(form.includes('addBank'), 'a second bank can be added beside the first');
+const venue = readFileSync(join(root, 'src/components/VenuePairLine.tsx'), 'utf8');
+const grid = readFileSync(join(root, 'src/lib/rateGrid.ts'), 'utf8');
+assert(venue.includes('BOG-ის სპეციალური კურსი'), 'BOG special rate is labeled in Georgian');
+assert(venue.includes("'BOG special rate'"), 'BOG special rate is labeled in English');
+assert(venue.includes("source === 'expresslombard'"), 'the BOG special rate reads the Express Lombard source');
+assert(venue.includes('კურსი ხელმისაწვდომი არ არის. ეს არხი მიერთებული არ არის.'), 'the Express Online no-feed sentence stays');
+assert(grid.includes("label: 'Express Lombard'"), 'the public rate grid still names Express Lombard');
+assert(grid.includes("label: 'InexPay'"), 'InexPay stays on the public grid');
 
 console.log('client special rates ok');

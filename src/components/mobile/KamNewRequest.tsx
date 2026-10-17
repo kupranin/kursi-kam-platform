@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ClientField, { type ClientInfo } from '../ClientField';
+import ClientAgreedThenLost from '../AgreedThenLostMark';
 import ClientHistory from '../ClientHistory';
 import ClientSpecialTerms from '../ClientSpecialTerms';
 import DynamicActiveNegotiatedRates from '../DynamicActiveNegotiatedRates';
@@ -237,6 +238,7 @@ export default function KamNewRequest({ embedded = false }: { embedded?: boolean
         >
           {t('კლიენტის ისტორია', 'Client history')}
         </button>
+        {clientReady && info?.id && <ClientAgreedThenLost clientId={info.id} />}
         {historyOpen && clientReady && info?.id && <ClientHistory clientId={info.id} />}
       </div>
     </>

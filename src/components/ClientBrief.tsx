@@ -18,6 +18,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useToast } from '../lib/toast';
 import { useViewAs } from '../lib/viewAs';
+import ClientAgreedThenLost, { AgreedThenLostLine, useAgreedThenLost } from './AgreedThenLostMark';
 import LoadingLine from './LoadingLine';
 
 const PAGE = 20;
@@ -41,6 +42,7 @@ function absText(
 
 export default function ClientBrief({ clientId }: { clientId: string }) {
   const { t, lang } = useI18n();
+  const agreedLost = useAgreedThenLost(clientId);
   const toast = useToast();
   const { role, realRole } = useViewAs();
   const canAssign = maySetOwnerOverride(realRole, role);
@@ -238,6 +240,7 @@ export default function ClientBrief({ clientId }: { clientId: string }) {
             {brief.clientId}
           </p>
           {ownerBlock()}
+          <ClientAgreedThenLost clientId={brief.clientId} />
           <p className="small" style={{ margin: '0 0 8px' }}>
             {t('სულ', 'Total')} {brief.total}
             {' · '}
@@ -290,15 +293,20 @@ export default function ClientBrief({ clientId }: { clientId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id}>
+                  {rows.map((row) => {
+                    const agreedMark = agreedLost.requestIds.includes(row.id);
+                    return (
+                    <tr key={row.id} className={agreedMark ? 'is-agreed-then-lost' : undefined}>
                       <td className="nowrap">
                         <Link to={'/requests/' + row.id}>{fmtDay(row.requestDate)}</Link>
                       </td>
                       <td className="nowrap">{row.sellsCurrency} → {row.getsCurrency}</td>
                       <td className="num">{row.receivedAmount != null ? `${fmtAmount(row.receivedAmount)} ${row.getsCurrency ?? ''}` : '—'}</td>
                       <td className="num">{absText(row.requestAbsGel, row.valuationStatus, t)}</td>
-                      <td>{classLabel(row.kpiClass)}</td>
+                      <td>
+                        {classLabel(row.kpiClass)}
+                        {agreedMark && <AgreedThenLostLine />}
+                      </td>
                       <td>{row.kpiClass === 'lost' ? (row.lossReason || t('მიზეზი არ არის', 'No reason')) : ''}</td>
                       <td>
                         {shown.text}
@@ -306,7 +314,8 @@ export default function ClientBrief({ clientId }: { clientId: string }) {
                       </td>
                       <td>{row.kamName || t('KAM არ არის', 'No KAM')}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
